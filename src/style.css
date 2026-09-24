@@ -204,7 +204,6 @@ small {
 }
 .topbar {
   height: 86px;
-  border-bottom: 1px solid var(--line);
   padding: 0 42px;
   display: flex;
   align-items: center;
@@ -919,13 +918,6 @@ progress {
 #settings-message:empty {
   display: none;
 }
-.native-playing .sidebar,
-.native-playing .workspace {
-  visibility: hidden;
-}
-.native-playing {
-  background: #000;
-}
 
 html.player-mode,
 html.player-mode body {
@@ -1097,14 +1089,14 @@ html.player-mode body {
 }
 .skip-popup {
   position: absolute;
-  right: 34px;
+  left: 34px;
   bottom: 160px;
   display: flex;
   align-items: center;
   gap: 4px;
   border: 1px solid #ffffff70;
   background: #151914e6;
-  border-radius: 6px;
+  border-radius: 999px;
   padding: 3px;
   box-shadow: 0 6px 22px #0004;
 }
@@ -1116,8 +1108,11 @@ html.player-mode body {
   font-size: 14px;
 }
 .skip-popup #dismiss-skip {
-  font-size: 20px;
-  padding: 6px 10px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   color: #ccd1c7;
 }
 .buffering {
@@ -1140,8 +1135,9 @@ html.player-mode body {
   opacity: 1;
   pointer-events: auto;
 }
-.controls-hidden .player-stage {
-  cursor: none;
+.controls-hidden .player-stage,
+.controls-hidden .player-stage * {
+  cursor: none !important;
 }
 .player-mode #player-error {
   color: #ecc994;
@@ -1384,28 +1380,41 @@ button {
   min-width: 0;
 }
 .recent-card {
+  align-self: start;
+  display: block;
   border: 0;
   padding: 0;
   text-align: left;
   background: transparent;
   min-width: 0;
 }
+.recent-card .cover {
+  margin-bottom: 10px;
+}
 .recent-card img {
+  height: 100%;
   display: block;
   width: 100%;
   aspect-ratio: 2/3;
   object-fit: cover;
   border-radius: 5px;
-  margin-bottom: 10px;
 }
 .recent-card strong {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 3em;
   font-size: 13px;
   line-height: 1.5;
   font-weight: 550;
 }
 .recent-card small {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 3em;
   color: var(--muted);
   font-size: 11px;
   margin: 6px 0 10px;
@@ -1624,9 +1633,7 @@ html:has(.startup) {
   background: #ffffff18;
   border-radius: 5px;
 }
-.episode .watched-label {
-  color: var(--accent);
-}
+.episode .watched-label { color: var(--accent); }
 
 html:has(dialog[open]) {
   overflow: hidden;
@@ -1695,3 +1702,6 @@ dialog {
   border-top: 0;
   padding-top: 0;
 }
+
+.episode-badges { display: flex; align-items: center; gap: 8px; }
+.next-popup { left: auto; right: 34px; }

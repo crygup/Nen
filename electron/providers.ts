@@ -8,11 +8,10 @@ import type {
   Label,
   Release,
   Marker,
-  SegmentType,
   EpisodePage,
 } from "../src/shared";
 import { episodeAvailability, latestEpisode } from "../src/shared";
-import { hash, positive, parseRelease, validMarker } from "./rules";
+import { hash, positive, parseRelease, validMarker, matchesMedia } from "./rules";
 const cache = new Map<
   string,
   { expires: number; body: string; etag: string | null }
@@ -105,7 +104,7 @@ async function request(
         ...init.headers,
         ...(old?.etag ? { "If-None-Match": old.etag } : {}),
       },
-      signal: AbortSignal.timeout(18000),
+      signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(18000)]) : AbortSignal.timeout(18000),
     });
     if (response.status === 304 && old) {
       old.expires = Date.now() + ttl;
@@ -311,9 +310,9 @@ export async function labels(id: number, mal: number | null): Promise<Labels> {
       : "Labels from AniFillerPedia · CC BY-NC-SA 4.0",
   };
 }
-async function nyaa(query: string, episode: number): Promise<Release[]> {
+async function nyaa(query: string, episode: number, signal?: AbortSignal): Promise<Release[]> {
   const xml = await request(
-    `https://nyaa.si/?page=rss&c=1_2&f=0&q=${encodeURIComponent(query)}`,
+    `https://nyaa.si/?page=rss&c=1_2&f=0&q=${encodeURIComponent(query)}`, { signal },
   );
   const root = new XMLParser({ processEntities: false }).parse(xml);
   const entries = root.rss?.channel?.item ?? [];
@@ -337,12 +336,13 @@ async function nyaa(query: string, episode: number): Promise<Release[]> {
     },
   );
 }
-async function bangumi(query: string, episode: number): Promise<Release[]> {
+async function bangumi(query: string, episode: number, signal?: AbortSignal): Promise<Release[]> {
   const data = JSON.parse(
     await request("https://bangumi.moe/api/v2/torrent/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query }),
+      signal,
     }),
   );
   if (!Array.isArray(data.torrents))
@@ -369,7 +369,11 @@ export async function releases(
   anime: Media,
   episode: number,
   override?: string,
+  source = "all",
+  signal?: AbortSignal,
 ): Promise<{ items: Release[]; errors: string[] }> {
+  const deadline = AbortSignal.timeout(25000);
+  signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const aliases = override
     ? [override]
     : [
@@ -385,28 +389,34 @@ export async function releases(
     [
       ["Nyaa", nyaa],
       ["Bangumi Moe", bangumi],
-    ].map(async ([name, adapter]) => {
+    ].filter(([name]) => source === "all" || name === source).map(async ([name, adapter]) => {
       try {
+        const usable = (r: Release) => r.seeds > 0 && (r.confidence === "Episode match" ||
+          (r.batch && (r.episode === null || (r.episode <= episode && (r.endEpisode ?? 0) >= episode))));
         for (const query of queries) {
+          signal.throwIfAborted();
           let rows = await (adapter as typeof nyaa)(
             `${query} ${String(episode).padStart(2, "0")}`,
-            episode,
+            episode, signal,
           );
-          if (!rows.some((r) => r.episode === episode && r.seeds > 0))
+          rows = rows.filter(r => matchesMedia(r.title, anime));
+          if (!rows.some(usable))
             rows = [
               ...rows,
-              ...(await (adapter as typeof nyaa)(query, episode)),
+              ...(await (adapter as typeof nyaa)(query, episode, signal)),
             ];
+          rows = rows.filter(r => matchesMedia(r.title, anime));
           for (const row of rows)
             if (!items.has(row.hash)) items.set(row.hash, row);
-          if (!rows.some((r) => r.episode === episode && r.seeds > 0)) {
+          if (!rows.some(usable)) {
             for (const suffix of ["batch", "complete"]) {
               const batches = await (adapter as typeof nyaa)(
                 query + " " + suffix,
-                episode,
+                episode, signal,
               );
               for (const row of batches)
                 if (
+                  matchesMedia(row.title, anime) &&
                   row.batch &&
                   row.seeds > 0 &&
                   (row.episode === null ||
@@ -414,9 +424,10 @@ export async function releases(
                       (row.endEpisode ?? 0) >= episode))
                 )
                   items.set(row.hash, row);
+              if (batches.some(r => matchesMedia(r.title, anime) && usable(r))) break;
             }
           }
-          if (rows.some((r) => r.episode === episode && r.seeds > 0)) break;
+          if ([...items.values()].some(r => r.source === name && usable(r))) break;
         }
       } catch (error) {
         errors.push(`${name}: ${(error as Error).message}`);
@@ -439,26 +450,39 @@ export async function skips(
   episode: number,
   duration: number,
 ): Promise<Marker[]> {
-  const url = `https://api.aniskip.com/v2/skip-times/${mal}/${episode}?${["op", "ed", "mixed-op", "mixed-ed", "recap"].map((t) => "types=" + t).join("&")}&episodeLength=${duration}`;
-  try {
-    const data = JSON.parse(await request(url));
-    return (data.results ?? [])
-      .map(
-        (r: {
-          skipType: SegmentType;
-          interval: { startTime: number; endTime: number };
-        }) => ({
-          type: r.skipType,
-          start: r.interval.startTime,
-          end: r.interval.endTime,
-          confirmed: false,
-        }),
-      )
-      .filter((m: Marker) => validMarker(m, duration));
-  } catch (error) {
-    if ((error as Error).message.includes("HTTP 404")) return [];
-    throw error;
-  }
+  const base = `https://api.aniskip.com/v2/skip-times/${mal}/${episode}?${["op", "ed", "mixed-op", "mixed-ed", "recap"].map(t => "types=" + t).join("&")}&episodeLength=`;
+  const read = async (length: number) => {
+    try {
+      return JSON.parse(await request(base + length, {}, 86400000)).results ?? [];
+    } catch (error) {
+      if ((error as Error).message.includes("HTTP 404")) return [];
+      throw error;
+    }
+  };
+  const exact = await read(Math.round(duration));
+  const rows = exact.some((r: any) => r.skipType === "ed" || r.skipType === "mixed-ed")
+    ? exact : [...exact, ...await read(0).catch(error => {
+        if (exact.length) return [];
+        throw error;
+      })];
+  const seen = new Set<string>();
+  return rows.flatMap((r: any) => {
+    if (!r?.interval || seen.has(r.skipType)
+      || !Number.isFinite(r.interval.startTime) || !Number.isFinite(r.interval.endTime)
+      || r.interval.startTime < 0 || r.interval.endTime <= r.interval.startTime) return [];
+    const difference = duration - r.episodeLength;
+    if (!Number.isFinite(difference) || Math.abs(difference) > 5) return [];
+    const shift = r.skipType === "ed" || r.skipType === "mixed-ed" ? difference : 0;
+    const marker: Marker = {
+      type: r.skipType,
+      start: Math.max(0, r.interval.startTime + shift),
+      end: Math.min(duration, r.interval.endTime + shift),
+      confirmed: false,
+    };
+    if (!validMarker(marker, duration)) return [];
+    seen.add(marker.type);
+    return [marker];
+  });
 }
 
 function normalizeMedia(input: any): Media {

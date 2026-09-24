@@ -6,10 +6,9 @@ import {
   labelForEpisode,
   episodeAvailability,
   latestEpisode,
-  automaticRelease,
   rankReleases,
 } from "./shared";
-import { parseRelease } from "../electron/rules";
+import { matchingFile } from "../electron/rules";
 import { mountPlayer } from "./watch";
 import type {
   Media,
@@ -87,15 +86,20 @@ type BrowseVisit = {
   page: number;
 };
 let visits: BrowseVisit[] = [];
+let forwardVisits: BrowseVisit[] = [];
 let goingBack = false;
 function setRoute(next: string) {
-  if (!goingBack && (route !== next || next === "series"))
+  if (!goingBack && (route !== next || next === "series")) {
     visits.push({ route, mediaId: current?.id, mode, query, page });
+    forwardVisits = [];
+  }
   route = next;
 }
-async function browseBack() {
-  const previous = visits.pop();
-  if (!previous) return route === "series" ? backToList() : home();
+async function browseBack(direction: "back" | "forward" = "back") {
+  if (goingBack) return;
+  const previous = (direction === "back" ? visits : forwardVisits).pop();
+  if (!previous) return;
+  (direction === "back" ? forwardVisits : visits).push({ route, mediaId: current?.id, mode, query, page });
   goingBack = true;
   mode = previous.mode;
   query = previous.query;
@@ -114,7 +118,7 @@ if (!playerMode)
   window.addEventListener("pagehide", () => {
     sessionStorage.setItem(
       "browse-return",
-      JSON.stringify({ mode, query, page, seriesReturn, visits }),
+      JSON.stringify({ mode, query, page, route, seriesReturn, visits, forwardVisits }),
     );
   });
 const backToList = () =>
@@ -433,7 +437,7 @@ async function home() {
     ["Adventure", "genre:Adventure"],
   ];
   document.querySelector("#main")!.innerHTML =
-    `<div class="page-heading"><h1>Home</h1><button id="refresh-home" class="quiet square-button" aria-label="Refresh">${uiIcon("refresh")}</button></div><section class="home-section"><div class="section-heading"><h2>Continue watching</h2><button id="more-history" class="quiet">View more ${uiIcon("right")}</button></div>${recent.length ? `<div class="home-grid">${recent.map((p) => `<button class="recent-card" data-adult="${!!p.isAdult}" data-resume="${p.mediaId}:${p.episode}"><img src="${esc(p.cover)}" alt=""><strong>${esc(p.title)}</strong><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} · ${time(p.position)} / ${time(p.duration)}</small></button>`).join("")}</div>` : '<p class="muted">Your recent watches will appear here.</p>'}</section>${shelves.map(([name], i) => `<section class="home-section" id="shelf-${i}"><div class="section-heading"><h2>${name}</h2><div class="actions"><button class="quiet shelf-more">View more ${uiIcon("right")}</button><button class="square-button shelf-back" aria-label="Previous ${name} titles" disabled>${uiIcon("left")}</button><button class="square-button shelf-next" aria-label="Next ${name} titles">${uiIcon("right")}</button></div></div><div class="home-grid shelf-items" aria-live="polite"><p class="loading">Loading…</p></div></section>`).join("")}`;
+    `<div class="page-heading"><h1>Home</h1><button id="refresh-home" class="quiet square-button" aria-label="Refresh">${uiIcon("refresh")}</button></div><section class="home-section"><div class="section-heading"><h2>Continue watching</h2><button id="more-history" class="quiet">View more ${uiIcon("right")}</button></div>${recent.length ? `<div class="home-grid">${recent.map((p) => `<button class="recent-card" data-adult="${!!p.isAdult}" data-resume="${p.mediaId}:${p.episode}"><div class="cover"><img src="${esc(p.cover)}" alt=""></div><strong>${esc(p.title)}</strong><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} · ${time(p.position)} / ${time(p.duration)}</small></button>`).join("")}</div>` : '<p class="muted">Your recent watches will appear here.</p>'}</section>${shelves.map(([name], i) => `<section class="home-section" id="shelf-${i}"><div class="section-heading"><h2>${name}</h2><div class="actions"><button class="quiet shelf-more">View more ${uiIcon("right")}</button><button class="square-button shelf-back" aria-label="Previous ${name} titles" disabled>${uiIcon("left")}</button><button class="square-button shelf-next" aria-label="Next ${name} titles">${uiIcon("right")}</button></div></div><div class="home-grid shelf-items" aria-live="polite"><p class="loading">Loading…</p></div></section>`).join("")}`;
   movePageHeading();
   document.querySelector<HTMLElement>("#more-history")!.onclick = () =>
     void history();
@@ -712,7 +716,7 @@ function renderEpisodes() {
           : e.status === "mixed"
             ? "Mixed"
             : "";
-      return `<button class="episode" data-episode="${e.n}" ${future ? "disabled" : ""}><span class="episode-number">${String(e.n).padStart(2, "0")}</span><span>${esc(e.title)}${finished ? '<small class="watched-label">Watched</small>' : ""}${watched ? `<small>${time(watched.position)} / ${time(watched.duration)}</small>` : ""}</span>${badge ? `<span class="badge ${future ? "upcoming" : ""}" title="${e.status === "filler" ? "Not canon. This episode is not adapted from the original story." : e.status === "mixed" ? "Contains both canon story and filler material." : ""}">${esc(badge)}</span>` : ""}</button>`;
+      return `<button class="episode" data-episode="${e.n}" ${future ? "disabled" : ""}><span class="episode-number">${String(e.n).padStart(2, "0")}</span><span>${esc(e.title)}${watched ? `<small>${time(watched.position)} / ${time(watched.duration)}</small>` : ""}</span><span class="episode-badges">${finished ? '<span class="badge watched-label">Watched</span>' : ""}${badge ? `<span class="badge ${future ? "upcoming" : ""}" title="${e.status === "filler" ? "Not canon. This episode is not adapted from the original story." : e.status === "mixed" ? "Contains both canon story and filler material." : ""}">${esc(badge)}</span>` : ""}</span></button>`;
     })
     .join(
       "",
@@ -820,14 +824,13 @@ async function startEpisode(m: Media, ep: number) {
   }
   const token = ++pickerRequest;
   const d = dialog(
-    `<h2 id="dialog-title">${esc(title(m))}</h2><p>Finding a source for episode ${ep}…</p>`,
+    `<h2 id="dialog-title">${esc(title(m))}</h2><p id="finding-source" role="status">Finding a source for episode ${ep}…</p>`,
   );
   try {
-    const result = await api.releases(m.id, ep);
-    if (!d.open || token !== pickerRequest) return;
-    const best = automaticRelease(result.items, ep, state.settings);
-    if (best) await chooseFile(m, ep, best, true);
-    else await releasePicker(m, ep);
+    d.onclose = () => { void api.control("stop").catch(() => {}); };
+    await api.autoPlay(m.id, ep);
+    d.onclose = null;
+    if (d.open && token === pickerRequest) d.close();
   } catch (e) {
     error(e);
   }
@@ -836,10 +839,9 @@ async function chooseFile(
   m: Media,
   ep: number,
   release: Release,
-  automatic = false,
 ) {
   const d = dialog(
-    `<h2 id="dialog-title">${automatic ? "Opening episode" : "Choose episode file"}</h2><p>${esc(release.title)}</p><div id="files"><p class="loading">Connecting…</p></div>`,
+    `<h2 id="dialog-title">Choose episode file</h2><p>${esc(release.title)}</p><div id="files"><p class="loading">Connecting…</p></div>`,
   );
   let started = false;
   d.onclose = () => {
@@ -849,18 +851,7 @@ async function chooseFile(
   try {
     const files = await api.inspect(release.hash);
     if (!d.open) return;
-    const matches = files.filter(
-      (f) =>
-        parseRelease(f.path.split(/[\\/]/).at(-1) ?? f.path, ep).episode === ep,
-    );
-    const matched =
-      matches.length === 1
-        ? matches[0]
-        : files.length === 1 &&
-            release.confidence === "Episode match" &&
-            parseRelease(files[0].path, ep).episode === null
-          ? files[0]
-          : undefined;
+    const matched = matchingFile(files, release, m, ep);
     const play = async (index: number) => {
       await api.play(m.id, ep, index, ep);
       started = true;
@@ -898,7 +889,6 @@ async function resumeFromHistory(key: string) {
   const saved = state.progress[key];
   if (!saved) return;
   await api.resume(key);
-  void openMedia(saved.mediaId);
 }
 async function history() {
   setRoute("history");
@@ -959,7 +949,7 @@ function settings() {
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
-    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p>`,
+    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p><p class="muted"><strong>NEN</strong> - ${esc(state.version)}</p>`,
   );
   const form = d.querySelector<HTMLFormElement>("#settings")!;
   const message = d.querySelector<HTMLElement>("#settings-message")!;
@@ -981,6 +971,7 @@ function settings() {
       subtitles: String(f.get("subtitles")),
       qualities,
       autoSkip: f.has("autoSkip"),
+      autoNext: f.has("autoNext"),
       showAdult: f.has("showAdult"),
       hideZeroSeeds: f.has("hideZeroSeeds"),
     };
@@ -1091,12 +1082,31 @@ async function start() {
     }, 160);
   }
   state = await api.state();
-  api.onBack(() => {
+  let lastNavigation = { direction: "", time: 0 };
+  const navigate = (direction: "back" | "forward") => {
+    const now = performance.now();
+    if (lastNavigation.direction === direction && now - lastNavigation.time < 200) return;
+    lastNavigation = { direction, time: now };
     const dialog = document.querySelector<HTMLDialogElement>("dialog[open]");
-    if (dialog) dialog.close();
-    else if (playerMode) void run(() => api.control("stop"));
-    else void run(browseBack);
-  });
+    if (dialog) { if (direction === "back") dialog.close(); }
+    else if (playerMode) { if (direction === "back") void run(() => api.control("stop")); }
+    else void run(() => browseBack(direction));
+  };
+  api.onBack(navigate);
+  for (const event of ["mousedown", "mouseup", "auxclick"])
+    document.addEventListener(event, e => {
+      const mouse = e as MouseEvent;
+      if (mouse.button !== 3 && mouse.button !== 4) return;
+      e.preventDefault();
+      if (event === "mouseup") navigate(mouse.button === 3 ? "back" : "forward");
+    }, true);
+  document.addEventListener("keydown", e => {
+    if ((e.altKey && ["ArrowLeft", "ArrowRight"].includes(e.key)) || ["BrowserBack", "BrowserForward"].includes(e.key)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      navigate(e.key === "ArrowLeft" || e.key === "BrowserBack" ? "back" : "forward");
+    }
+  }, true);
   applyTheme();
   if (playerMode) {
     const update = mountPlayer({
@@ -1125,7 +1135,8 @@ async function start() {
   } else {
     shell();
     api.onPlayback((p) => {
-      document.body.classList.toggle("native-playing", p.active);
+      const finding = document.querySelector<HTMLElement>("#finding-source");
+      if (finding && p.loadingNotice) finding.textContent = p.loadingNotice;
       if (!p.active)
         void api.state().then((value) => {
           state = value;
@@ -1146,8 +1157,12 @@ async function start() {
           mode = saved.mode;
           query = saved.query;
           page = saved.page;
-          route = saved.seriesReturn;
+          route = saved.route ?? saved.seriesReturn;
+          seriesReturn = saved.seriesReturn;
           visits = saved.visits ?? [];
+          forwardVisits = saved.forwardVisits ?? [];
+          if (route !== "series")
+            visits.push({ route, mode, query, page });
           goingBack = true;
         }
       } catch {}

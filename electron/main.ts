@@ -31,12 +31,16 @@ import {
   fileKey,
   parseRelease,
   repairProgress,
+  matchesSeason,
+  matchesMedia,
+  matchingFile,
 } from "./rules";
 import {
   isWatched,
   canAutoSkip,
   latestEpisode,
   episodeAvailability,
+  automaticRelease,
 } from "../src/shared";
 import type {
   State,
@@ -46,6 +50,7 @@ import type {
   Progress,
   Marker,
   SegmentType,
+  Playback,
 } from "../src/shared";
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
@@ -57,6 +62,10 @@ let files: TorrentFile[] = [];
 let selected: Release | undefined;
 let current: Progress | undefined;
 let busy = false;
+let playbackRequest = 0;
+let automaticRunning = false;
+let sourceSearch: AbortController | undefined;
+let pendingPlayback: Playback | undefined;
 let closing = false;
 let stopVideoCapture: (() => void) | undefined;
 let captureResize: ReturnType<typeof setTimeout> | undefined;
@@ -66,12 +75,14 @@ let lastSave = 0;
 let undoPosition: number | undefined;
 let remote: Marker[] = [];
 let markersRequested = false;
+let markerAttempts = 0;
 const skipped = new Set<string>();
 const known = new Map<string, Release>();
 const defaults: State = {
   settings: {
     theme: "system",
     autoSkip: false,
+    autoNext: false,
     showAdult: false,
     hideZeroSeeds: true,
     audio: "jpn,ja",
@@ -112,7 +123,7 @@ function publish() {
       if (target && !target.isDestroyed())
         target.webContents.send(
           "playback",
-          player?.status ?? {
+          player?.status ?? pendingPlayback ?? {
             active: false,
             position: 0,
             duration: 0,
@@ -128,7 +139,11 @@ function publish() {
 }
 function stop(closeView = true) {
   record();
+  const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
   if (closeView) {
+    playbackRequest++;
+    sourceSearch?.abort();
+    pendingPlayback = undefined;
     clearTimeout(captureResize);
     stopVideoCapture?.();
     stopVideoCapture = undefined;
@@ -138,7 +153,7 @@ function stop(closeView = true) {
     videoView?.destroy();
     videoView = undefined;
     if (returning && !closing && !window.isDestroyed())
-      void loadPage({ returnMedia: String(current?.mediaId ?? "") });
+      void loadPage({ returnMedia: String(returnMedia ?? "") });
   }
   player?.stop();
   player = undefined;
@@ -147,6 +162,7 @@ function stop(closeView = true) {
   skipped.clear();
   undoPosition = undefined;
   markersRequested = false;
+  markerAttempts = 0;
   const old = worker;
   worker = undefined;
   old?.postMessage({ action: "stop" });
@@ -160,7 +176,7 @@ function stop(closeView = true) {
   selected = undefined;
   publish();
 }
-function workerRequest(event: string, payload: object): Promise<any> {
+function workerRequest(event: string, payload: object, timeout = 60000): Promise<any> {
   const target = worker;
   if (!target) return Promise.reject(Error("Torrent engine is not ready."));
   return new Promise((resolve, reject) => {
@@ -187,13 +203,13 @@ function workerRequest(event: string, payload: object): Promise<any> {
       reject(
         Error("No torrent metadata arrived. Try a release with more seeds."),
       );
-    }, 60000);
+    }, timeout);
     target.on("message", message);
     target.once("exit", exit);
     target.postMessage(payload);
   });
 }
-async function inspect(value: string) {
+async function inspect(value: string, timeout = 60000) {
   if (busy) throw Error("Wait for the current playback request.");
   busy = true;
   try {
@@ -238,7 +254,7 @@ async function inspect(value: string) {
         action: "inspect",
         hash: release.hash,
         path: root,
-      })
+      }, timeout)
     ).files;
     return files;
   } catch (e) {
@@ -254,9 +270,16 @@ function refreshMarkers() {
     state.markers[
       fileKey(current.hash, current.file.path, current.file.size)
     ] ?? [];
+  const chapters: Marker[] = (player.status.chapters ?? []).flatMap<Marker>((chapter, i, list) => {
+    const title = chapter.title?.trim() ?? "";
+    const type = /^(?:op|opening)(?:\b|\d)/i.test(title) ? "op"
+      : /^(?:ed|ending)(?:\b|\d)/i.test(title) ? "ed" : undefined;
+    return type ? [{ type, start: chapter.time, end: list[i + 1]?.time ?? player!.status.duration, confirmed: false }] : [];
+  }).filter(m => validMarker(m, player!.status.duration));
   player.status.markers = [
     ...local,
-    ...remote.filter((m) => !local.some((l) => l.type === m.type)),
+    ...chapters.filter(m => !local.some(l => l.type === m.type)),
+    ...remote.filter((m) => ![...local, ...chapters].some((l) => l.type === m.type)),
   ].filter((m) => validMarker(m, player!.status.duration));
 }
 async function play(
@@ -265,9 +288,11 @@ async function play(
   index: number,
   malEpisode: number,
   resume?: Progress,
+  startPosition?: number,
 ) {
   if (busy) throw Error("Wait for the current playback request.");
   busy = true;
+  const request = playbackRequest;
   try {
     if (!selected || !worker) throw Error("Choose a release first.");
     const file = files.find((f) => f.index === index);
@@ -298,6 +323,9 @@ async function play(
           nextAiringEpisode: null,
         }
       : await providers.media(mediaId);
+    if (request !== playbackRequest) throw Error("Playback cancelled.");
+    if ((!resume && !matchesMedia(selected.title, anime as any)) || !matchesSeason(file.path, anime as any))
+      throw Error("This source uses a different season. Choose another source.");
     if (
       !resume &&
       episodeAvailability(anime as any, episode).released === false
@@ -309,11 +337,13 @@ async function play(
           .episodes(mediaId, Math.floor((episode - 1) / 50) + 1)
           .catch(() => undefined);
     const startAt =
-      resume?.position ??
+      startPosition ?? resume?.position ??
       (switching?.mediaId === mediaId && switching.episode === episode
         ? switching.position
         : 0);
+    if (request !== playbackRequest) throw Error("Playback cancelled.");
     const result = await workerRequest("stream", { action: "stream", index });
+    if (request !== playbackRequest) throw Error("Playback cancelled.");
     current = {
       watched: isWatched(state.progress[`${mediaId}:${episode}`]),
       isAdult: "isAdult" in anime ? anime.isAdult === true : resume?.isAdult,
@@ -352,11 +382,18 @@ async function play(
           ? episode + 1
           : undefined,
     });
-    active.onClose = () => stop();
+    active.onClose = () => {
+      if (automaticRunning) {
+        active.status.error = "The player closed before video started.";
+        publish();
+      } else stop();
+    };
+    let nextStarted = false;
     active.onChange = () => {
       if (active !== player) return;
       if (active.status.duration > 0 && !markersRequested) {
         markersRequested = true;
+        markerAttempts++;
         if (anime.idMal)
           providers
             .skips(anime.idMal, malEpisode, active.status.duration)
@@ -369,12 +406,24 @@ async function play(
             })
             .catch((e) => {
               if (active === player) {
-                active.status.skipNotice = "";
+                active.status.skipNotice = "Skip times are unavailable. You can set them in More playback controls.";
+                if (markerAttempts < 2) setTimeout(() => {
+                  if (active !== player) return;
+                  markersRequested = false;
+                  active.onChange();
+                }, 5000).unref();
                 publish();
               }
             });
       }
       refreshMarkers();
+      if (active.status.ended && active.status.nextEpisode && state.settings.autoNext && !nextStarted && !automaticRunning) {
+        nextStarted = true;
+        void autoPlay(mediaId, active.status.nextEpisode).catch(error => {
+          active.status.error = error.message;
+          publish();
+        });
+      }
       if (Date.now() - lastSave > 5000) record();
       if (state.settings.autoSkip && !active.status.paused)
         for (const m of active.status.markers) {
@@ -395,9 +444,9 @@ async function play(
       publish();
     };
     await openPlayerView();
+    if (request !== playbackRequest) throw Error("Playback cancelled.");
     await active.start(
       result.url,
-      `Nen · ${current.title} · ${episode}`,
       startAt,
       state.settings,
       app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "vendor"),
@@ -414,10 +463,109 @@ async function play(
     record();
     publish();
   } catch (e) {
-    stop();
+    if (request === playbackRequest) stop(!automaticRunning);
     throw e;
   } finally {
     busy = false;
+  }
+}
+async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
+  if (automaticRunning || busy) throw Error("Wait for the current playback request.");
+  automaticRunning = true;
+  sourceSearch = new AbortController();
+  const request = ++playbackRequest;
+  const attempted = new Set<string>();
+  let candidates: Release[] | undefined;
+  let failure = "No matching source was found.";
+  let startAt = saved?.position ?? 0;
+  try {
+    let anime = saved ? {
+      id: saved.mediaId,
+      title: { english: saved.title, romaji: saved.title },
+    } as any : await providers.media(mediaId);
+    if (request !== playbackRequest) return;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      let release = attempt === 0 ? saved?.release : undefined;
+      if (!release) {
+        if (!candidates) {
+          anime = await providers.media(mediaId);
+          const result = await providers.releases(anime, episode, undefined, state.settings.source, sourceSearch.signal);
+          candidates = result.items;
+          if (!candidates.length && result.errors.length) failure = result.errors.join(" ");
+          for (const row of candidates) known.set(row.hash, row);
+        }
+        if (request !== playbackRequest) return;
+        release = automaticRelease(candidates.filter(r => !attempted.has(r.hash)), episode, state.settings);
+      }
+      if (!release) break;
+      attempted.add(release.hash);
+      if (saved && release.hash === saved.hash && !matchesMedia(release.title, anime)) {
+        anime = await providers.media(mediaId);
+        if (request !== playbackRequest) return;
+        if (!matchesMedia(release.title, anime)) {
+          startAt = 0;
+          continue;
+        }
+      }
+      known.set(release.hash, release);
+      pendingPlayback = {
+        active: true, position: startAt, duration: 0, paused: false,
+        speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
+        mediaId, episode, title: anime.title.english || anime.title.romaji,
+        loadingNotice: attempt ? "Connecting to another source…" : "Connecting to the source…",
+      };
+      publish();
+      try {
+        const list = await inspect(release.hash, 20000);
+        if (request !== playbackRequest) return;
+        const file = saved && release.hash === saved.hash
+          ? list.find(f => f.path === saved.file.path && f.size === saved.file.size)
+          : matchingFile(list, release, anime, episode);
+        if (!file) throw Error("The source has no unambiguous file for this episode.");
+        await play(mediaId, episode, file.index, saved?.malEpisode ?? episode,
+          saved && release.hash === saved.hash ? saved : undefined, startAt);
+        if (request !== playbackRequest) return;
+        const active = player!;
+        const deadline = Date.now() + 30000;
+        while (request === playbackRequest && player === active && !active.status.ready
+          && !active.status.error && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 100));
+        if (request !== playbackRequest) return;
+        if (active.status.ready) {
+          pendingPlayback = undefined;
+          return;
+        }
+        failure = active.status.error ?? "This source took too long to start.";
+        if (attempt === 5) break;
+        const quality = parseInt(release.resolution);
+        if (candidates) {
+          const sameQuality = candidates.filter(r => parseInt(r.resolution) === quality);
+          if (sameQuality.some(r => attempted.has(r.hash) && r.hash !== release!.hash))
+            for (const row of sameQuality) attempted.add(row.hash);
+        }
+      } catch (error) {
+        if (request !== playbackRequest) return;
+        failure = (error as Error).message;
+      }
+    }
+    if (request === playbackRequest) {
+      const message = failure + " Choose another source or try again later.";
+      if (controls) {
+        if (player) player.status.error = message;
+        else if (pendingPlayback) pendingPlayback.error = message;
+        publish();
+      } else throw Error(message);
+    }
+  } catch (error) {
+    if (request !== playbackRequest) return;
+    if (!controls) throw error;
+    const status = player?.status ?? pendingPlayback;
+    if (status) status.error = (error as Error).message;
+    publish();
+  } finally {
+    if (!controls) pendingPlayback = undefined;
+    automaticRunning = false;
+    sourceSearch = undefined;
   }
 }
 function settings(value: Settings): Settings {
@@ -442,7 +590,7 @@ function settings(value: Settings): Settings {
       ))
   )
     throw Error("Select at least one quality.");
-  for (const key of ["showAdult", "hideZeroSeeds"] as const)
+  for (const key of ["showAdult", "hideZeroSeeds", "autoNext"] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
   const audio = text(value.audio, 60),
@@ -454,6 +602,7 @@ function settings(value: Settings): Settings {
     showAdult: value.showAdult ?? false,
     hideZeroSeeds: value.hideZeroSeeds ?? true,
     autoSkip: value.autoSkip,
+    autoNext: value.autoNext ?? false,
     audio,
     subtitles,
     source: value.source,
@@ -577,7 +726,8 @@ else {
           return;
         event.preventDefault();
         if (command === "browser-backward")
-          window.webContents.send("navigate-back");
+          window.webContents.send("navigate-back", "back");
+        else window.webContents.send("navigate-back", "forward");
       });
       window.webContents.on("did-finish-load", () => {
         window.webContents.navigationHistory.clear();
@@ -634,7 +784,7 @@ else {
       handle(
         "playbackState",
         () =>
-          player?.status ?? {
+          player?.status ?? pendingPlayback ?? {
             active: false,
             position: 0,
             duration: 0,
@@ -663,12 +813,17 @@ else {
           anime,
           positive(ep, 10000),
           query === undefined ? undefined : text(query),
+          state.settings.source,
         );
         known.clear();
         for (const r of result.items) known.set(r.hash, r);
         return result;
       });
-      handle("inspect", (value) => inspect(hash(value)));
+      handle("autoPlay", (id, ep) => autoPlay(positive(id), positive(ep, 10000)));
+      handle("inspect", (value) => {
+        playbackRequest++;
+        return inspect(hash(value));
+      });
       handle("play", (id, ep, index, malEp) =>
         play(
           positive(id),
@@ -680,6 +835,7 @@ else {
       handle("resume", async (key) => {
         const p = state.progress[text(key, 40)];
         if (!p) throw Error("Saved playback was not found.");
+        if (state.settings.sourceMode !== "manual") return autoPlay(p.mediaId, p.episode, p);
         known.set(hash(p.hash), p.release);
         const list = await inspect(p.hash);
         const file = list.find(
@@ -736,7 +892,7 @@ else {
         }
         throw Error("Invalid player action.");
       });
-      handle("state", () => state);
+      handle("state", () => ({ ...state, version: app.getVersion() }));
       handle("settings", (value) => {
         state.settings = settings(value);
         nativeTheme.themeSource = state.settings.theme;

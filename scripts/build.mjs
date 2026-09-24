@@ -12,6 +12,16 @@ if (process.platform === "win32") {
       group.lang,
       icon.icons.map((item) => item.data),
     );
+  for (const version of Resource.VersionInfo.fromEntries(resources.entries)) {
+    for (const language of version.getAllLanguagesForStringValues())
+      version.setStringValues(language, {
+        FileDescription: "Nen",
+        ProductName: "Nen",
+        InternalName: "Nen",
+        OriginalFilename: "nen-player.exe",
+      });
+    version.outputToResourceEntries(resources.entries);
+  }
   resources.outputResource(executable);
   await writeFile(
     "vendor/mpv/nen-player.exe",

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { API, Playback } from "../src/shared";
 const api: API = {
+  autoPlay: (...a) => ipcRenderer.invoke("autoPlay", ...a),
   startVideo: () => ipcRenderer.invoke("startVideo"),
   onVideo: (callback, error) => {
     const frame = (_: unknown, data: Uint8Array, key: boolean) => {
@@ -39,7 +40,7 @@ const api: API = {
   clear: (...a) => ipcRenderer.invoke("clear", ...a),
   external: (...a) => ipcRenderer.invoke("external", ...a),
   onBack: (callback) => {
-    const listener = () => callback();
+    const listener = (_: unknown, direction: "back" | "forward" = "back") => callback(direction);
     ipcRenderer.on("navigate-back", listener);
     return () => ipcRenderer.removeListener("navigate-back", listener);
   },

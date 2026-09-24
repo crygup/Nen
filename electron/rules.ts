@@ -1,4 +1,4 @@
-import type { Marker, Release, Progress } from "../src/shared";
+import type { Marker, Release, Progress, Media, TorrentFile } from "../src/shared";
 export function positive(value: unknown, max = 10000000): number {
   if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > max)
     throw Error("Invalid number.");
@@ -52,7 +52,7 @@ export function parseRelease(
     /(?:\s-\s|\bE(?:P)?\s*)(\d{1,4})(?:v\d)?(?=\s|\]|\)|\.|$)/i,
   );
   const bare = normalized.match(
-    /(?:^|\s)(\d{1,3})(?:v\d)?(?=\s*\[|\.(?:mkv|mp4|avi)$)/i,
+    /(?:^|\s)(\d{1,4})(?:v\d)?(?=\s*\[|\s+Remaster\b|\.(?:mkv|mp4|avi)$)/i,
   );
   const start = seasonEpisode
     ? Number(seasonEpisode[2])
@@ -62,9 +62,10 @@ export function parseRelease(
         ? Number((single || bare)![1])
         : null;
   const end = range ? Number(range[2]) : null;
-  const batch = !!range || /\bbatch\b|\bcomplete\b/i.test(title);
+  const batch = !!range || /\bbatch\b|\bcomplete\b/i.test(title)
+    || (start === null && seasonNumber(normalized) !== null);
   return {
-    season: seasonEpisode ? Number(seasonEpisode[1]) : null,
+    season: seasonEpisode ? Number(seasonEpisode[1]) : seasonNumber(normalized),
     resolution:
       title.match(/\b(2160|1440|1080|720|480|360)p\b/i)?.[0] ?? "Unspecified",
     group: title.match(/^\[([^\]]+)\]/)?.[1] ?? "Unknown group",
@@ -131,4 +132,44 @@ export function repairProgress(
     if (!repaired[key] || p.updated > repaired[key].updated) repaired[key] = p;
   }
   return repaired;
+}
+
+export function seasonNumber(title: string): number | null {
+  const match = title.match(/\b(?:season\s*|s)(\d{1,2})\b/i)
+    ?? title.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i);
+  return match ? Number(match[1]) : null;
+}
+export function matchesSeason(title: string, media: Media): boolean {
+  const season = parseRelease(title, 1).season;
+  const expected = seasonNumber(media.title.english ?? "")
+    ?? seasonNumber(media.title.romaji) ?? 1;
+  return season == null || season === expected;
+}
+export function matchingFile(files: TorrentFile[], release: Release, media: Media, episode: number): TorrentFile | undefined {
+  if (!matchesMedia(release.title, media)) return;
+  const matches = files.filter(f => {
+    const parsed = parseRelease(f.path.split(/[\\/]/).at(-1) ?? "", episode);
+    return parsed.episode === episode && !parsed.batch && matchesSeason(f.path, media)
+      && !/\b(sample|preview|trailer|ncop|nced)\b/i.test(f.path);
+  });
+  if (matches.length === 1) return matches[0];
+  if (files.length === 1 && release.confidence === "Episode match"
+    && parseRelease(files[0].path, episode).episode === null
+    && matchesSeason(files[0].path, media)) return files[0];
+}
+
+export function matchesMedia(title: string, media: Media): boolean {
+  if (!matchesSeason(title, media)) return false;
+  const normalize = (value: string) => value.normalize("NFKC").toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const name = normalize(title.replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
+  return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? [])]
+    .filter((alias): alias is string => !!alias)
+    .some(alias => {
+      const prefix = normalize(alias);
+      if (name === prefix) return true;
+      if (!name.startsWith(prefix + " ")) return false;
+      const suffix = name.slice(prefix.length + 1);
+      return /^(?:\d|s\d|season \d|batch\b|complete\b|remaster\b|bd\b|bdrip\b|bluray\b|blu ray\b|dvd\b|dvdrip\b|web\b|dual audio\b|multi\b|hevc\b|x26[45]\b|tv\b)/i.test(suffix);
+    });
 }

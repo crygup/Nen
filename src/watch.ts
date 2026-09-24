@@ -21,7 +21,7 @@ export function mountPlayer(actions: {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
   document.documentElement.dataset.theme = "dark";
-  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion">×</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="tracks" class="icon-button" aria-label="Audio and subtitles" title="Audio and subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="track-panel" class="watch-panel" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="tracks" class="icon-button" aria-label="Audio and subtitles" title="Audio and subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="track-panel" class="watch-panel" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
   let captureError = "";
@@ -91,7 +91,6 @@ export function mountPlayer(actions: {
   let trackKey = "";
   let activeMarker: SegmentType | undefined;
   let markerKey = "";
-  let popupStart = 0;
   let priorVolume = 100;
   const dismissed = new Set<string>();
   const run = (p: Promise<unknown>) => void p.catch(actions.error);
@@ -118,7 +117,7 @@ export function mountPlayer(actions: {
   el("pause").onclick = () => run(api.control("pause"));
   el("fullscreen").onclick = el("fullscreen-top").onclick = () =>
     run(api.control("fullscreen"));
-  el("next-episode").onclick = () => actions.next(latest);
+  el("play-next").onclick = el("next-episode").onclick = () => actions.next(latest);
   el("change-source").onclick = () => actions.sources(latest);
   el("tracks").onclick = () => {
     el("speed-panel").hidden = true;
@@ -231,15 +230,15 @@ export function mountPlayer(actions: {
   wake();
   return (p: Playback) => {
     latest = p;
-    el("buffering").hidden = p.active && p.duration > 0;
+    el("buffering").hidden = !!p.error || !!p.ready;
     el("buffering").textContent =
-      p.duration > 0
+      p.loadingNotice ?? (p.duration > 0
         ? "Opening video…"
         : p.peers === 0
           ? "Waiting for peers. You can choose another source below."
           : p.speed > 0
             ? `Loading video · ${Math.round(p.speed / 1024)} KB/s`
-            : "Waiting for video data. You can choose another source below.";
+            : "Waiting for video data. You can choose another source below.");
     el("watch-title").textContent = p.title ?? "Nen";
     el("watch-episode").textContent =
       p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
@@ -276,6 +275,7 @@ export function mountPlayer(actions: {
       el("pause").setAttribute("aria-label", pauseLabel);
     }
     el<HTMLButtonElement>("next-episode").disabled = !p.nextEpisode;
+    el("next-popup").hidden = !p.nextEpisode || !p.ready || p.duration <= 0 || p.duration - p.position > 15 || !!p.error;
     el<HTMLInputElement>("volume").value = String(p.volume ?? 100);
     el("player-error").textContent = p.error ?? captureError;
     const key = JSON.stringify(p.tracks);
@@ -321,11 +321,10 @@ export function mountPlayer(actions: {
       : "";
     if (nextKey !== markerKey) {
       markerKey = nextKey;
-      popupStart = Date.now();
     }
     activeMarker = marker?.type;
     el("skip-popup").hidden =
-      !marker || dismissed.has(markerKey) || Date.now() - popupStart > 8000;
+      !marker || dismissed.has(markerKey);
     el("skip-current").textContent =
       marker?.type === "op" || marker?.type === "mixed-op"
         ? "Skip intro"

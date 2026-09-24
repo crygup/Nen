@@ -32,7 +32,6 @@ export class Player {
   };
   async start(
     url: string,
-    title: string,
     position: number,
     settings: Settings,
     resourcePath: string,
@@ -52,6 +51,7 @@ export class Player {
     const args = [
       "--no-config",
       "--audio-client-name=Nen",
+      "--cache-pause-wait=1",
       ...(process.platform === "win32"
         ? ["--vo=gpu", "--gpu-api=d3d11", "--d3d11-flip=no"]
         : []),
@@ -69,7 +69,7 @@ export class Player {
         ? [`--wid=${parentHandle}`, "--show-in-taskbar=no"]
         : []),
       `--input-ipc-server=${pipe}`,
-      `--title=${title}`,
+      "--title=Nen",
       `--start=${position}`,
       `--alang=${settings.audio}`,
       `--slang=${settings.subtitles}`,
@@ -138,9 +138,11 @@ export class Player {
     });
     for (const [id, key] of [
       "time-pos",
+      "eof-reached",
       "duration",
       "pause",
       "track-list",
+      "chapter-list",
       "volume",
       "speed",
     ].entries())
@@ -157,7 +159,17 @@ export class Player {
           : p.reject(Error(data.error));
       }
     }
+    if (data.event === "playback-restart") {
+      this.status.ready = true;
+      this.status.loadingNotice = undefined;
+      this.onChange();
+    }
+    if (data.event === "end-file" && data.reason === "error") {
+      this.status.error = data.file_error ?? "The video could not be opened.";
+      this.onChange();
+    }
     if (data.event === "property-change") {
+      if (data.name === "eof-reached") this.status.ended = data.data === true;
       if (data.name === "time-pos" && Number.isFinite(data.data))
         this.status.position = data.data;
       if (data.name === "duration" && Number.isFinite(data.data))
@@ -167,6 +179,8 @@ export class Player {
       if (data.name === "speed" && Number.isFinite(data.data))
         this.status.playbackRate = data.data;
       if (data.name === "pause") this.status.paused = !!data.data;
+      if (data.name === "chapter-list" && Array.isArray(data.data))
+        this.status.chapters = data.data;
       if (data.name === "track-list" && Array.isArray(data.data))
         this.status.tracks = data.data;
       this.onChange();

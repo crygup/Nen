@@ -93,6 +93,7 @@ export interface Settings {
   qualities?: number[];
   theme: Theme;
   autoSkip: boolean;
+  autoNext?: boolean;
   audio: string;
   subtitles: string;
   source: "all" | "Nyaa" | "Bangumi Moe";
@@ -117,6 +118,7 @@ export interface Progress {
   malEpisode: number;
 }
 export interface State {
+  version?: string;
   window?: { width: number; height: number; maximized: boolean };
   settings: Settings;
   progress: Record<string, Progress>;
@@ -132,6 +134,10 @@ export interface Playback {
   episode?: number;
   nextEpisode?: number;
   title?: string;
+  chapters?: { time: number; title?: string }[];
+  ended?: boolean;
+  ready?: boolean;
+  loadingNotice?: string;
   active: boolean;
   position: number;
   duration: number;
@@ -151,6 +157,7 @@ export interface Playback {
   skipNotice?: string;
 }
 export interface API {
+  autoPlay(mediaId: number, episode: number): Promise<void>;
   startVideo(): Promise<void>;
   onVideo(
     callback: (data: Uint8Array, key: boolean) => void,
@@ -205,7 +212,7 @@ export interface API {
     target: "anilist" | "filler" | "license" | "aniskip",
     id?: number,
   ): Promise<void>;
-  onBack(callback: () => void): () => void;
+  onBack(callback: (direction: "back" | "forward") => void): () => void;
   onPlayback(callback: (p: Playback) => void): () => void;
 }
 declare global {
@@ -221,7 +228,6 @@ export function canAutoSkip(
 ): boolean {
   return (
     enabled &&
-    marker.confirmed &&
     position >= marker.start &&
     position < marker.end
   );
@@ -329,7 +335,7 @@ export function automaticRelease(
     .filter(
       (r) =>
         r.seeds > 0 &&
-        r.confidence === "Episode match" &&
+        (r.confidence === "Episode match" || r.batch) &&
         (settings.qualities ?? [1080, 720, 480, 360]).includes(
           parseInt(r.resolution),
         ),
