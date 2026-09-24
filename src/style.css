@@ -1704,6 +1704,9 @@ dialog {
 }
 
 .episode-badges { display: flex; align-items: center; gap: 8px; }
+.sync-changes { max-height: 50vh; overflow: auto; display: grid; gap: 12px; margin: 16px 0; }
+.sync-row { display: grid; gap: 5px; }
+.sync-changes small { color: var(--muted); }
 .next-popup { left: auto; right: 34px; }
 
 .update-actions { gap: 16px; }
@@ -1726,3 +1729,29 @@ dialog {
   transition: opacity 250ms ease;
 }
 .update-toast.visible { opacity: 1; }
+
+.list-card { position: relative; min-width: 0; align-self: start; }
+.list-card .poster { width: 100%; display: flex; flex-direction: column; align-items: stretch; content-visibility: visible; }
+.list-card .poster p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.list-edit { position: absolute; top: 8px; right: 8px; background: var(--panel); opacity: 0; pointer-events: none; transition: opacity 0.18s; }
+.list-card:hover .list-edit, .list-card:has(:focus-visible) .list-edit { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .list-edit { opacity: 1; pointer-events: auto; } }
+
+.sync-row [aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+
+.watch-transfer-actions { margin-top: 12px; }
+.sync-changes { border-block: 1px solid var(--line); padding-block: 16px; }
+
+.sync-select-all { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.sync-select-all > span { flex-basis: 100%; }
+
+.sync-select-all [aria-pressed="true"] { background: var(--accent); color: var(--bg); }
+#anilist-state:empty { display: none; }
+.list-grid { grid-template-columns: repeat(9, minmax(0, 1fr)); }
+.list-card[hidden] { display: none; }
+
+.list-card .recent-card { width: 100%; }
+
+/* Keep the same image layer when the hover animation ends. */
+.list-card .cover img { transform: translateZ(0) scale(1); }
+.list-card:hover .cover img { transform: translateZ(0) scale(1.025); }

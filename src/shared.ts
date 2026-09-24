@@ -118,11 +118,63 @@ export interface Progress {
   updated: number;
   malEpisode: number;
 }
+export type WatchStatus = "CURRENT" | "REPEATING" | "COMPLETED" | "PAUSED" | "DROPPED" | "PLANNING";
+export interface WatchEpisode {
+  watched: boolean;
+  manual?: boolean;
+  position: number;
+  duration: number;
+  updated: number;
+}
+export interface WatchRun {
+  started: number;
+  completed?: number;
+  episodes: Record<string, WatchEpisode>;
+  count: number;
+}
+export interface WatchEntry {
+  mediaId: number;
+  isAdult?: boolean;
+  title: string;
+  cover: string;
+  season: string;
+  seasonNumber?: number | null;
+  totalEpisodes: number | null;
+  status: WatchStatus;
+  count: number;
+  repeat: number;
+  runs: WatchRun[];
+  updated: number;
+  statusUpdated: number;
+  countUpdated: number;
+  repeatUpdated: number;
+}
+export interface SyncBase { status: WatchStatus; count: number; repeat: number }
+export interface AniListState {
+  connected: boolean;
+  user?: string;
+  lastSync?: number;
+  error?: string;
+  baseline: Record<string, SyncBase>;
+}
+export interface SyncChange {
+  mediaId: number;
+  title: string;
+  field: "status" | "count" | "repeat";
+  local: WatchStatus | number | null;
+  remote: WatchStatus | number | null;
+  conflict: boolean;
+  choice?: "local" | "remote";
+}
+export interface SyncPreview { changes: SyncChange[]; first: boolean }
+export interface ImportPreview { count: number; episodes: number; newEntries: number; changedEntries: number; path: string }
 export interface State {
   version?: string;
   window?: { width: number; height: number; maximized: boolean };
   settings: Settings;
   progress: Record<string, Progress>;
+  watch: Record<string, WatchEntry>;
+  anilist: AniListState;
   markers: Record<string, Marker[]>;
   mappings: Record<string, number>;
 }
@@ -159,6 +211,17 @@ export interface Playback {
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number }
 export interface API {
+  watchAdd(id: number): Promise<State>;
+  watchDelete(id: number): Promise<State>;
+  watchEdit(id: number, patch: { status?: WatchStatus; count?: number; episode?: number; watched?: boolean; position?: number; duration?: number; startRewatch?: boolean }): Promise<State>;
+  watchExport(): Promise<string | null>;
+  watchImportPreview(): Promise<ImportPreview | null>;
+  watchImport(mode: "merge" | "replace"): Promise<State>;
+  anilistConnect(): Promise<void>;
+  anilistPreview(): Promise<SyncPreview>;
+  anilistApply(choices: SyncChange[]): Promise<State>;
+  anilistDisconnect(): Promise<State>;
+  onWatchState(callback: (state: State) => void): () => void;
   startupUpdate(): Promise<boolean>;
   checkUpdates(): Promise<UpdateStatus>;
   updateStatus(): Promise<UpdateStatus>;

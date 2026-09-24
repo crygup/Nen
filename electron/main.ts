@@ -1,5 +1,7 @@
 import { findUpdate, downloadUpdate } from "./updates";
 import { spawn } from "node:child_process";
+import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
 declare const NEN_BUILD_COMMIT: string;
 import { captureVideo } from "./capture";
 import {
@@ -12,6 +14,7 @@ import {
   shell,
   utilityProcess,
   dialog,
+  safeStorage,
   type UtilityProcess,
 } from "electron";
 import { join } from "node:path";
@@ -22,10 +25,13 @@ import {
   renameSync,
   existsSync,
   rmSync,
+  copyFileSync,
 } from "node:fs";
 import { pathToFileURL } from "node:url";
 import * as providers from "./providers";
 import { Player } from "./player";
+import { readRemote, preview as previewAniList, apply as applyAniList } from "./anilist";
+import { markEpisode, migrateProgress, newEntry, statuses, validateTransfer, mergeWatch, activeRun } from "./watch-data";
 import {
   positive,
   text,
@@ -55,6 +61,9 @@ import type {
   SegmentType,
   Playback,
   UpdateStatus,
+  WatchStatus,
+  SyncChange,
+  SyncPreview,
 } from "../src/shared";
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
@@ -76,6 +85,88 @@ let captureResize: ReturnType<typeof setTimeout> | undefined;
 let updateStatus: UpdateStatus = { busy: false, message: "" };
 let state: State;
 let statePath: string;
+let importFile: string | undefined;
+let tokenPath: string;
+let syncPreview: { remote: Awaited<ReturnType<typeof readRemote>>["entries"]; changes: SyncChange[] } | undefined;
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+let syncRunning = false;
+function queueSync() {
+  if (!state.anilist.connected || !state.anilist.lastSync || syncTimer) return;
+  syncTimer = setTimeout(() => { syncTimer = undefined; void syncUncontested(); }, 12000);
+}
+async function syncUncontested() {
+  if (syncRunning || !state.anilist.connected || !state.anilist.lastSync || syncPreview) return;
+  syncRunning = true;
+  try {
+    const remote = await readRemote(getToken());
+    const changes = previewAniList(state.watch, remote.entries, state.anilist).changes;
+    await applyAniList(getToken(), state.watch, remote.entries, state.anilist, changes.filter(row => !row.conflict));
+    if (changes.some(row => row.conflict)) state.anilist.error = "Some AniList changes need review. Open Sync now.";
+    save();
+    if (window && !window.isDestroyed()) window.webContents.send("watch-state", state);
+  } catch (error) {
+    state.anilist.error = String(error);
+    save();
+    if (window && !window.isDestroyed()) window.webContents.send("watch-state", state);
+    if (!syncTimer && state.anilist.connected) {
+      syncTimer = setTimeout(() => { syncTimer = undefined; void syncUncontested(); }, 60000);
+      syncTimer.unref();
+    }
+  } finally { syncRunning = false; }
+}
+function getToken(): string {
+  if (!existsSync(tokenPath)) throw Error("Connect AniList first.");
+  if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
+  return safeStorage.decryptString(readFileSync(tokenPath));
+}
+async function connectAniList(): Promise<void> {
+  if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
+  const nonce = randomBytes(24).toString("hex");
+  const token = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_ANILIST_TOKEN
+    ? process.env.NEN_E2E_ANILIST_TOKEN : await new Promise<string>((resolve, reject) => {
+    let done = false;
+    const server = createServer((req, res) => {
+      if (req.url === "/callback" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'" });
+        res.end(`<!doctype html><meta charset="utf-8"><p>Connecting AniList to Nen…</p><script>const token=new URLSearchParams(location.hash.slice(1)).get('access_token');if(token)fetch('/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,nonce:'${nonce}'})}).then(()=>{document.body.textContent='AniList is connected. You can close this tab.'});else document.body.textContent='AniList did not send a token.';</script>`);
+        return;
+      }
+      if (req.url === "/token" && req.method === "POST") {
+        let body = "";
+        req.on("data", chunk => { body += chunk; if (body.length > 10000) req.destroy(); });
+        req.on("end", () => {
+          try {
+            const data = JSON.parse(body);
+            if (data.nonce !== nonce || typeof data.token !== "string" || !/^[\w.-]{20,5000}$/.test(data.token)) throw Error("Invalid sign-in response.");
+            res.writeHead(200, { "Content-Type": "text/plain", "Cache-Control": "no-store" }); res.end("OK");
+            finish(undefined, data.token);
+          } catch { res.writeHead(400); res.end("Invalid response"); }
+        });
+        return;
+      }
+      res.writeHead(404); res.end();
+    });
+    const timer = setTimeout(() => finish(Error("AniList sign-in timed out.")), 180000);
+    const finish = (error?: Error, value?: string) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      server.close();
+      if (error) reject(error); else resolve(value!);
+    };
+    server.on("error", error => finish(error));
+    server.listen(43187, "127.0.0.1", () => {
+      const url = new URL("https://anilist.co/api/v2/oauth/authorize");
+      url.search = new URLSearchParams({ client_id: "51914", response_type: "token" }).toString();
+      void shell.openExternal(url.toString()).catch(error => finish(error));
+    });
+  });
+  const remote = await readRemote(token);
+  writeFileSync(tokenPath, safeStorage.encryptString(token));
+  state.anilist = { connected: true, user: remote.user, baseline: {} };
+  syncPreview = undefined;
+  save();
+}
 let lastSave = 0;
 let undoPosition: number | undefined;
 let remote: Marker[] = [];
@@ -98,6 +189,8 @@ const defaults: State = {
     qualities: [1080, 720, 480, 360],
   },
   progress: {},
+  watch: {},
+  anilist: { connected: false, baseline: {} },
   markers: {},
   mappings: {},
 };
@@ -151,11 +244,20 @@ function record() {
   if (current && player && player.status.duration > 0) {
     current.position = player.status.position;
     current.duration = player.status.duration;
-    current.watched = isWatched(current);
+    const oldMark = state.watch[String(current.mediaId)]?.runs.at(-1)?.episodes[String(current.episode)];
+    current.watched = oldMark?.manual ? oldMark.watched : isWatched(current);
     current.updated = Date.now();
     state.progress[`${current.mediaId}:${current.episode}`] = current;
+    let entry = state.watch[String(current.mediaId)];
+    if (!entry) {
+      entry = newEntry({ id: current.mediaId, title: { english: current.title, romaji: current.title, native: null }, coverImage: { large: current.cover }, episodes: current.totalEpisodes, isAdult: current.isAdult });
+      state.watch[String(current.mediaId)] = entry;
+    }
+    if (entry.status === "PLANNING") { entry.status = "CURRENT"; entry.statusUpdated = Date.now(); }
+    markEpisode(entry, current.episode, { watched: current.watched, position: current.position, duration: current.duration });
     try {
       save();
+      queueSync();
     } catch (error) {
       player.status.error = `Progress could not be saved: ${String(error)}`;
     }
@@ -389,8 +491,10 @@ async function play(
       : await providers
           .episodes(mediaId, Math.floor((episode - 1) / 50) + 1)
           .catch(() => undefined);
+    const watchEntry = state.watch[String(mediaId)];
+    const watchPosition = watchEntry?.runs.at(-1)?.episodes[String(episode)]?.position;
     const startAt =
-      startPosition ?? resume?.position ??
+      startPosition ?? (watchEntry?.status === "REPEATING" ? watchPosition ?? 0 : watchPosition ?? resume?.position) ??
       (switching?.mediaId === mediaId && switching.episode === episode
         ? switching.position
         : 0);
@@ -398,7 +502,7 @@ async function play(
     const result = await workerRequest("stream", { action: "stream", index });
     if (request !== playbackRequest) throw Error("Playback cancelled.");
     current = {
-      watched: isWatched(state.progress[`${mediaId}:${episode}`]),
+      watched: state.watch[String(mediaId)]?.runs.at(-1)?.episodes[String(episode)]?.watched ?? isWatched(state.progress[`${mediaId}:${episode}`]),
       isAdult: "isAdult" in anime ? anime.isAdult === true : resume?.isAdult,
       episodeTitle:
         resume?.episodeTitle ??
@@ -530,7 +634,10 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
   const attempted = new Set<string>();
   let candidates: Release[] | undefined;
   let failure = "No matching source was found.";
-  let startAt = saved?.position ?? 0;
+  const watchEntry = state.watch[String(mediaId)];
+  let startAt = watchEntry?.status === "REPEATING"
+    ? watchEntry.runs.at(-1)?.episodes[String(episode)]?.position ?? 0
+    : watchEntry?.runs.at(-1)?.episodes[String(episode)]?.position ?? saved?.position ?? 0;
   try {
     let anime = saved ? {
       id: saved.mediaId,
@@ -674,6 +781,10 @@ function settings(value: Settings): Settings {
 if (process.platform === "win32")
   app.commandLine.appendSwitch("disable-direct-composition");
 app.setName("Nen");
+if (process.env.NEN_E2E_USER_DATA) {
+  mkdirSync(process.env.NEN_E2E_USER_DATA, { recursive: true });
+  app.setPath("userData", process.env.NEN_E2E_USER_DATA);
+}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => {
@@ -684,6 +795,7 @@ else {
     .whenReady()
     .then(() => {
       statePath = join(app.getPath("userData"), "state.json");
+      tokenPath = join(app.getPath("userData"), "anilist-token.bin");
       mkdirSync(app.getPath("userData"), { recursive: true });
       state = structuredClone(defaults);
       if (existsSync(statePath)) {
@@ -693,6 +805,8 @@ else {
             ...defaults,
             ...stored,
             settings: settings(stored.settings),
+            watch: stored.watch ?? {},
+            anilist: { ...defaults.anilist, ...stored.anilist, connected: false },
           };
         } catch {
           throw Error(
@@ -700,6 +814,7 @@ else {
           );
         }
       }
+      state.version = app.getVersion();
       providers.initCache(join(app.getPath("userData"), "provider-cache.json"));
       const repaired = repairProgress(state.progress);
       if (JSON.stringify(repaired) !== JSON.stringify(state.progress)) {
@@ -708,6 +823,13 @@ else {
         state.progress = repaired;
         save();
       }
+      if (migrateProgress(state.watch, state.progress)) {
+        const backup = statePath + ".before-watch-migration.json";
+        if (existsSync(statePath) && !existsSync(backup)) copyFileSync(statePath, backup);
+        save();
+      }
+      state.anilist.connected = existsSync(tokenPath);
+      if (state.anilist.connected) setTimeout(() => void syncUncontested(), 3000);
       const dev = process.env.NEN_DEV_URL;
       const entry = pathToFileURL(join(__dirname, "../dist/index.html")).href;
       const allowed = dev ? new URL(dev).origin : entry;
@@ -815,6 +937,136 @@ else {
           return fn(...args);
         });
       }
+      handle("watchAdd", async (id) => {
+        const anime = await providers.media(positive(id));
+        state.watch[String(anime.id)] ??= newEntry(anime);
+        save();
+        queueSync();
+        return state;
+      });
+      handle("watchDelete", (id) => {
+        const mediaId = positive(id);
+        delete state.watch[String(mediaId)];
+        for (const [key, saved] of Object.entries(state.progress))
+          if (saved.mediaId === mediaId) delete state.progress[key];
+        if (current?.mediaId === mediaId) current = undefined;
+        syncPreview = undefined;
+        save();
+        return state;
+      });
+      handle("watchEdit", (id, patch) => {
+        const entry = state.watch[String(positive(id))];
+        if (!entry || !patch || typeof patch !== "object") throw Error("Watch entry was not found.");
+        if (patch.count !== undefined && (!Number.isSafeInteger(patch.count) || patch.count < 0
+          || (entry.totalEpisodes != null && patch.count > entry.totalEpisodes)))
+          throw Error("Episode progress exceeds the valid range.");
+        const now = Date.now();
+        if (patch.startRewatch) {
+          if (entry.status !== "COMPLETED") throw Error("Complete the anime before a rewatch.");
+          activeRun(entry).completed ??= now;
+          entry.runs.push({ started: now, episodes: {}, count: 0 });
+          entry.status = "REPEATING"; entry.count = 0;
+          entry.statusUpdated = entry.countUpdated = now;
+          for (const saved of Object.values(state.progress)) {
+            if (saved.mediaId === entry.mediaId) { saved.position = 0; saved.watched = false; saved.updated = now; }
+          }
+          if (current?.mediaId === entry.mediaId) current = undefined;
+        }
+        if (patch.status !== undefined) {
+          if (!statuses.includes(patch.status as WatchStatus)) throw Error("Invalid watch status.");
+          entry.status = patch.status;
+          entry.statusUpdated = now;
+          if (patch.status === "COMPLETED") {
+            const run = activeRun(entry);
+            if (!run.completed) { run.completed = now; if (entry.runs.length > 1) { entry.repeat++; entry.repeatUpdated = now; } }
+          }
+        }
+        if (patch.count !== undefined) {
+          entry.count = patch.count; entry.countUpdated = now; activeRun(entry).count = patch.count;
+        }
+        if (patch.episode !== undefined) {
+          const episode = positive(patch.episode, 100000);
+          if (patch.watched !== undefined && typeof patch.watched !== "boolean") throw Error("Invalid watched mark.");
+          for (const value of [patch.position, patch.duration])
+            if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1000000)) throw Error("Invalid playback time.");
+          markEpisode(entry, episode, { watched: patch.watched, position: patch.position, duration: patch.duration });
+          if (patch.watched !== undefined) activeRun(entry).episodes[String(episode)].manual = true;
+        }
+        entry.updated = now;
+        save();
+        queueSync();
+        return state;
+      });
+      handle("watchExport", async () => {
+        const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_EXPORT_PATH
+          ? process.env.NEN_E2E_EXPORT_PATH
+          : (await dialog.showSaveDialog(window, { defaultPath: "nen-watch-data.json", filters: [{ name: "JSON", extensions: ["json"] }] })).filePath;
+        if (!path) return null;
+        writeFileSync(path, JSON.stringify({ version: 1, exportedAt: Date.now(), entries: Object.values(state.watch) }, null, 2));
+        return path;
+      });
+      handle("watchImportPreview", async () => {
+        const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_IMPORT_PATH
+          ? process.env.NEN_E2E_IMPORT_PATH
+          : (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
+        if (!path) return null;
+        const data = readFileSync(path);
+        if (data.length > 50 * 1024 * 1024) throw Error("Watch data file is too large.");
+        const entries = validateTransfer(JSON.parse(data.toString("utf8")));
+        importFile = path;
+        return { count: Object.keys(entries).length, episodes: Object.values(entries).flatMap(row => row.runs).reduce((n, run) => n + Object.keys(run.episodes).length, 0), newEntries: Object.keys(entries).filter(id => !state.watch[id]).length, changedEntries: Object.keys(entries).filter(id => !!state.watch[id]).length, path };
+      });
+      handle("watchImport", (mode) => {
+        if (!importFile || !["merge", "replace"].includes(mode)) throw Error("Select a watch data file first.");
+        const entries = validateTransfer(JSON.parse(readFileSync(importFile, "utf8")));
+        const backup = statePath + `.before-import-${Date.now()}.json`;
+        if (existsSync(statePath)) copyFileSync(statePath, backup);
+        else writeFileSync(backup, JSON.stringify(state));
+        if (mode === "replace") state.watch = entries;
+        else mergeWatch(state.watch, entries);
+        importFile = undefined;
+        save();
+        queueSync();
+        return state;
+      });
+      handle("anilistConnect", connectAniList);
+      handle("anilistPreview", async (): Promise<SyncPreview> => {
+        try {
+          const remote = await readRemote(getToken());
+          state.anilist.user = remote.user;
+          state.anilist.error = undefined;
+          const result = previewAniList(state.watch, remote.entries, state.anilist);
+          syncPreview = { remote: remote.entries, changes: result.changes };
+          save();
+          return result;
+        } catch (error) {
+          state.anilist.error = String(error);
+          save();
+          throw error;
+        }
+      });
+      handle("anilistApply", async (choices: SyncChange[]) => {
+        if (!syncPreview || !Array.isArray(choices)) throw Error("Review AniList changes first.");
+        const expected = syncPreview.changes;
+        if (choices.length !== expected.length || choices.some((row, i) => row.mediaId !== expected[i].mediaId || row.field !== expected[i].field || !["local", "remote", undefined].includes(row.choice))) throw Error("Sync review changed. Review again.");
+        try {
+          await applyAniList(getToken(), state.watch, syncPreview.remote, state.anilist, expected.map((row, i) => ({ ...row, choice: choices[i].choice })));
+          syncPreview = undefined;
+          save();
+          return state;
+        } catch (error) {
+          state.anilist.error = String(error);
+          save();
+          throw error;
+        }
+      });
+      handle("anilistDisconnect", () => {
+        rmSync(tokenPath, { force: true });
+        state.anilist = { connected: false, baseline: {} };
+        syncPreview = undefined;
+        save();
+        return state;
+      });
       handle("startVideo", () => {
         if (!videoView || !isPlayer(window.webContents))
           throw Error("No active video window.");
@@ -950,7 +1202,7 @@ else {
         }
         throw Error("Invalid player action.");
       });
-      handle("state", () => ({ ...state, version: app.getVersion() }));
+      handle("state", () => state);
       handle("startupUpdate", startupUpdate);
       handle("checkUpdates", checkUpdates);
       handle("updateStatus", () => updateStatus);

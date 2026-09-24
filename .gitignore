@@ -8,6 +8,7 @@ tests/
 /scripts/*
 !/scripts/build.mjs
 !/scripts/dev.mjs
+!/scripts/e2e-watch.mjs
 !/scripts/setup-media.mjs
 /run.ps1
 .env

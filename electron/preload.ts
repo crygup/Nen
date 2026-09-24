@@ -1,6 +1,21 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { API, Playback, UpdateStatus } from "../src/shared";
 const api: API = {
+  watchAdd: (...a) => ipcRenderer.invoke("watchAdd", ...a),
+  watchDelete: (...a) => ipcRenderer.invoke("watchDelete", ...a),
+  watchEdit: (...a) => ipcRenderer.invoke("watchEdit", ...a),
+  watchExport: () => ipcRenderer.invoke("watchExport"),
+  watchImportPreview: () => ipcRenderer.invoke("watchImportPreview"),
+  watchImport: (...a) => ipcRenderer.invoke("watchImport", ...a),
+  anilistConnect: () => ipcRenderer.invoke("anilistConnect"),
+  anilistPreview: () => ipcRenderer.invoke("anilistPreview"),
+  anilistApply: (...a) => ipcRenderer.invoke("anilistApply", ...a),
+  anilistDisconnect: () => ipcRenderer.invoke("anilistDisconnect"),
+  onWatchState: callback => {
+    const listener = (_: unknown, state: import("../src/shared").State) => callback(state);
+    ipcRenderer.on("watch-state", listener);
+    return () => ipcRenderer.removeListener("watch-state", listener);
+  },
   startupUpdate: () => ipcRenderer.invoke("startupUpdate"),
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
