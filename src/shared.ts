@@ -94,6 +94,7 @@ export interface Settings {
   theme: Theme;
   autoSkip: boolean;
   autoNext?: boolean;
+  developmentBuilds?: boolean;
   audio: string;
   subtitles: string;
   source: "all" | "Nyaa" | "Bangumi Moe";
@@ -156,7 +157,11 @@ export interface Playback {
   markers: Marker[];
   skipNotice?: string;
 }
+export interface UpdateStatus { busy: boolean; message: string; percent?: number }
 export interface API {
+  checkUpdates(): Promise<UpdateStatus>;
+  updateStatus(): Promise<UpdateStatus>;
+  onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   autoPlay(mediaId: number, episode: number): Promise<void>;
   startVideo(): Promise<void>;
   onVideo(

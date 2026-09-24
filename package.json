@@ -1,6 +1,6 @@
 {
   "name": "nen",
-  "version": "0.1.1",
+  "version": "0.1.11",
   "private": true,
   "description": "Nen desktop anime player",
   "author": "may-be.gay",
@@ -17,24 +17,26 @@
   },
   "dependencies": {
     "fast-xml-parser": "^5.2.5",
+    "semver": "^7.8.5",
     "webtorrent": "^3.0.21"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/semver": "^7.8.0",
     "@types/webtorrent": "^0.110.0",
     "7zip-bin": "^5.2.0",
     "electron": "^44.4.5",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.25.0",
+    "resedit": "^1.7.2",
     "typescript": "^5.9.0",
-    "vite": "^6.4.0",
-    "resedit": "^1.7.2"
+    "vite": "^6.4.0"
   },
   "build": {
     "appId": "app.nen.desktop",
     "productName": "Nen",
     "directories": {
-      "output": "release"
+      "output": "test-builds"
     },
     "files": [
       "dist/**/*",

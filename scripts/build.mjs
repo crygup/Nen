@@ -1,3 +1,5 @@
+import { execFileSync } from "node:child_process";
+const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", windowsHide: true }).trim();
 import { readFile, writeFile } from "node:fs/promises";
 import { NtExecutable, NtExecutableResource, Resource, Data } from "resedit";
 import { build } from "esbuild";
@@ -30,6 +32,7 @@ if (process.platform === "win32") {
 }
 await build({
   entryPoints: ["electron/main.ts"],
+  define: { NEN_BUILD_COMMIT: JSON.stringify(commit) },
   outfile: "dist-electron/main.cjs",
   bundle: true,
   platform: "node",

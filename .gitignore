@@ -21,3 +21,5 @@ test-results/
 .idea/
 .DS_Store
 Thumbs.db
+
+test-builds/

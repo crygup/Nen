@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { API, Playback } from "../src/shared";
+import type { API, Playback, UpdateStatus } from "../src/shared";
 const api: API = {
+  checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
+  updateStatus: () => ipcRenderer.invoke("updateStatus"),
+  onUpdateStatus: callback => {
+    const listener = (_: unknown, status: UpdateStatus) => callback(status);
+    ipcRenderer.on("update-status", listener);
+    return () => ipcRenderer.removeListener("update-status", listener);
+  },
   autoPlay: (...a) => ipcRenderer.invoke("autoPlay", ...a),
   startVideo: () => ipcRenderer.invoke("startVideo"),
   onVideo: (callback, error) => {

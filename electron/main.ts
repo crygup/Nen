@@ -1,3 +1,6 @@
+import { findUpdate, downloadUpdate } from "./updates";
+import { spawn } from "node:child_process";
+declare const NEN_BUILD_COMMIT: string;
 import { captureVideo } from "./capture";
 import {
   app,
@@ -51,6 +54,7 @@ import type {
   Marker,
   SegmentType,
   Playback,
+  UpdateStatus,
 } from "../src/shared";
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
@@ -69,6 +73,7 @@ let pendingPlayback: Playback | undefined;
 let closing = false;
 let stopVideoCapture: (() => void) | undefined;
 let captureResize: ReturnType<typeof setTimeout> | undefined;
+let updateStatus: UpdateStatus = { busy: false, message: "" };
 let state: State;
 let statePath: string;
 let lastSave = 0;
@@ -83,6 +88,7 @@ const defaults: State = {
     theme: "system",
     autoSkip: false,
     autoNext: false,
+    developmentBuilds: false,
     showAdult: false,
     hideZeroSeeds: true,
     audio: "jpn,ja",
@@ -95,6 +101,37 @@ const defaults: State = {
   markers: {},
   mappings: {},
 };
+function setUpdateStatus(value: UpdateStatus) {
+  updateStatus = value;
+  if (window && !window.isDestroyed()) window.webContents.send("update-status", value);
+}
+async function checkUpdates() {
+  if (updateStatus.busy) return updateStatus;
+  setUpdateStatus({ busy: true, message: "Checking for updates…" });
+  try {
+    const result = await findUpdate(state.settings.developmentBuilds === true, app.getVersion(), NEN_BUILD_COMMIT);
+    if (!result.update) setUpdateStatus({ busy: false, message: result.message });
+    else if (!app.isPackaged) setUpdateStatus({ busy: false, message: "An update is available. Run the installed app to install it." });
+    else {
+      setUpdateStatus({ busy: true, message: result.message, percent: 0 });
+      const installer = await downloadUpdate(result.update, join(app.getPath("userData"), "update-cache"), percent => {
+        if (percent !== updateStatus.percent) setUpdateStatus({ busy: true, message: result.message, percent });
+      });
+      setUpdateStatus({ busy: true, message: "Installing update. Nen will restart…" });
+      record();
+      save();
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(installer, ["/S", "--updated", "--force-run"], { detached: true, stdio: "ignore", windowsHide: true });
+        child.once("error", reject);
+        child.once("spawn", () => { child.unref(); resolve(); });
+      });
+      setTimeout(() => app.quit(), 250);
+    }
+  } catch (error) {
+    setUpdateStatus({ busy: false, message: error instanceof Error ? error.message : "The update failed. Try again later." });
+  }
+  return updateStatus;
+}
 function save() {
   writeFileSync(statePath + ".tmp", JSON.stringify(state));
   renameSync(statePath + ".tmp", statePath);
@@ -590,7 +627,7 @@ function settings(value: Settings): Settings {
       ))
   )
     throw Error("Select at least one quality.");
-  for (const key of ["showAdult", "hideZeroSeeds", "autoNext"] as const)
+  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "developmentBuilds"] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
   const audio = text(value.audio, 60),
@@ -603,6 +640,7 @@ function settings(value: Settings): Settings {
     hideZeroSeeds: value.hideZeroSeeds ?? true,
     autoSkip: value.autoSkip,
     autoNext: value.autoNext ?? false,
+    developmentBuilds: value.developmentBuilds ?? false,
     audio,
     subtitles,
     source: value.source,
@@ -893,7 +931,11 @@ else {
         throw Error("Invalid player action.");
       });
       handle("state", () => ({ ...state, version: app.getVersion() }));
+      handle("checkUpdates", checkUpdates);
+      handle("updateStatus", () => updateStatus);
       handle("settings", (value) => {
+        if (updateStatus.busy && !!value?.developmentBuilds !== !!state.settings.developmentBuilds)
+          throw Error("Wait for the update to finish before changing the update channel.");
         state.settings = settings(value);
         nativeTheme.themeSource = state.settings.theme;
         save();

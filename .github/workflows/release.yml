@@ -1,0 +1,34 @@
+name: Release installer
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  build:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG.TrimStart('v') -ne $version) { throw 'Release tag does not match package.json.' }
+      - run: npm ci
+      - run: npm run setup:media
+      - run: npm run release
+      - shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload $env:RELEASE_TAG test-builds/Nen-Setup-*.exe --clobber
