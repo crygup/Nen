@@ -1,0 +1,52 @@
+import { contextBridge, ipcRenderer } from "electron";
+import type { API, Playback } from "../src/shared";
+const api: API = {
+  startVideo: () => ipcRenderer.invoke("startVideo"),
+  onVideo: (callback, error) => {
+    const frame = (_: unknown, data: Uint8Array, key: boolean) => {
+      try {
+        callback(data, key);
+      } finally {
+        ipcRenderer.send("video-frame-ack");
+      }
+    };
+    const fail = (_: unknown, message: string) => error(message);
+    ipcRenderer.on("video-frame", frame);
+    ipcRenderer.on("video-error", fail);
+    return () => {
+      ipcRenderer.removeListener("video-frame", frame);
+      ipcRenderer.removeListener("video-error", fail);
+    };
+  },
+  catalogOptions: () => ipcRenderer.invoke("catalogOptions"),
+  catalog: (...a) => ipcRenderer.invoke("catalog", ...a),
+  episodes: (...a) => ipcRenderer.invoke("episodes", ...a),
+  removeHistory: (...a) => ipcRenderer.invoke("removeHistory", ...a),
+  playback: () => ipcRenderer.invoke("playbackState"),
+  media: (...a) => ipcRenderer.invoke("media", ...a),
+  labels: (...a) => ipcRenderer.invoke("labels", ...a),
+  releases: (...a) => ipcRenderer.invoke("releases", ...a),
+  inspect: (...a) => ipcRenderer.invoke("inspect", ...a),
+  play: (...a) => ipcRenderer.invoke("play", ...a),
+  resume: (...a) => ipcRenderer.invoke("resume", ...a),
+  control: (...a) => ipcRenderer.invoke("control", ...a),
+  state: () => ipcRenderer.invoke("state"),
+  settings: (...a) => ipcRenderer.invoke("settings", ...a),
+  mapping: (...a) => ipcRenderer.invoke("mapping", ...a),
+  marker: (...a) => ipcRenderer.invoke("marker", ...a),
+  skip: (...a) => ipcRenderer.invoke("skip", ...a),
+  undo: () => ipcRenderer.invoke("undo"),
+  clear: (...a) => ipcRenderer.invoke("clear", ...a),
+  external: (...a) => ipcRenderer.invoke("external", ...a),
+  onBack: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("navigate-back", listener);
+    return () => ipcRenderer.removeListener("navigate-back", listener);
+  },
+  onPlayback: (callback) => {
+    const listener = (_: unknown, p: Playback) => callback(p);
+    ipcRenderer.on("playback", listener);
+    return () => ipcRenderer.removeListener("playback", listener);
+  },
+};
+contextBridge.exposeInMainWorld("nen", api);
