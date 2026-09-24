@@ -60,6 +60,7 @@ export class Player {
       "--input-terminal=no",
       "--terminal=no",
       "--force-window=yes",
+      "--idle=yes",
       "--keep-open=yes",
       "--osc=no",
       "--osd-level=0",
@@ -74,8 +75,7 @@ export class Player {
       `--alang=${settings.audio}`,
       `--slang=${settings.subtitles}`,
       ...(settings.subtitles === "no" ? ["--sid=no"] : []),
-      "--",
-      url,
+
     ];
     const child = (this.child = spawn(binary, args, {
       windowsHide: !parentHandle,
@@ -147,6 +147,7 @@ export class Player {
       "speed",
     ].entries())
       await this.command(["observe_property", id, key]);
+    await this.command(["loadfile", url, "replace"]);
   }
   private message(data: any) {
     if (data.request_id) {

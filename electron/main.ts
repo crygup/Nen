@@ -174,7 +174,7 @@ function publish() {
         );
   }, 100);
 }
-function stop(closeView = true) {
+function stop(closeView = true, keepTorrent = false) {
   record();
   const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
   if (closeView) {
@@ -200,6 +200,7 @@ function stop(closeView = true) {
   undoPosition = undefined;
   markersRequested = false;
   markerAttempts = 0;
+  if (keepTorrent) return;
   const old = worker;
   worker = undefined;
   old?.postMessage({ action: "stop" });
@@ -257,6 +258,10 @@ async function inspect(value: string, timeout = 60000) {
         ...current,
         position: player?.status.position ?? current.position,
       };
+    if (selected?.hash === release.hash && worker && files.length) {
+      stop(false, true);
+      return files;
+    }
     stop(false);
     selected = release;
     worker = utilityProcess.fork(join(__dirname, "torrent.mjs"), [], {
@@ -521,8 +526,12 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
       title: { english: saved.title, romaji: saved.title },
     } as any : await providers.media(mediaId);
     if (request !== playbackRequest) return;
+    const continuing = !saved && current?.mediaId === mediaId && selected && worker
+      && matchesMedia(selected.title, anime) && matchingFile(files, selected, anime, episode)
+      && (state.settings.source === "all" || selected.source === state.settings.source)
+      ? selected : undefined;
     for (let attempt = 0; attempt < 6; attempt++) {
-      let release = attempt === 0 ? saved?.release : undefined;
+      let release = attempt === 0 ? saved?.release ?? continuing : undefined;
       if (!release) {
         if (!candidates) {
           anime = await providers.media(mediaId);

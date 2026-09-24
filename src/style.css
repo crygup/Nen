@@ -1705,3 +1705,24 @@ dialog {
 
 .episode-badges { display: flex; align-items: center; gap: 8px; }
 .next-popup { left: auto; right: 34px; }
+
+.update-actions { gap: 16px; }
+.update-actions .check { margin: 0; flex-direction: row; }
+.update-toast {
+  position: fixed;
+  inset: auto auto 24px 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+.update-toast.visible { opacity: 1; }

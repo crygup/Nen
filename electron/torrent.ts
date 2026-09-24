@@ -86,6 +86,9 @@ port.on("message", async ({ data }) => {
     } else if (data.action === "stream") {
       const file = torrent?.files[data.index];
       if (!file) throw Error("File not found.");
+      server?.closeAllConnections();
+      server?.close();
+      torrent!.deselect(0, torrent!.pieces.length - 1, 10);
       torrent!.files.forEach((f) => f.deselect());
       const offset = torrent!.files
         .slice(0, data.index)

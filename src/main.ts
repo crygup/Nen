@@ -949,7 +949,7 @@ function settings() {
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
-    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><hr><h3 class="local-data-heading">Updates</h3><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label><p class="muted">Available updates install and restart Nen.</p><button id="check-updates" type="button">Check for updates</button><p id="update-message" role="status"></p></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p>`,
+    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div><div id="update-message" class="update-toast" popover="manual" role="status" aria-live="polite"></div></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p>`,
   );
   d.querySelector(".dialog-header .eyebrow")!.innerHTML = `<strong>NEN</strong> - ${esc(state.version)}`;
   const form = d.querySelector<HTMLFormElement>("#settings")!;
@@ -995,12 +995,23 @@ function settings() {
   const check = d.querySelector<HTMLButtonElement>("#check-updates")!;
   const development = d.querySelector<HTMLInputElement>("#development-builds")!;
   const updateMessage = d.querySelector<HTMLElement>("#update-message")!;
-  const showUpdate = (status: import("./shared").UpdateStatus) => {
+  let fadeToast: ReturnType<typeof setTimeout> | undefined;
+  let hideToast: ReturnType<typeof setTimeout> | undefined;
+  const showUpdate = (status: import("./shared").UpdateStatus, notify = true) => {
     check.disabled = development.disabled = status.busy;
+    if (!notify || !status.message || !d.open) return;
+    clearTimeout(fadeToast);
+    clearTimeout(hideToast);
     updateMessage.textContent = status.message + (status.percent === undefined ? "" : " " + status.percent + "%");
+    updateMessage.showPopover();
+    updateMessage.classList.add("visible");
+    fadeToast = setTimeout(() => {
+      updateMessage.classList.remove("visible");
+      hideToast = setTimeout(() => updateMessage.hidePopover(), 250);
+    }, 3000);
   };
   const unsubscribeUpdate = api.onUpdateStatus(showUpdate);
-  void api.updateStatus().then(showUpdate).catch(error);
+  void api.updateStatus().then(status => showUpdate(status, false)).catch(error);
   check.onclick = () => void run(async () => {
     await saveQueue;
     showUpdate({ busy: true, message: "Checking for updates…" });
@@ -1009,6 +1020,9 @@ function settings() {
   });
   d.onclose = () => {
     unsubscribeUpdate();
+    clearTimeout(fadeToast);
+    clearTimeout(hideToast);
+    updateMessage.hidePopover();
     save();
     d.onclose = null;
     void saveQueue.then(() => {
@@ -1145,6 +1159,8 @@ async function start() {
     });
     api.onPlayback((p) => {
       playback = p;
+      const finding = document.querySelector<HTMLElement>("#finding-source");
+      if (finding && p.loadingNotice) finding.textContent = p.loadingNotice;
       update(p);
     });
     const p = await api.playback();
