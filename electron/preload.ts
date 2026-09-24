@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { API, Playback, UpdateStatus } from "../src/shared";
 const api: API = {
+  startupUpdate: () => ipcRenderer.invoke("startupUpdate"),
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
   onUpdateStatus: callback => {

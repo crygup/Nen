@@ -159,6 +159,7 @@ export interface Playback {
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number }
 export interface API {
+  startupUpdate(): Promise<boolean>;
   checkUpdates(): Promise<UpdateStatus>;
   updateStatus(): Promise<UpdateStatus>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;

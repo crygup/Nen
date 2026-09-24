@@ -105,6 +105,17 @@ function setUpdateStatus(value: UpdateStatus) {
   updateStatus = value;
   if (window && !window.isDestroyed()) window.webContents.send("update-status", value);
 }
+let startupChecked = false;
+async function startupUpdate() {
+  if (startupChecked) return false;
+  startupChecked = true;
+  try {
+    const result = await findUpdate(state.settings.developmentBuilds === true, app.getVersion(), NEN_BUILD_COMMIT);
+    return !!result.update;
+  } catch {
+    return false;
+  }
+}
 async function checkUpdates() {
   if (updateStatus.busy) return updateStatus;
   setUpdateStatus({ busy: true, message: "Checking for updates…" });
@@ -940,6 +951,7 @@ else {
         throw Error("Invalid player action.");
       });
       handle("state", () => ({ ...state, version: app.getVersion() }));
+      handle("startupUpdate", startupUpdate);
       handle("checkUpdates", checkUpdates);
       handle("updateStatus", () => updateStatus);
       handle("settings", (value) => {

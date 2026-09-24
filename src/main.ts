@@ -128,6 +128,25 @@ const backToList = () =>
       ? history()
       : discover(page);
 
+let dismissToast = () => {};
+function showToast(message: string, parent: HTMLElement = document.body) {
+  dismissToast();
+  const toast = document.createElement("div");
+  toast.className = "update-toast";
+  toast.setAttribute("popover", "manual");
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "polite");
+  toast.textContent = message;
+  parent.append(toast);
+  toast.showPopover();
+  toast.classList.add("visible");
+  let remove: ReturnType<typeof setTimeout> | undefined;
+  const fade = setTimeout(() => {
+    toast.classList.remove("visible");
+    remove = setTimeout(() => toast.remove(), 250);
+  }, 3000);
+  dismissToast = () => { clearTimeout(fade); clearTimeout(remove); toast.remove(); };
+}
 function error(e: unknown) {
   const open = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (open) {
@@ -528,7 +547,7 @@ async function discover(targetPage = 1) {
   const token = ++request;
   document.querySelector("#message")!.setAttribute("hidden", "");
   const main = document.querySelector<HTMLElement>("#main")!;
-  main.innerHTML = `<div class="page-heading"><div><h1>${mode === "search" && parseSearch(query).search ? "Search results" : "Browse"}</h1></div><button id="refresh" class="quiet square-button" aria-label="Refresh" title="Refresh">${uiIcon("refresh")}</button></div><div id="browse-filters" class="browse-filters"></div><div class="tabs" aria-label="Browse category"><button data-mode="trending" class="${mode === "trending" ? "selected" : ""}">Trending</button><button data-mode="season" class="${mode === "season" ? "selected" : ""}">This season</button>${mode === "search" ? '<span class="selected">Search</span>' : ""}</div><p id="catalog-note" class="muted">${mode === "search" ? `Results for ${esc(query)}` : "Loading…"}</p><div class="grid" id="catalog" aria-busy="true"></div><nav id="catalog-pages" class="catalog-pages" aria-label="Catalog pages"></nav>`;
+  main.innerHTML = `<div class="page-heading"><div><h1>${mode === "search" && parseSearch(query).search ? "Search results" : "Browse"}</h1></div><button id="refresh" class="quiet square-button" aria-label="Refresh" title="Refresh">${uiIcon("refresh")}</button></div><div id="browse-filters" class="browse-filters"></div><div class="tabs" aria-label="Browse category"><button data-mode="trending" class="${mode === "trending" ? "selected" : ""}">Trending</button><button data-mode="season" class="${mode === "season" ? "selected" : ""}">This season</button>${mode === "search" ? '<span class="selected">Search</span>' : ""}</div><p id="catalog-note" class="muted" ${mode !== "search" ? "hidden" : ""}>${mode === "search" ? `Results for ${esc(query)}` : "Loading…"}</p><div class="grid" id="catalog" aria-busy="true"></div><nav id="catalog-pages" class="catalog-pages" aria-label="Catalog pages"></nav>`;
   movePageHeading();
   void browseFilters(token);
   document.querySelectorAll<HTMLElement>("[data-mode]").forEach(
@@ -549,12 +568,7 @@ async function discover(targetPage = 1) {
       '<div class="empty"><h2>No titles found</h2><p>Try another title.</p></div>';
     grid.setAttribute("aria-busy", "false");
     bindMedia(grid);
-    document.querySelector("#catalog-note")!.textContent =
-      mode === "search"
-        ? `Results for ${query}`
-        : mode === "season"
-          ? `Airing this season · ${new Date().getFullYear()}`
-          : "Trending anime";
+    document.querySelector("#catalog-note")!.textContent = mode === "search" ? `Results for ${query}` : "";
     const last = Math.min(
       result.lastPage ?? (result.hasNextPage ? page + 1 : page),
       100,
@@ -579,6 +593,7 @@ async function discover(targetPage = 1) {
     );
   } catch (e) {
     if (token !== request) return;
+    document.querySelector<HTMLElement>("#catalog-note")!.hidden = false;
     document.querySelector("#catalog-note")!.textContent =
       "The catalog could not load. Use Refresh to try again.";
     error(e);
@@ -592,15 +607,26 @@ async function openMedia(id: number) {
   document.querySelector("#main")!.innerHTML =
     '<p class="loading">Loading series…</p>';
   try {
-    const m = await api.media(id);
+    const [m, freshState] = await Promise.all([api.media(id), api.state()]);
     if (token !== request) return;
+    state = freshState;
     current = m;
     labelData = undefined;
     episodeData = undefined;
     hideFiller = false;
-    showAllEpisodes = false;
+    const latest = Object.values(state.progress)
+      .filter(p => p.mediaId === id && (p.position > 0 || p.watched))
+      .sort((a, b) => b.updated - a.updated)[0];
+    showAllEpisodes = !!latest && latest.episode > 50;
     descendingEpisodes = false;
     renderSeries();
+    if (latest) requestAnimationFrame(() => {
+      if (token !== request) return;
+      const row = document.querySelector<HTMLElement>(`[data-episode="${latest.episode}"]`);
+      const bounds = row?.getBoundingClientRect();
+      if (bounds && (bounds.bottom > innerHeight || bounds.top < 0))
+        row!.scrollIntoView({ block: "center" });
+    });
     void api
       .labels(m.id, m.idMal)
       .then((labels) => {
@@ -949,7 +975,7 @@ function settings() {
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
-    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div><div id="update-message" class="update-toast" popover="manual" role="status" aria-live="polite"></div></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p>`,
+    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div></form><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><p id="settings-message" role="status"></p>`,
   );
   d.querySelector(".dialog-header .eyebrow")!.innerHTML = `<strong>NEN</strong> - ${esc(state.version)}`;
   const form = d.querySelector<HTMLFormElement>("#settings")!;
@@ -994,21 +1020,10 @@ function settings() {
     e.preventDefault();
   const check = d.querySelector<HTMLButtonElement>("#check-updates")!;
   const development = d.querySelector<HTMLInputElement>("#development-builds")!;
-  const updateMessage = d.querySelector<HTMLElement>("#update-message")!;
-  let fadeToast: ReturnType<typeof setTimeout> | undefined;
-  let hideToast: ReturnType<typeof setTimeout> | undefined;
   const showUpdate = (status: import("./shared").UpdateStatus, notify = true) => {
     check.disabled = development.disabled = status.busy;
-    if (!notify || !status.message || !d.open) return;
-    clearTimeout(fadeToast);
-    clearTimeout(hideToast);
-    updateMessage.textContent = status.message + (status.percent === undefined ? "" : " " + status.percent + "%");
-    updateMessage.showPopover();
-    updateMessage.classList.add("visible");
-    fadeToast = setTimeout(() => {
-      updateMessage.classList.remove("visible");
-      hideToast = setTimeout(() => updateMessage.hidePopover(), 250);
-    }, 3000);
+    if (notify && status.message && d.open)
+      showToast(status.message + (status.percent === undefined ? "" : " " + status.percent + "%"), d);
   };
   const unsubscribeUpdate = api.onUpdateStatus(showUpdate);
   void api.updateStatus().then(status => showUpdate(status, false)).catch(error);
@@ -1020,9 +1035,7 @@ function settings() {
   });
   d.onclose = () => {
     unsubscribeUpdate();
-    clearTimeout(fadeToast);
-    clearTimeout(hideToast);
-    updateMessage.hidePopover();
+    dismissToast();
     save();
     d.onclose = null;
     void saveQueue.then(() => {
@@ -1206,6 +1219,10 @@ async function start() {
     clearInterval(animation);
     splash.classList.add("finished");
     setTimeout(() => splash.remove(), 300);
+    void api.startupUpdate().then(available => {
+      if (available) showToast("A new update is available. Open Settings to update Nen.",
+        document.querySelector<HTMLDialogElement>("dialog[open]") ?? document.body);
+    }).catch(() => {});
   }
 }
 void start().catch((e) => {
