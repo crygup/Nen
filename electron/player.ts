@@ -9,6 +9,8 @@ export class Player {
   child?: ChildProcess;
   socket?: Socket;
   private request = 0;
+  private fileLoaded = false;
+  private restarted = false;
   private pending = new Map<
     number,
     {
@@ -166,8 +168,14 @@ export class Player {
           : p.reject(Error(data.error));
       }
     }
+    if (data.event === "start-file") {
+      this.fileLoaded = this.restarted = false;
+      this.status.ready = false;
+    }
+    if (data.event === "file-loaded") this.fileLoaded = true;
     if (data.event === "playback-restart") {
-      this.status.ready = true;
+      this.restarted = true;
+      this.status.ready = this.fileLoaded && this.status.duration > 0;
       this.status.loadingNotice = undefined;
       this.onChange();
     }
@@ -192,6 +200,7 @@ export class Player {
         this.status.chapters = data.data;
       if (data.name === "track-list" && Array.isArray(data.data))
         this.status.tracks = data.data;
+      if (this.fileLoaded && this.restarted && this.status.duration > 0) this.status.ready = true;
       this.onChange();
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "nen",
-  "version": "0.1.118",
+  "version": "0.1.119",
   "private": true,
   "description": "Nen desktop anime player",
   "author": "may-be.gay",
@@ -75,7 +75,7 @@
       "oneClick": true,
       "perMachine": false,
       "allowElevation": false,
-      "deleteAppDataOnUninstall": false,
+      "deleteAppDataOnUninstall": true,
       "artifactName": "Nen-Setup-${version}.${ext}"
     }
   },

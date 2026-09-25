@@ -1788,7 +1788,7 @@ dialog::-webkit-scrollbar-button { display: none; }
 .together-panel h2 { font-size: 22px; }
 .together-panel [hidden] { display: none !important; }
 .together-entry { min-height: calc(100dvh - 220px); display: flex; align-items: center; justify-content: center; gap: 28px; }
-.together-entry-actions > button { width: 140px; min-height: 64px; font-size: 16px; border-radius: 4px; }
+.together-entry-actions > button { width: 124px; min-height: 46px; font-size: 14px; border-radius: 6px; }
 .together-join { width: min(440px, 90vw); }
 .together-join label, .together-join input { display: block; width: 100%; }
 .together-join input { margin: 12px 0 20px; }
@@ -1831,7 +1831,6 @@ dialog::-webkit-scrollbar-button { display: none; }
 .with-together .watch-together { color: var(--text); }
 @media (max-width: 800px) {
   .together-entry { flex-direction: column; gap: 18px; }
-  .together-entry-actions > button { min-height: 64px; width: 140px; }
   .together-chat, .watch-together { width: 260px; padding: 12px; }
   .with-together .player-stage { width: calc(100% - 260px); }
 }
@@ -1840,7 +1839,7 @@ dialog::-webkit-scrollbar-button { display: none; }
 #together-lobby .together-room { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
 .workspace:has(#together-lobby.chat-enabled) { padding-right: 320px; padding-bottom: 0; }
 .workspace:has(#together-lobby.chat-enabled.chat-collapsed) { padding-right: 52px; }
-#together-lobby .together-chat { position: fixed; inset: 0 0 0 auto; height: 100dvh; border-radius: 0; width: 320px; }
+#together-lobby .together-chat { padding: 20px 8px; position: fixed; inset: 0 0 0 auto; height: 100dvh; border-radius: 0; width: 320px; }
 #together-lobby.chat-collapsed .together-chat { width: 52px; }
 .together-controls h3, .together-member-section h3 { margin: 0 0 16px; }
 .watch-together .together-member-section { margin-top: 20px; }
@@ -1865,3 +1864,45 @@ dialog::-webkit-scrollbar-button { display: none; }
 html.window-fullscreen.player-mode { scrollbar-gutter: auto; }
 
 html:has(#together-lobby.chat-enabled) { scrollbar-gutter: auto; }
+
+
+dialog[open]:has(#settings) { display: grid; grid-template-columns: 170px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; width: min(820px, 94vw); height: min(80vh, 700px); max-height: 80vh; padding: 0; overflow: hidden; }
+dialog:has(#settings) .dialog-header { position: absolute; top: 25px; right: 30px; }
+dialog:has(#settings) h2 { grid-column: 1 / -1; margin: 0; padding: 25px 60px 22px 30px; border-bottom: 1px solid var(--line); }
+.settings-tabs { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; gap: 8px; padding: 20px 12px; background: var(--side); border-right: 1px solid var(--line); }
+.settings-tabs button { display: flex; align-items: center; gap: 10px; padding: 12px; text-align: left; border: 0; background: transparent; color: var(--muted); }
+.settings-tabs button:hover, .settings-tabs button[aria-selected="true"] { background: var(--hover); color: var(--text); }
+.settings-tabs svg { width: 18px; height: 18px; flex-shrink: 0; }
+#settings { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; padding: 24px; }
+#settings-message { grid-column: 1 / -1; margin: 0; padding: 12px 24px; }
+.settings-version { grid-column: 1 / -1; margin: 0; padding: 16px 30px; border-top: 1px solid var(--line); }
+#settings > [role="tabpanel"] > :first-child, #settings-account > section > :first-child { margin-top: 0; }
+@media (max-width: 600px) {
+  dialog[open]:has(#settings) { grid-template-columns: 130px minmax(0, 1fr); }
+  .settings-tabs { padding-inline: 6px; }
+  .settings-tabs button { gap: 6px; padding-inline: 8px; }
+  #settings { padding: 24px 16px; }
+}
+
+.loading::before, #finding-source::before, #buffering::before {
+  content: "|";
+  display: inline-block;
+  width: 1.2em;
+  margin-right: 8px;
+  text-align: center;
+  font-family: monospace;
+  animation: loading-text 640ms step-end infinite;
+}
+@keyframes loading-text {
+  0% { content: "|"; }
+  25% { content: "/"; }
+  50% { content: "\2014"; }
+  75% { content: "\005c"; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading::before, #finding-source::before, #buffering::before { animation: none; }
+}
+
+#together-lobby .together-chat header { justify-content: flex-end; min-height: 34px; }
+#together-lobby .together-chat header h3 { margin-right: auto; padding-left: 12px; }
+#together-lobby .together-chat-body { padding-inline: 12px; }

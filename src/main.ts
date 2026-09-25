@@ -232,7 +232,7 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
@@ -938,6 +938,8 @@ async function startEpisode(m: Media, ep: number) {
     d.onclose = null;
     if (d.open && token === pickerRequest) d.close();
   } catch (e) {
+    const finding = d.querySelector<HTMLElement>("#finding-source");
+    if (finding) finding.hidden = true;
     error(e);
   }
 }
@@ -1136,18 +1138,49 @@ function settings() {
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
-    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div></form><p id="settings-message" role="status"></p>`,
+    `<h2 id="dialog-title">Settings</h2>
+    <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase()}" aria-controls="settings-${name.toLowerCase()}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(i === 0 ? "settings" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
+    <form id="settings">
+    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Get beta updates</label></div></section>
+    <section id="settings-streaming" role="tabpanel" aria-labelledby="settings-tab-streaming" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
+    <section id="settings-account" role="tabpanel" aria-labelledby="settings-tab-account" hidden></section>
+    </form><p id="settings-message" role="status"></p>`, 
   );
-  d.querySelector(".dialog-header .eyebrow")!.innerHTML = `<strong>NEN</strong> - ${esc(state.version)}`;
+  const version = d.querySelector(".dialog-header .eyebrow")!;
+  version.innerHTML = `<strong>NEN</strong> - ${esc(state.version)}`;
+  version.classList.add("settings-version");
+  d.append(version);
   const form = d.querySelector<HTMLFormElement>("#settings")!;
   const message = d.querySelector<HTMLElement>("#settings-message")!;
+  const tabs = [...d.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  for (const tab of tabs) {
+    tab.onclick = () => {
+      for (const item of tabs) {
+        const selected = item === tab;
+        item.setAttribute("aria-selected", String(selected));
+        item.tabIndex = selected ? 0 : -1;
+        d.querySelector<HTMLElement>("#" + item.getAttribute("aria-controls"))!.hidden = !selected;
+      }
+    };
+    tab.onkeydown = event => {
+      const index = tabs.indexOf(tab);
+      const next = event.key === "ArrowDown" ? (index + 1) % tabs.length
+        : event.key === "ArrowUp" ? (index + tabs.length - 1) % tabs.length
+        : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      tabs[next].click();
+      tabs[next].focus();
+    };
+  }
   const transfer = document.createElement("section");
-  transfer.innerHTML = `<hr><h3 class="local-data-heading">AniList</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
-  message.before(transfer);
+  transfer.innerHTML = `<h3 class="local-data-heading">AniList</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
+  d.querySelector("#settings-account")!.append(transfer);
   const uninstall = document.createElement("button");
   uninstall.textContent = "Uninstall";
   uninstall.id = "uninstall";
-  message.after(document.createElement("hr"), uninstall);
+  uninstall.type = "button";
+  d.querySelector(".update-actions")!.prepend(uninstall);
   uninstall.onclick = () => {
     d.close();
     const confirm = dialog('<h2 id="dialog-title">Uninstall Nen?</h2><p>Nen will close and open the Windows uninstaller.</p><div class="actions"><button id="confirm-uninstall">Uninstall</button><button id="cancel-uninstall">Cancel</button></div>');

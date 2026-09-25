@@ -721,7 +721,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
       };
       publish();
       try {
-        const list = await inspect(release.hash, 20000);
+        const list = await inspect(release.hash, 12000);
         if (request !== playbackRequest) return;
         const file = saved && release.hash === saved.hash
           ? list.find(f => f.path === saved.file.path && f.size === saved.file.size)
@@ -731,12 +731,15 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
           saved && release.hash === saved.hash ? saved : undefined, startAt);
         if (request !== playbackRequest) return;
         const active = player!;
-        const deadline = Date.now() + 30000;
-        while (request === playbackRequest && player === active && !active.status.ready
+        const deadline = Date.now() + 15000;
+        const started = () => active.status.ready && active.status.duration > 0
+          && !active.status.buffering && !active.status.seeking
+          && (active.status.paused || active.status.position > startAt + 0.2);
+        while (request === playbackRequest && player === active && !started()
           && !active.status.error && Date.now() < deadline)
           await new Promise(resolve => setTimeout(resolve, 100));
         if (request !== playbackRequest) return;
-        if (active.status.ready) {
+        if (player === active && !active.status.error && started()) {
           pendingPlayback = undefined;
           return;
         }
@@ -1445,15 +1448,16 @@ async function openPlayerView() {
 
   videoView = new BaseWindow({
     ...window.getContentBounds(),
-
+    ...(process.platform === "win32" ? { type: "toolbar" } : {}),
     frame: false,
-    show: true,
+    show: false,
     skipTaskbar: true,
     focusable: false,
     transparent: true,
     backgroundColor: "#00000000",
   });
   videoView.contentView.setVisible(false);
+  videoView.showInactive();
   window.moveTop();
   controls = window;
   await loadPage({ player: "1" });

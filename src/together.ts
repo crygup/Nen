@@ -55,7 +55,7 @@ export function mountTogether(root: HTMLElement, choose: () => void, player = fa
     el<HTMLInputElement>("[data-permission]").checked = !!s.allowPause;
     el<HTMLInputElement>("[data-chat-permission]").checked = s.chatEnabled !== false;
     el("[data-title]").hidden = !s.selection;
-    el("[data-status]").textContent = !s.selection ? (s.host ? "Pick an episode to start." : "Waiting for the host to choose an episode.") : s.waiting ? "Waiting for everyone to load." : s.paused ? "Paused" : "Watching together";
+    el("[data-status]").textContent = !s.selection ? (s.host ? "" : "Waiting for the host to choose an episode.") : s.waiting ? "Waiting for everyone to load." : s.paused ? "Paused" : "Watching together";
     el("[data-source]").hidden = !s.selection || !source;
     el("[data-retry]").hidden = !s.selection || !!s.members.find(m => m.id === s.self)?.ready;
     const key = s.selection ? s.selection.mediaId + ":" + s.selection.episode : "";

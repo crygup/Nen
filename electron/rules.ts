@@ -4,7 +4,11 @@ export function sourceOffset(mediaId: number): number {
   return mediaId === 210482 ? 1 : 0;
 }
 export function sourceAliases(media: Media): string[] {
-  return media.id === 210482 ? ["JoJo no Kimyou na Bouken: Steel Ball Run"] : [];
+  // AniList groups the first two cours under Part 1 & 2; releases call them S4.
+  if (media.id === 182205) return ["Tensei Shitara Slime Datta Ken S4"];
+  if (media.id === 210482) return ["JoJo no Kimyou na Bouken: Steel Ball Run"];
+  return [media.title.romaji, media.title.english].filter((name): name is string => !!name)
+    .map(normalizeSeason).filter((name, i) => name !== [media.title.romaji, media.title.english][i]);
 }
 export function positive(value: unknown, max = 10000000): number {
   if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > max)
@@ -141,6 +145,10 @@ export function repairProgress(
   return repaired;
 }
 
+function normalizeSeason(title: string): string {
+  return title.replace(/\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|season\s*(\d{1,2})|s(\d{1,2}))\b/gi,
+    (_, ordinal, season, short) => `S${Number(ordinal ?? season ?? short)}`);
+}
 export function seasonNumber(title: string): number | null {
   const match = title.match(/\b(?:season\s*|s)(\d{1,2})\b/i)
     ?? title.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+season\b/i);
@@ -168,7 +176,7 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
 
 export function matchesMedia(title: string, media: Media): boolean {
   if (!matchesSeason(title, media)) return false;
-  const normalize = (value: string) => value.normalize("NFKC").toLowerCase()
+  const normalize = (value: string) => normalizeSeason(value.normalize("NFKC")).toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const name = normalize(title.replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
   return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media)]

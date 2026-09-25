@@ -425,6 +425,7 @@ export function rankReleases(
         return q < 0 ? 999 : q;
       };
       return (
+        Number(Number.isNaN(parseInt(a.resolution))) - Number(Number.isNaN(parseInt(b.resolution))) ||
         Number(a.confidence !== "Episode match") -
           Number(b.confidence !== "Episode match") ||
         rank(a) - rank(b) ||
