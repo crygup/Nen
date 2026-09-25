@@ -135,7 +135,7 @@ const backToList = () =>
       : discover(page);
 
 let dismissToast = () => {};
-function showToast(message: string, parent: HTMLElement = document.body) {
+function showToast(message: string, parent: HTMLElement = document.body, persistent = false) {
   dismissToast();
   const toast = document.createElement("div");
   toast.className = "update-toast";
@@ -146,12 +146,21 @@ function showToast(message: string, parent: HTMLElement = document.body) {
   parent.append(toast);
   toast.showPopover();
   toast.classList.add("visible");
+  let fade: ReturnType<typeof setTimeout> | undefined;
   let remove: ReturnType<typeof setTimeout> | undefined;
-  const fade = setTimeout(() => {
-    toast.classList.remove("visible");
-    remove = setTimeout(() => toast.remove(), 250);
-  }, 3000);
+  const update = (text: string, keepVisible = false) => {
+    clearTimeout(fade);
+    clearTimeout(remove);
+    toast.textContent = text;
+    toast.classList.add("visible");
+    if (!keepVisible) fade = setTimeout(() => {
+      toast.classList.remove("visible");
+      remove = setTimeout(() => toast.remove(), 250);
+    }, 3000);
+  };
   dismissToast = () => { clearTimeout(fade); clearTimeout(remove); toast.remove(); };
+  update(message, persistent);
+  return { element: toast, update };
 }
 function error(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
@@ -1205,10 +1214,14 @@ function settings() {
     e.preventDefault();
   const check = d.querySelector<HTMLButtonElement>("#check-updates")!;
   const development = d.querySelector<HTMLInputElement>("#development-builds")!;
+  let updateToast: ReturnType<typeof showToast> | undefined;
   const showUpdate = (status: import("./shared").UpdateStatus, notify = true) => {
     check.disabled = development.disabled = status.busy;
-    if (notify && status.message && d.open)
-      showToast(status.message + (status.percent === undefined ? "" : " " + status.percent + "%"), d);
+    if (notify && status.message && d.open) {
+      const text = status.message + (status.percent === undefined ? "" : " " + status.percent + "%");
+      if (updateToast?.element.isConnected) updateToast.update(text, status.busy);
+      else updateToast = showToast(text, d, status.busy);
+    }
   };
   const unsubscribeUpdate = api.onUpdateStatus(showUpdate);
   void api.updateStatus().then(status => showUpdate(status, false)).catch(error);
