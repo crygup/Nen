@@ -17,7 +17,7 @@ import {
   safeStorage,
   type UtilityProcess,
 } from "electron";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import {
   mkdirSync,
   readFileSync,
@@ -30,7 +30,7 @@ import {
 import { pathToFileURL } from "node:url";
 import * as providers from "./providers";
 import { Player } from "./player";
-import { readRemote, preview as previewAniList, apply as applyAniList } from "./anilist";
+import { syncFavorites, setRemoteWatch, setRemoteFavorite, readRemote, preview as previewAniList, apply as applyAniList } from "./anilist";
 import { markEpisode, migrateProgress, newEntry, statuses, validateTransfer, mergeWatch, activeRun } from "./watch-data";
 import {
   positive,
@@ -98,6 +98,7 @@ async function syncUncontested() {
   if (syncRunning || !state.anilist.connected || !state.anilist.lastSync || syncPreview) return;
   syncRunning = true;
   try {
+    await syncFavorites(getToken(), state.favorites, state.favoriteChanges);
     const remote = await readRemote(getToken());
     const changes = previewAniList(state.watch, remote.entries, state.anilist).changes;
     await applyAniList(getToken(), state.watch, remote.entries, state.anilist, changes.filter(row => !row.conflict));
@@ -190,6 +191,8 @@ const defaults: State = {
   },
   progress: {},
   watch: {},
+  favorites: {},
+  favoriteChanges: {},
   anilist: { connected: false, baseline: {} },
   markers: {},
   mappings: {},
@@ -633,7 +636,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
   const request = ++playbackRequest;
   const attempted = new Set<string>();
   let candidates: Release[] | undefined;
-  let failure = "No matching source was found.";
+  let failure = "No streams found.";
   const watchEntry = state.watch[String(mediaId)];
   let startAt = watchEntry?.status === "REPEATING"
     ? watchEntry.runs.at(-1)?.episodes[String(episode)]?.position ?? 0
@@ -701,19 +704,13 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
         }
         failure = active.status.error ?? "This source took too long to start.";
         if (attempt === 5) break;
-        const quality = parseInt(release.resolution);
-        if (candidates) {
-          const sameQuality = candidates.filter(r => parseInt(r.resolution) === quality);
-          if (sameQuality.some(r => attempted.has(r.hash) && r.hash !== release!.hash))
-            for (const row of sameQuality) attempted.add(row.hash);
-        }
       } catch (error) {
         if (request !== playbackRequest) return;
         failure = (error as Error).message;
       }
     }
     if (request === playbackRequest) {
-      const message = failure + " Choose another source or try again later.";
+      const message = failure === "No streams found." ? failure : failure + " Choose another source or try again later.";
       if (controls) {
         if (player) player.status.error = message;
         else if (pendingPlayback) pendingPlayback.error = message;
@@ -806,6 +803,8 @@ else {
             ...stored,
             settings: settings(stored.settings),
             watch: stored.watch ?? {},
+            favorites: stored.favorites ?? {},
+            favoriteChanges: stored.favoriteChanges ?? {},
             anilist: { ...defaults.anilist, ...stored.anilist, connected: false },
           };
         } catch {
@@ -937,22 +936,56 @@ else {
           return fn(...args);
         });
       }
-      handle("watchAdd", async (id) => {
-        const anime = await providers.media(positive(id));
-        state.watch[String(anime.id)] ??= newEntry(anime);
-        save();
-        queueSync();
-        return state;
-      });
-      handle("watchDelete", (id) => {
+      handle("favoriteSet", async (id, favorite) => {
         const mediaId = positive(id);
-        delete state.watch[String(mediaId)];
-        for (const [key, saved] of Object.entries(state.progress))
-          if (saved.mediaId === mediaId) delete state.progress[key];
-        if (current?.mediaId === mediaId) current = undefined;
-        syncPreview = undefined;
-        save();
-        return state;
+        if (typeof favorite !== "boolean") throw Error("Invalid favorite selection.");
+        if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+        syncRunning = true;
+        try {
+          const entry = favorite ? state.favorites[String(mediaId)] ?? newEntry(await providers.media(mediaId)) : undefined;
+          if (state.anilist.connected) await setRemoteFavorite(getToken(), mediaId, favorite);
+          if (entry) state.favorites[String(mediaId)] = entry;
+          else delete state.favorites[String(mediaId)];
+          if (state.anilist.connected) delete state.favoriteChanges[String(mediaId)];
+          else state.favoriteChanges[String(mediaId)] = favorite;
+          save();
+          return state;
+        } finally { syncRunning = false; }
+      });
+      handle("watchAdd", async (id) => {
+        const mediaId = positive(id);
+        if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+        syncRunning = true;
+        try {
+          const entry = structuredClone(state.watch[String(mediaId)] ?? newEntry(await providers.media(mediaId)));
+          entry.status = "PLANNING";
+          entry.statusUpdated = entry.updated = Date.now();
+          if (state.anilist.connected) {
+            await setRemoteWatch(getToken(), mediaId, entry);
+            state.anilist.baseline[String(mediaId)] = { status: entry.status, count: entry.count, repeat: entry.repeat };
+          }
+          state.watch[String(mediaId)] = entry;
+          syncPreview = undefined;
+          save();
+          return state;
+        } finally { syncRunning = false; }
+      });
+      handle("watchDelete", async (id, sync = false) => {
+        const mediaId = positive(id);
+        if (typeof sync !== "boolean") throw Error("Invalid sync option.");
+        if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+        syncRunning = true;
+        try {
+          if (sync && state.anilist.connected) await setRemoteWatch(getToken(), mediaId);
+          delete state.watch[String(mediaId)];
+          delete state.anilist.baseline[String(mediaId)];
+          for (const [key, saved] of Object.entries(state.progress))
+            if (saved.mediaId === mediaId) delete state.progress[key];
+          if (current?.mediaId === mediaId) current = undefined;
+          syncPreview = undefined;
+          save();
+          return state;
+        } finally { syncRunning = false; }
       });
       handle("watchEdit", (id, patch) => {
         const entry = state.watch[String(positive(id))];
@@ -1031,7 +1064,10 @@ else {
       });
       handle("anilistConnect", connectAniList);
       handle("anilistPreview", async (): Promise<SyncPreview> => {
+        if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+        syncRunning = true;
         try {
+          await syncFavorites(getToken(), state.favorites, state.favoriteChanges);
           const remote = await readRemote(getToken());
           state.anilist.user = remote.user;
           state.anilist.error = undefined;
@@ -1043,12 +1079,14 @@ else {
           state.anilist.error = String(error);
           save();
           throw error;
-        }
+        } finally { syncRunning = false; }
       });
       handle("anilistApply", async (choices: SyncChange[]) => {
         if (!syncPreview || !Array.isArray(choices)) throw Error("Review AniList changes first.");
         const expected = syncPreview.changes;
         if (choices.length !== expected.length || choices.some((row, i) => row.mediaId !== expected[i].mediaId || row.field !== expected[i].field || !["local", "remote", undefined].includes(row.choice))) throw Error("Sync review changed. Review again.");
+        if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+        syncRunning = true;
         try {
           await applyAniList(getToken(), state.watch, syncPreview.remote, state.anilist, expected.map((row, i) => ({ ...row, choice: choices[i].choice })));
           syncPreview = undefined;
@@ -1058,7 +1096,7 @@ else {
           state.anilist.error = String(error);
           save();
           throw error;
-        }
+        } finally { syncRunning = false; }
       });
       handle("anilistDisconnect", () => {
         rmSync(tokenPath, { force: true });
@@ -1078,14 +1116,14 @@ else {
       });
       handle("catalogOptions", () => providers.catalogOptions());
       handle("catalog", (mode, query, page, perPage = 24) => {
-        if (!["trending", "season", "search"].includes(mode))
+        if (!["trending", "season", "search", "romance"].includes(mode))
           throw Error("Invalid view.");
         return providers.catalog(
           mode,
           text(query),
           positive(page, 100),
           state.settings.showAdult,
-          positive(perPage, 24),
+          positive(perPage, 50),
         );
       });
       handle("episodes", (id, page) =>
@@ -1202,6 +1240,16 @@ else {
         }
         throw Error("Invalid player action.");
       });
+      handle("uninstall", async () => {
+        const uninstaller = join(dirname(app.getPath("exe")), "Uninstall Nen.exe");
+        if (!app.isPackaged || !existsSync(uninstaller)) throw Error("Uninstall is available after installing Nen.");
+        await new Promise<void>((resolve, reject) => {
+          const child = spawn(uninstaller, [], { detached: true, stdio: "ignore", windowsHide: true });
+          child.once("error", reject);
+          child.once("spawn", () => { child.unref(); resolve(); });
+        });
+        setTimeout(() => app.quit(), 200);
+      });
       handle("state", () => state);
       handle("startupUpdate", startupUpdate);
       handle("checkUpdates", checkUpdates);
@@ -1275,6 +1323,10 @@ else {
           filler: "https://anifillerpedia.wiki/",
           license: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
           aniskip: "https://aniskip.com/",
+          discord: "https://discord.gg/rYgwUYSNRg",
+          issues: "https://github.com/may-be-gay/Nen/issues",
+          email: "mailto:nen@crygup.com",
+          donate: "https://ko-fi.com/crygup",
         };
         if (!Object.hasOwn(urls, target)) throw Error("Invalid link.");
         return shell.openExternal(urls[target]);

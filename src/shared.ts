@@ -16,6 +16,7 @@ export interface Media {
   seasonYear: number | null;
   averageScore: number | null;
   genres: string[];
+  tags?: { name: string; rank: number }[];
   nextAiringEpisode: { episode: number; airingAt?: number } | null;
   airingSchedule?: { nodes: { episode: number; airingAt: number }[] };
   streamingEpisodes?: { title: string }[];
@@ -174,6 +175,8 @@ export interface State {
   settings: Settings;
   progress: Record<string, Progress>;
   watch: Record<string, WatchEntry>;
+  favorites: Record<string, WatchEntry>;
+  favoriteChanges: Record<string, boolean>;
   anilist: AniListState;
   markers: Record<string, Marker[]>;
   mappings: Record<string, number>;
@@ -211,8 +214,10 @@ export interface Playback {
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number }
 export interface API {
+  uninstall(): Promise<void>;
+  favoriteSet(id: number, favorite: boolean): Promise<State>;
   watchAdd(id: number): Promise<State>;
-  watchDelete(id: number): Promise<State>;
+  watchDelete(id: number, sync?: boolean): Promise<State>;
   watchEdit(id: number, patch: { status?: WatchStatus; count?: number; episode?: number; watched?: boolean; position?: number; duration?: number; startRewatch?: boolean }): Promise<State>;
   watchExport(): Promise<string | null>;
   watchImportPreview(): Promise<ImportPreview | null>;
@@ -234,7 +239,7 @@ export interface API {
   ): () => void;
   catalogOptions(): Promise<{ genres: string[]; tags: string[] }>;
   catalog(
-    mode: "trending" | "season" | "search",
+    mode: "trending" | "season" | "search" | "romance",
     search: string,
     page: number,
     perPage?: number,
@@ -278,7 +283,7 @@ export interface API {
   undo(): Promise<void>;
   clear(kind: "history" | "cache"): Promise<void>;
   external(
-    target: "anilist" | "filler" | "license" | "aniskip",
+    target: "anilist" | "filler" | "license" | "aniskip" | "discord" | "issues" | "email" | "donate",
     id?: number,
   ): Promise<void>;
   onBack(callback: (direction: "back" | "forward") => void): () => void;

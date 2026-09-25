@@ -98,3 +98,40 @@ export async function apply(token: string, local: Record<string, WatchEntry>, re
   sync.lastSync = Date.now();
   sync.error = undefined;
 }
+
+export async function setRemoteWatch(token: string, mediaId: number, entry?: WatchEntry) {
+  if (entry) {
+    await request(token, "mutation($mediaId:Int,$status:MediaListStatus,$progress:Int,$repeat:Int){ SaveMediaListEntry(mediaId:$mediaId,status:$status,progress:$progress,repeat:$repeat){ id } }",
+      { mediaId, status: entry.status, progress: entry.count, repeat: entry.repeat });
+    return;
+  }
+  const { Viewer } = await request<{ Viewer: { id: number } }>(token, "query { Viewer { id } }");
+  const { Page } = await request<{ Page: { mediaList: { id: number }[] } }>(token,
+    "query($userId:Int,$mediaId:Int){ Page(perPage:1){ mediaList(userId:$userId,mediaId:$mediaId){ id } } }", { userId: Viewer.id, mediaId });
+  if (Page.mediaList[0]) {
+    const result = await request<{ DeleteMediaListEntry: { deleted: boolean } }>(token,
+      "mutation($id:Int){ DeleteMediaListEntry(id:$id){ deleted } }", { id: Page.mediaList[0].id });
+    if (!result.DeleteMediaListEntry.deleted) throw Error("AniList did not remove the entry.");
+  }
+}
+export async function setRemoteFavorite(token: string, id: number, favorite: boolean) {
+  const { Media } = await request<{ Media: { isFavourite: boolean } }>(token,
+    "query($id:Int){ Media(id:$id,type:ANIME){ isFavourite } }", { id });
+  if (Media.isFavourite !== favorite)
+    await request(token, "mutation($id:Int){ ToggleFavourite(animeId:$id){ anime { nodes { id } } } }", { id });
+}
+export async function syncFavorites(token: string, local: Record<string, WatchEntry>, pending: Record<string, boolean>) {
+  for (const [id, favorite] of Object.entries(pending)) {
+    await setRemoteFavorite(token, Number(id), favorite);
+    delete pending[id];
+  }
+  const favorites: Record<string, WatchEntry> = {};
+  for (let page = 1; ; page++) {
+    const { Viewer } = await request<{ Viewer: { favourites: { anime: { pageInfo: { hasNextPage: boolean }; nodes: { id: number; title: { english: string | null; romaji: string; native: string | null }; coverImage: { large: string }; episodes: number | null; isAdult: boolean }[] } } } }>(token,
+      "query($page:Int){ Viewer { favourites { anime(page:$page,perPage:50){ pageInfo { hasNextPage } nodes { id title { english romaji native } coverImage { large } episodes isAdult } } } } }", { page });
+    for (const media of Viewer.favourites.anime.nodes) favorites[String(media.id)] = local[String(media.id)] ?? newEntry(media);
+    if (!Viewer.favourites.anime.pageInfo.hasNextPage) break;
+  }
+  for (const id of Object.keys(local)) delete local[id];
+  Object.assign(local, favorites);
+}

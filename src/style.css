@@ -1399,7 +1399,7 @@ button {
   object-fit: cover;
   border-radius: 5px;
 }
-.recent-card strong {
+.recent-card strong, .recent-title {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -1755,3 +1755,26 @@ dialog {
 /* Keep the same image layer when the hover animation ends. */
 .list-card .cover img { transform: translateZ(0) scale(1); }
 .list-card:hover .cover img { transform: translateZ(0) scale(1.025); }
+
+.series-poster { min-width: 0; }
+.series-poster .series-cover { width: 100%; display: block; }
+.series-list-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.series-list-actions #watchlist-toggle { flex: 1; padding: 10px 8px; font-size: 12px; }
+#favorite-toggle { flex: none; }
+#favorite-toggle[aria-pressed="true"] svg { fill: currentColor; }
+
+html { scrollbar-gutter: stable; }
+* { scrollbar-width: thin; scrollbar-color: var(--muted) var(--bg); }
+dialog:has(#settings), dialog:has(#help) { width: min(660px, 90vw); max-height: min(76vh, 760px); }
+#uninstall, #confirm-uninstall { background: #a62b38; border-color: #a62b38; color: #fff; }
+#uninstall:hover, #confirm-uninstall:hover { background: #bf3544; }
+.recent-play, .recent-title { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; }
+.recent-play:hover, .recent-title:hover { background: transparent; }
+.recent-title { display: -webkit-box; }
+.recent-title:hover { color: var(--accent); }
+
+.sidebar-bottom { display: grid; gap: 6px; }
+
+#help h3 { font-size: 20px; }
+#help h4 { font-size: 16px; font-weight: 600; margin: 22px 0 10px; }
+#help h3 + .actions { margin-top: 16px; }

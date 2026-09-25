@@ -66,7 +66,7 @@ const names: Record<SegmentType, string> = {
   recap: "Recap",
 };
 let state: State;
-let mode: "trending" | "season" | "search" = "trending";
+let mode: "trending" | "season" | "search" | "romance" = "trending";
 let query = "";
 let page = 1;
 let request = 0;
@@ -84,7 +84,7 @@ let seriesReturn = "home";
 type BrowseVisit = {
   route: string;
   mediaId?: number;
-  mode: "trending" | "season" | "search";
+  mode: "trending" | "season" | "search" | "romance";
   query: string;
   page: number;
 };
@@ -154,6 +154,9 @@ function showToast(message: string, parent: HTMLElement = document.body) {
   dismissToast = () => { clearTimeout(fade); clearTimeout(remove); toast.remove(); };
 }
 function error(e: unknown) {
+  const raw = e instanceof Error ? e.message : String(e);
+  const text = /No matching source was found|No streams found/.test(raw)
+    ? "No streams found." : raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
   const open = document.querySelector<HTMLDialogElement>("dialog[open]");
   if (open) {
     let message = open.querySelector<HTMLElement>(".dialog-error");
@@ -163,13 +166,13 @@ function error(e: unknown) {
       message.setAttribute("role", "alert");
       open.append(message);
     }
-    message.textContent = e instanceof Error ? e.message : String(e);
+    message.textContent = text;
     return;
   }
   const box = document.querySelector<HTMLElement>(
     playerMode ? "#player-error" : "#message",
   )!;
-  box.textContent = e instanceof Error ? e.message : String(e);
+  box.textContent = text;
   box.hidden = false;
 }
 async function run(fn: () => Promise<unknown>) {
@@ -215,7 +218,7 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
@@ -223,7 +226,7 @@ const getOptions = () =>
     throw e;
   }));
 function shell() {
-  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const input = document.querySelector<HTMLInputElement>("#search-input")!;
   const results = document.querySelector<HTMLElement>("#search-suggestions")!;
   const clear = document.querySelector<HTMLButtonElement>("#clear-search")!;
@@ -370,6 +373,7 @@ function shell() {
       (b.onclick = () => {
         close();
         if (b.dataset.nav === "settings") settings();
+        else if (b.dataset.nav === "help") help();
         else if (b.dataset.nav === "history") void watchlist();
         else if (b.dataset.nav === "watchlist") void watchlist();
         else if (b.dataset.nav === "home") void home();
@@ -394,7 +398,7 @@ function shell() {
   });
 }
 async function browseFilters(token: number) {
-  const f = parseSearch(mode === "search" ? query : "");
+  const f = parseSearch(mode === "search" || mode === "romance" ? query : "");
   let options = { genres: [] as string[], tags: [] as string[] };
   try {
     options = await getOptions();
@@ -456,14 +460,18 @@ function continueCards() {
     && (e.status === "CURRENT" || e.status === "REPEATING") && (state.settings.showAdult || !e.isAdult))
     .sort((a, b) => b.updated - a.updated);
   return [
-    ...local.map(([key, p]) => `<article class="list-card"><button class="recent-card" data-adult="${!!p.isAdult}" data-resume="${key}"><div class="cover"><img src="${esc(p.cover)}" alt="" loading="lazy"></div><strong>${esc(p.title)}</strong><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} &middot; ${time(p.position)} / ${time(p.duration)}</small></button>${watchEditButton(p.mediaId, p.title)}</article>`),
+    ...local.map(([key, p]) => `<article class="list-card"><div class="recent-card" data-adult="${!!p.isAdult}" data-resume="${key}"><button class="recent-play" aria-label="Play ${esc(p.title)}"><div class="cover"><img src="${esc(p.cover)}" alt="" loading="lazy"></div></button><button class="recent-title" data-open-series="${p.mediaId}">${esc(p.title)}</button><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} &middot; ${time(p.position)} / ${time(p.duration)}</small></div>${watchEditButton(p.mediaId, p.title)}</article>`),
     ...imported.map(e => {
       const episode = Math.min(e.count + 1, e.totalEpisodes ?? Number.MAX_SAFE_INTEGER);
-      return `<article class="list-card"><button class="recent-card" data-continue="${e.mediaId}" data-episode="${episode}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy"></div><strong>${esc(e.title)}</strong><small>Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}</small></button>${watchEditButton(e.mediaId, e.title)}</article>`;
+      return `<article class="list-card"><div class="recent-card" data-continue="${e.mediaId}" data-episode="${episode}"><button class="recent-play" aria-label="Play ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy"></div></button><button class="recent-title" data-open-series="${e.mediaId}">${esc(e.title)}</button><small>Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}</small></div>${watchEditButton(e.mediaId, e.title)}</article>`;
     }),
   ];
 }
 function bindContinue(root: ParentNode) {
+  root.querySelectorAll<HTMLButtonElement>("[data-open-series]").forEach(button => button.onclick = event => {
+    event.stopPropagation();
+    void openMedia(Number(button.dataset.openSeries));
+  });
   root.querySelectorAll<HTMLElement>("[data-resume]").forEach(button => button.onclick = () => void run(() => resumeFromHistory(button.dataset.resume!)));
   root.querySelectorAll<HTMLElement>("[data-continue]").forEach(button => button.onclick = () => void run(async () =>
     startEpisode(await api.media(Number(button.dataset.continue)), Number(button.dataset.episode))));
@@ -508,21 +516,21 @@ async function home() {
         prev.disabled = next.disabled = true;
         try {
           const data = await api.catalog(
-            filter ? "search" : "trending",
+            name === "Romance" ? "romance" : filter ? "search" : "trending",
             filter,
-            shelfPage,
-            9,
+            Math.floor((shelfPage - 1) / 5) + 1,
+            45,
           );
           if (!el.isConnected) return;
           const grid = el.querySelector<HTMLElement>(".shelf-items")!;
-          grid.innerHTML = data.media
+          grid.innerHTML = data.media.slice(((shelfPage - 1) % 5) * 9, (((shelfPage - 1) % 5) + 1) * 9)
             .filter((m) => state.settings.showAdult || !m.isAdult)
             .map(card)
             .join("");
           el.hidden = !grid.querySelector(".poster");
           bindMedia(grid);
           prev.disabled = shelfPage === 1;
-          next.disabled = !data.hasNextPage;
+          next.disabled = !data.hasNextPage && (((shelfPage - 1) % 5) + 1) * 9 >= data.media.length;
         } catch {
           const grid = el.querySelector(".shelf-items")!;
           el.hidden = !grid.querySelector(".poster");
@@ -536,7 +544,7 @@ async function home() {
       };
       el.querySelector<HTMLElement>(".shelf-more")!.onclick = () => {
         query = filter;
-        mode = filter ? "search" : "trending";
+        mode = name === "Romance" ? "romance" : filter ? "search" : "trending";
         document.querySelector<HTMLInputElement>("#search-input")!.value =
           filter;
         document.querySelector<HTMLElement>("#clear-search")!.hidden = !filter;
@@ -696,7 +704,7 @@ async function loadEpisodes(token = request) {
 function renderSeries() {
   const m = current!;
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes ?? "?"} episodes</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p class="synopsis">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
+  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes ?? "?"} episodes</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p class="synopsis">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
     m.relations?.edges.length
       ? `<section class="related"><h2>Related titles</h2><div class="related-list">${m.relations.edges
           .filter((e) => e.node.type === "ANIME")
@@ -710,6 +718,18 @@ function renderSeries() {
   document.querySelector<HTMLElement>("#back")!.onclick = () =>
     void browseBack();
   bindMedia(main);
+  updateSeriesActions();
+  const listButton = main.querySelector<HTMLButtonElement>("#watchlist-toggle")!;
+  const favoriteButton = main.querySelector<HTMLButtonElement>("#favorite-toggle")!;
+  for (const button of [listButton, favoriteButton]) button.onclick = () => void run(async () => {
+    listButton.disabled = favoriteButton.disabled = true;
+    try {
+      state = button === favoriteButton
+        ? await api.favoriteSet(m.id, !state.favorites[String(m.id)])
+        : state.watch[String(m.id)]?.status === "PLANNING" ? await api.watchDelete(m.id, true) : await api.watchAdd(m.id);
+      if (current?.id === m.id) { updateSeriesActions(); renderEpisodes(); }
+    } finally { listButton.disabled = favoriteButton.disabled = false; }
+  });
   synopsisSize?.disconnect();
   const synopsis = main.querySelector<HTMLElement>(".synopsis")!;
   let previousWidth = 0;
@@ -958,12 +978,12 @@ async function watchlist() {
   state = await api.state();
   const entries = Object.values(state.watch).filter(e => state.settings.showAdult || !e.isAdult).sort((a, b) => b.updated - a.updated);
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${watchStatuses.filter(([status]) => status !== "REPEATING").map(([status, label]) => { const name = status === "CURRENT" ? "Continue watching" : label; return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${(status === "CURRENT" ? continueCards() : entries.filter(e => e.status === status).map(e => {
+  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${([["CURRENT", "Continue watching"], ["PLANNING", "Planning"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["FAVORITES", "Favorites"], ["COMPLETED", "Completed"]] as const).map(([status, label]) => { const name = status === "CURRENT" ? "Continue watching" : label; return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${(status === "CURRENT" ? continueCards() : (status === "FAVORITES" ? Object.values(state.favorites).filter(e => state.settings.showAdult || !e.isAdult).map(e => state.watch[String(e.mediaId)] ?? e) : entries.filter(e => e.status === status)).map(e => {
     const saved = Object.values(state.progress).filter(p => p.mediaId === e.mediaId).sort((a, b) => b.updated - a.updated)[0];
     const latest = Object.entries(e.runs.at(-1)?.episodes ?? {}).sort((a, b) => b[1].updated - a[1].updated)[0];
     const episode = latest && latest[1].updated > e.countUpdated ? Number(latest[0]) : e.count;
     const info = episode > 0 ? `Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}${saved?.episode === episode && saved.episodeTitle && saved.episodeTitle !== `Episode ${episode}` ? ` \u00b7 ${saved.episodeTitle}` : ""}` : (e.totalEpisodes ? `${e.totalEpisodes} episodes` : "Not started");
-    return `<article class="list-card"><button class="poster" data-media="${e.mediaId}" aria-label="Open ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy" decoding="async"></div><h3>${esc(e.title)}</h3><p>${esc(info)}</p></button>${watchEditButton(e.mediaId, e.title)}</article>`;
+    return `<article class="list-card"><button class="poster" data-media="${e.mediaId}" aria-label="Open ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy" decoding="async"></div><h3>${esc(e.title)}</h3><p>${esc(info)}</p></button>${state.watch[String(e.mediaId)] ? watchEditButton(e.mediaId, e.title) : ""}</article>`;
   })).join("") || '<p class="muted">No anime here.</p>'}</div></section>`; }).join("")}`;
   movePageHeading();
   bindMedia(main);
@@ -984,6 +1004,18 @@ async function watchlist() {
     section.querySelector<HTMLButtonElement>("[data-list-all]")!.onclick = () => { all = !all; update(); };
     update();
   });
+}
+function updateSeriesActions() {
+  if (!current) return;
+  const list = document.querySelector<HTMLButtonElement>("#watchlist-toggle");
+  const favorite = document.querySelector<HTMLButtonElement>("#favorite-toggle");
+  if (list) list.textContent = state.watch[String(current.id)]?.status === "PLANNING" ? "Remove from watchlist" : "Add to watchlist";
+  if (favorite) {
+    const selected = !!state.favorites[String(current.id)];
+    favorite.setAttribute("aria-pressed", String(selected));
+    favorite.setAttribute("aria-label", selected ? "Remove from favorites" : "Add to favorites");
+    favorite.title = selected ? "Remove from favorites" : "Add to favorites";
+  }
 }
 function editWatch(id: number) {
   const entry = state.watch[String(id)];
@@ -1053,6 +1085,12 @@ async function showSyncReview(firstConnect = false) {
     if (route === "series") renderEpisodes();
   });
 }
+function help() {
+  const d = dialog(`<section id="help"><h2 id="dialog-title">Help &amp; support</h2><div class="actions"><button data-support="discord">Discord server</button><button data-support="issues">GitHub issues</button><button data-support="email">Email support</button></div><hr><h3>FAQ</h3><h4>Why are no streams found?</h4><p>Available sources may have no active seeders or no matching episode.</p><h4>Do I need an AniList account?</h4><p>No. Nen can keep your lists and progress locally.</p><h4>When does an episode count as watched?</h4><p>After more than 85% of an episode watched, or when you click onto the next episode.</p><h4>How do I report a problem?</h4><p>Use GitHub issues or our Discord server. Include your Nen version, the anime and episode, and steps to repeat the problem.</p><hr><h3>Donations</h3><div class="actions"><button data-support="donate">Donate on Ko-fi</button></div></section>`);
+  d.querySelectorAll<HTMLButtonElement>("[data-support]").forEach(button => {
+    button.onclick = () => void api.external(button.dataset.support as "discord" | "issues" | "email" | "donate").catch(error);
+  });
+}
 function settings() {
   const s = state.settings;
   const languages = [
@@ -1080,6 +1118,17 @@ function settings() {
   const transfer = document.createElement("section");
   transfer.innerHTML = `<hr><h3 class="local-data-heading">AniList</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache">Clear downloaded cache</button><button id="clear-history">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
   message.before(transfer);
+  const uninstall = document.createElement("button");
+  uninstall.textContent = "Uninstall";
+  uninstall.id = "uninstall";
+  message.after(document.createElement("hr"), uninstall);
+  uninstall.onclick = () => {
+    d.close();
+    const confirm = dialog('<h2 id="dialog-title">Uninstall Nen?</h2><p>Nen will close and open the Windows uninstaller.</p><div class="actions"><button id="confirm-uninstall">Uninstall</button><button id="cancel-uninstall">Cancel</button></div>');
+    confirm.querySelector<HTMLButtonElement>("#cancel-uninstall")!.onclick = () => { confirm.close(); settings(); };
+    confirm.querySelector<HTMLButtonElement>("#confirm-uninstall")!.onclick = () => void run(async () => { await api.uninstall(); });
+  };
+
   transfer.querySelector<HTMLElement>("#watch-export")!.onclick = () => void run(async () => { const path = await api.watchExport(); if (path) showToast(`Saved watch data to ${path}`, d); });
   transfer.querySelector<HTMLElement>("#watch-import")!.onclick = () => void run(async () => {
     const summary = await api.watchImportPreview();
@@ -1323,7 +1372,7 @@ async function start() {
       state = value;
       if (route === "watchlist") void watchlist();
       else if (route === "home") void home();
-      else if (route === "series") renderEpisodes();
+      else if (route === "series") { renderEpisodes(); updateSeriesActions(); }
     });
     api.onPlayback((p) => {
       const finding = document.querySelector<HTMLElement>("#finding-source");

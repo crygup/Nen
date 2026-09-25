@@ -91,7 +91,7 @@ async function request(
     old &&
     old.expires > Date.now() - 7 * 86400000;
   if (old && old.expires > Date.now()) return old.body;
-  if (pending.has(key)) return pending.get(key)!;
+  if (pending.has(key)) return stale ? old!.body : pending.get(key)!;
   const task = (async () => {
     const host = new URL(url).host;
     if ((blocked.get(host) ?? 0) > Date.now())
@@ -145,6 +145,10 @@ async function request(
     throw error;
   });
   pending.set(key, task);
+  if (stale) {
+    void task.finally(() => pending.delete(key)).catch(() => {});
+    return old!.body;
+  }
   try {
     return await task;
   } finally {
@@ -200,6 +204,14 @@ export async function catalog(
   showAdult = false,
   perPage = 24,
 ): Promise<Catalog> {
+  if (mode === "romance") {
+    // Keep this curated shelf to the 100 most popular Romance titles.
+    const batches = await Promise.all([1, 2].map(p => catalog("search", "genre:Romance", p, showAdult, 50)));
+    const names = new Set(["Heterosexual", "Boys' Love", "Yuri", "Love Triangle", "Cohabitation", "Unrequited Love"]);
+    const rank = (m: Media) => Math.max(0, ...(m.tags ?? []).filter(t => names.has(t.name)).map(t => t.rank));
+    const titles = batches.flatMap(b => b.media).filter(m => rank(m) >= 90).sort((a, b) => rank(b) - rank(a));
+    return { media: titles.slice((page - 1) * perPage, page * perPage), hasNextPage: page * perPage < titles.length, lastPage: Math.max(1, Math.ceil(titles.length / perPage)) };
+  }
   const f = parseSearch(mode === "search" ? search : "");
   const now = new Date();
   if (mode === "season") {
@@ -236,7 +248,7 @@ export async function catalog(
   };
   const data = await gql(
     "query($page:Int,$perPage:Int,$search:String,$genre:[String],$tag:[String],$year:Int,$season:MediaSeason,$format:MediaFormat,$status:MediaStatus,$adult:Boolean,$sort:[MediaSort]){Page(page:$page,perPage:$perPage){pageInfo{hasNextPage lastPage}media(type:ANIME,isAdult:$adult,search:$search,genre_in:$genre,tag_in:$tag,seasonYear:$year,season:$season,format:$format,status:$status,sort:$sort){" +
-      fields +
+      "id idMal isAdult title { english romaji native } coverImage { large } format status episodes seasonYear averageScore genres tags { name rank }" +
       "}}}",
     vars,
   );
@@ -408,7 +420,7 @@ export async function releases(
           rows = rows.filter(r => matchesMedia(r.title, anime));
           for (const row of rows)
             if (!items.has(row.hash)) items.set(row.hash, row);
-          if (!rows.some(usable)) {
+          if (!rows.some(r => r.batch && usable(r))) {
             for (const suffix of ["batch", "complete"]) {
               const batches = await (adapter as typeof nyaa)(
                 query + " " + suffix,
@@ -532,6 +544,7 @@ function normalizeMedia(input: any): Media {
     seasonYear: number(input.seasonYear),
     averageScore: number(input.averageScore, 100),
     genres: list(input.genres),
+    tags: (Array.isArray(input.tags) ? input.tags : []).filter((t: any) => typeof t.name === "string" && Number.isFinite(t.rank) && t.rank >= 0 && t.rank <= 100).map((t: any) => ({ name: t.name, rank: t.rank })),
     nextAiringEpisode: number(input.nextAiringEpisode?.episode)
       ? {
           episode: input.nextAiringEpisode.episode,
