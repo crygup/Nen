@@ -189,6 +189,7 @@ export interface Playback {
   mediaId?: number;
   episode?: number;
   nextEpisode?: number;
+  nextMediaId?: number;
   title?: string;
   chapters?: { time: number; title?: string }[];
   ended?: boolean;
@@ -326,6 +327,8 @@ export function episodeAvailability(
   episode: number,
   now = Date.now() / 1000,
 ): { released: boolean | null; airingAt: number | null } {
+  if (media.episodes != null && episode > media.episodes)
+    return { released: false, airingAt: null };
   const scheduled = media.airingSchedule?.nodes.find(
     (e) => e.episode === episode,
   );

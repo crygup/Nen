@@ -274,7 +274,11 @@ export function mountPlayer(actions: {
       el("pause").innerHTML = icon(p.paused ? "play" : "pause");
       el("pause").setAttribute("aria-label", pauseLabel);
     }
-    el<HTMLButtonElement>("next-episode").disabled = !p.nextEpisode;
+    el("next-episode").hidden = !p.nextEpisode;
+    const nextLabel = p.nextMediaId ? "Start next season" : "Play next episode";
+    el("play-next").textContent = nextLabel;
+    el("next-episode").setAttribute("aria-label", nextLabel);
+    el("next-episode").title = nextLabel;
     el("next-popup").hidden = !p.nextEpisode || !p.ready || p.duration <= 0 || p.duration - p.position > 15 || !!p.error;
     el<HTMLInputElement>("volume").value = String(p.volume ?? 100);
     el("player-error").textContent = p.error ?? captureError;

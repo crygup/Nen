@@ -1364,7 +1364,7 @@ async function start() {
         void run(async () => {
           if (p.mediaId && p.nextEpisode) {
             if (p.episode) state = await api.watchEdit(p.mediaId, { episode: p.episode, watched: true });
-            await startEpisode(await api.media(p.mediaId), p.nextEpisode);
+            await startEpisode(await api.media(p.nextMediaId ?? p.mediaId), p.nextEpisode);
           }
         }),
       edit: editMarker,

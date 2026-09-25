@@ -11,7 +11,7 @@ import type {
   EpisodePage,
 } from "../src/shared";
 import { episodeAvailability, latestEpisode } from "../src/shared";
-import { hash, positive, parseRelease, validMarker, matchesMedia } from "./rules";
+import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases } from "./rules";
 const cache = new Map<
   string,
   { expires: number; body: string; etag: string | null }
@@ -384,11 +384,14 @@ export async function releases(
   source = "all",
   signal?: AbortSignal,
 ): Promise<{ items: Release[]; errors: string[] }> {
+  const offset = sourceOffset(anime.id);
+  episode += offset;
   const deadline = AbortSignal.timeout(25000);
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const aliases = override
     ? [override]
     : [
+        ...sourceAliases(anime),
         anime.title.romaji,
         anime.title.english,
         anime.title.native,
@@ -448,6 +451,10 @@ export async function releases(
   );
   return {
     items: [...items.values()]
+      .map(row => offset ? { ...row,
+        episode: row.episode === null ? null : row.episode - offset,
+        endEpisode: row.endEpisode === null ? null : row.endEpisode - offset,
+      } : row)
       .sort(
         (a, b) =>
           Number(b.confidence === "Episode match") -

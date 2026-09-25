@@ -39,6 +39,7 @@ import {
   validMarker,
   fileKey,
   parseRelease,
+  sourceOffset,
   repairProgress,
   matchesSeason,
   matchesMedia,
@@ -47,7 +48,6 @@ import {
 import {
   isWatched,
   canAutoSkip,
-  latestEpisode,
   episodeAvailability,
   automaticRelease,
 } from "../src/shared";
@@ -459,7 +459,7 @@ async function play(
       file.path.split(/[\\/]/).at(-1) ?? "",
       episode,
     ).episode;
-    if (fileEpisode !== null && fileEpisode !== episode)
+    if (fileEpisode !== null && fileEpisode !== episode + sourceOffset(mediaId))
       throw Error(
         `This file is episode ${fileEpisode}. Choose a source for episode ${episode}.`,
       );
@@ -534,14 +534,25 @@ async function play(
       title: current.title,
       episodeTitle: current.episodeTitle,
       release: selected,
-      nextEpisode:
-        episode <
-        (resume
-          ? (resume.totalEpisodes ?? episode)
-          : latestEpisode(anime as any))
-          ? episode + 1
-          : undefined,
     });
+    void (resume ? providers.media(mediaId) : Promise.resolve(anime)).then(async media => {
+      if (episodeAvailability(media as any, episode + 1).released === true) {
+        if (active === player) active.status.nextEpisode = episode + 1;
+      } else if (media.episodes && episode >= media.episodes) {
+        const sequels = (media as any).relations?.edges?.filter((edge: any) => edge.relationType === "SEQUEL" && edge.node.type === "ANIME") ?? [];
+        for (const edge of sequels) {
+          const sequel = await providers.media(edge.node.id);
+          if (episodeAvailability(sequel, 1).released === true) {
+            if (active === player) {
+              active.status.nextEpisode = 1;
+              active.status.nextMediaId = sequel.id;
+            }
+            break;
+          }
+        }
+      }
+      if (active === player) publish();
+    }).catch(() => {});
     active.onClose = () => {
       if (automaticRunning) {
         active.status.error = "The player closed before video started.";
@@ -579,7 +590,7 @@ async function play(
       refreshMarkers();
       if (active.status.ended && active.status.nextEpisode && state.settings.autoNext && !nextStarted && !automaticRunning) {
         nextStarted = true;
-        void autoPlay(mediaId, active.status.nextEpisode).catch(error => {
+        void autoPlay(active.status.nextMediaId ?? mediaId, active.status.nextEpisode).catch(error => {
           active.status.error = error.message;
           publish();
         });

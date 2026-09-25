@@ -1,4 +1,11 @@
 import type { Marker, Release, Progress, Media, TorrentFile } from "../src/shared";
+// AniList separates the one-episode first stage; releases continue numbering at 02.
+export function sourceOffset(mediaId: number): number {
+  return mediaId === 210482 ? 1 : 0;
+}
+export function sourceAliases(media: Media): string[] {
+  return media.id === 210482 ? ["JoJo no Kimyou na Bouken: Steel Ball Run"] : [];
+}
 export function positive(value: unknown, max = 10000000): number {
   if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > max)
     throw Error("Invalid number.");
@@ -114,12 +121,12 @@ export function repairProgress(
       saved.episode,
     );
     const release = parseRelease(saved.release.title, saved.episode);
-    const number = file.episode;
+    const number = file.episode === null ? null : file.episode - sourceOffset(saved.mediaId);
     const p =
       number &&
       number !== saved.episode &&
       !release.batch &&
-      release.episode === number &&
+      release.episode !== null && release.episode - sourceOffset(saved.mediaId) === number &&
       number <= (saved.totalEpisodes ?? 10000)
         ? {
             ...saved,
@@ -147,6 +154,7 @@ export function matchesSeason(title: string, media: Media): boolean {
 }
 export function matchingFile(files: TorrentFile[], release: Release, media: Media, episode: number): TorrentFile | undefined {
   if (!matchesMedia(release.title, media)) return;
+  episode += sourceOffset(media.id);
   const matches = files.filter(f => {
     const parsed = parseRelease(f.path.split(/[\\/]/).at(-1) ?? "", episode);
     return parsed.episode === episode && !parsed.batch && matchesSeason(f.path, media)
@@ -163,7 +171,7 @@ export function matchesMedia(title: string, media: Media): boolean {
   const normalize = (value: string) => value.normalize("NFKC").toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const name = normalize(title.replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
-  return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? [])]
+  return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media)]
     .filter((alias): alias is string => !!alias)
     .some(alias => {
       const prefix = normalize(alias);
