@@ -1,3 +1,5 @@
+import { Together } from "./together";
+import { DiscordPresence } from "./discord";
 import { findUpdate, downloadUpdate } from "./updates";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -15,6 +17,7 @@ import {
   utilityProcess,
   dialog,
   safeStorage,
+  clipboard,
   type UtilityProcess,
 } from "electron";
 import { join, dirname } from "node:path";
@@ -181,6 +184,7 @@ const defaults: State = {
     autoSkip: false,
     autoNext: false,
     developmentBuilds: false,
+    discordPresence: false,
     showAdult: false,
     hideZeroSeeds: true,
     audio: "jpn,ja",
@@ -267,11 +271,26 @@ function record() {
     lastSave = Date.now();
   }
 }
+const together = new Together({
+  cancel: () => { playbackRequest++; sourceSearch?.abort(); },
+  changed: value => {
+    for (const target of new Set([window, controls]))
+      if (target && !target.isDestroyed()) target.webContents.send("together", value);
+  },
+  playback: () => player?.status,
+  prepare: async (id, ep, preferredHash) => {
+    if (automaticRunning || busy) throw Error("Wait for the current source.");
+    await autoPlay(id, ep, undefined, preferredHash);
+  },
+  command: command => player ? player.command(command) : Promise.resolve(),
+});
+const discordPresence = new DiscordPresence();
 let publishTimer: NodeJS.Timeout | undefined;
 function publish() {
   if (publishTimer) return;
   publishTimer = setTimeout(() => {
     publishTimer = undefined;
+    discordPresence.update(state.settings.discordPresence === true, player?.status);
     for (const target of new Set([window, controls]))
       if (target && !target.isDestroyed())
         target.webContents.send(
@@ -291,6 +310,7 @@ function publish() {
   }, 100);
 }
 function stop(closeView = true, keepTorrent = false) {
+  discordPresence.close();
   record();
   const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
   if (closeView) {
@@ -448,6 +468,8 @@ async function play(
   resume?: Progress,
   startPosition?: number,
 ) {
+  if (together.state.connected && (together.state.selection?.mediaId !== mediaId || together.state.selection?.episode !== episode))
+    throw Error("Choose the episode with the host first.");
   if (busy) throw Error("Wait for the current playback request.");
   busy = true;
   const request = playbackRequest;
@@ -496,7 +518,7 @@ async function play(
           .catch(() => undefined);
     const watchEntry = state.watch[String(mediaId)];
     const watchPosition = watchEntry?.runs.at(-1)?.episodes[String(episode)]?.position;
-    const startAt =
+    const startAt = together.state.connected ? together.state.position ?? 0 :
       startPosition ?? (watchEntry?.status === "REPEATING" ? watchPosition ?? 0 : watchPosition ?? resume?.position) ??
       (switching?.mediaId === mediaId && switching.episode === episode
         ? switching.position
@@ -532,6 +554,7 @@ async function play(
       mediaId,
       episode,
       title: current.title,
+      cover: current.cover,
       episodeTitle: current.episodeTitle,
       release: selected,
     });
@@ -588,7 +611,7 @@ async function play(
             });
       }
       refreshMarkers();
-      if (active.status.ended && active.status.nextEpisode && state.settings.autoNext && !nextStarted && !automaticRunning) {
+      if (active.status.ended && active.status.nextEpisode && !together.state.connected && state.settings.autoNext && !nextStarted && !automaticRunning) {
         nextStarted = true;
         void autoPlay(active.status.nextMediaId ?? mediaId, active.status.nextEpisode).catch(error => {
           active.status.error = error.message;
@@ -596,7 +619,7 @@ async function play(
         });
       }
       if (Date.now() - lastSave > 5000) record();
-      if (state.settings.autoSkip && !active.status.paused)
+      if (!together.state.connected && state.settings.autoSkip && !active.status.paused)
         for (const m of active.status.markers) {
           const key = JSON.stringify(m);
           if (
@@ -626,6 +649,7 @@ async function play(
         : process.platform === "linux"
           ? String(videoView!.getNativeWindowHandle().readBigUInt64LE())
           : undefined,
+      together.state.connected,
     );
     controls?.show();
     controls?.moveTop();
@@ -640,7 +664,7 @@ async function play(
     busy = false;
   }
 }
-async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
+async function autoPlay(mediaId: number, episode: number, saved?: Progress, preferredHash?: string) {
   if (automaticRunning || busy) throw Error("Wait for the current playback request.");
   automaticRunning = true;
   sourceSearch = new AbortController();
@@ -673,7 +697,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress) {
           for (const row of candidates) known.set(row.hash, row);
         }
         if (request !== playbackRequest) return;
-        release = automaticRelease(candidates.filter(r => !attempted.has(r.hash)), episode, state.settings);
+        release = candidates.find(r => r.hash === preferredHash && !attempted.has(r.hash)) ?? automaticRelease(candidates.filter(r => !attempted.has(r.hash)), episode, state.settings);
       }
       if (!release) break;
       attempted.add(release.hash);
@@ -762,7 +786,7 @@ function settings(value: Settings): Settings {
       ))
   )
     throw Error("Select at least one quality.");
-  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "developmentBuilds"] as const)
+  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "developmentBuilds", "discordPresence"] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
   const audio = text(value.audio, 60),
@@ -776,6 +800,7 @@ function settings(value: Settings): Settings {
     autoSkip: value.autoSkip,
     autoNext: value.autoNext ?? false,
     developmentBuilds: value.developmentBuilds ?? false,
+    discordPresence: value.discordPresence ?? false,
     audio,
     subtitles,
     source: value.source,
@@ -919,7 +944,11 @@ else {
           window.webContents.send("navigate-back", "back");
         else window.webContents.send("navigate-back", "forward");
       });
+      const sendFullscreen = () => window.webContents.send("window-fullscreen", window.isFullScreen());
+      window.on("enter-full-screen", () => window.webContents.send("window-fullscreen", true));
+      window.on("leave-full-screen", () => window.webContents.send("window-fullscreen", false));
       window.webContents.on("did-finish-load", () => {
+        sendFullscreen();
         window.webContents.navigationHistory.clear();
       });
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -947,6 +976,22 @@ else {
           return fn(...args);
         });
       }
+      handle("togetherState", () => together.state);
+      handle("togetherCopyCode", () => {
+        if (!together.state.connected || !together.state.code) throw Error("Join a session first.");
+        clipboard.writeText(together.state.code);
+      });
+      handle("togetherConnect", (code) => {
+        if (code !== undefined && (typeof code !== "string" || !/^[A-Za-z0-9_-]{24}$/.test(code))) throw Error("Invalid session code.");
+        return together.connect(code);
+      });
+      handle("togetherSend", message => {
+        if (!message || typeof message !== "object" || JSON.stringify(message).length > 2000 ||
+          !["chat", "chatEnabled", "allowPause", "pause", "seek"].includes(message.type)) throw Error("Invalid session request.");
+        together.send(message);
+      });
+      handle("togetherReload", () => together.reload());
+      handle("togetherLeave", () => { together.disconnect(); stop(); });
       handle("favoriteSet", async (id, favorite) => {
         const mediaId = positive(id);
         if (typeof favorite !== "boolean") throw Error("Invalid favorite selection.");
@@ -1178,7 +1223,15 @@ else {
         for (const r of result.items) known.set(r.hash, r);
         return result;
       });
-      handle("autoPlay", (id, ep) => autoPlay(positive(id), positive(ep, 10000)));
+      handle("autoPlay", (id, ep) => {
+        id = positive(id); ep = positive(ep, 10000);
+        if (together.state.connected) {
+          if (!together.state.host) throw Error("Only the host can choose an episode.");
+          if (automaticRunning || busy) throw Error("Wait for the current source.");
+          return together.send({ type: "select", mediaId: id, episode: ep });
+        }
+        return autoPlay(id, ep);
+      });
       handle("inspect", (value) => {
         playbackRequest++;
         return inspect(hash(value));
@@ -1194,6 +1247,10 @@ else {
       handle("resume", async (key) => {
         const p = state.progress[text(key, 40)];
         if (!p) throw Error("Saved playback was not found.");
+        if (together.state.connected) {
+          if (!together.state.host) throw Error("Only the host can choose an episode.");
+          return together.send({ type: "select", mediaId: p.mediaId, episode: p.episode });
+        }
         if (state.settings.sourceMode !== "manual") return autoPlay(p.mediaId, p.episode, p);
         known.set(hash(p.hash), p.release);
         const list = await inspect(p.hash);
@@ -1209,7 +1266,9 @@ else {
           return;
         }
         if (action === "fullscreen") {
-          window.setFullScreen(!window.isFullScreen());
+          const fullscreen = !window.isFullScreen();
+          window.setFullScreen(fullscreen);
+          window.webContents.send("window-fullscreen", fullscreen);
           return;
         }
         if (!player) throw Error("Start playback first.");
@@ -1217,6 +1276,12 @@ else {
           if (!Number.isFinite(value) || value < 0 || value > 100)
             throw Error("Invalid volume.");
           return player.command(["set_property", "volume", value]);
+        }
+        if (together.state.connected && ["pause", "seek", "seekRelative", "speed"].includes(action)) {
+          if (action === "speed") throw Error("Watch together uses normal playback speed.");
+          if (action === "pause") return together.send({ type: "pause", value: !together.state.paused });
+          if (!Number.isFinite(value)) throw Error("Invalid playback time.");
+          return together.send({ type: "seek", position: Math.max(0, Math.min(player.status.duration, action === "seekRelative" ? player.status.position + value : value)) });
         }
         if (action === "pause") return player.command(["cycle", "pause"]);
         if (!Number.isFinite(value)) throw Error("Invalid player value.");
@@ -1269,6 +1334,7 @@ else {
         if (updateStatus.busy && !!value?.developmentBuilds !== !!state.settings.developmentBuilds)
           throw Error("Wait for the update to finish before changing the update channel.");
         state.settings = settings(value);
+        discordPresence.update(state.settings.discordPresence === true, player?.status);
         nativeTheme.themeSource = state.settings.theme;
         save();
       });
@@ -1307,10 +1373,12 @@ else {
         if (!m) throw Error("No skip interval at this time.");
         undoPosition = player.status.position;
         skipped.add(JSON.stringify(m));
+        if (together.state.connected) return together.send({ type: "seek", position: m.end });
         await player.command(["seek", m.end, "absolute"]);
       });
       handle("undo", async () => {
         if (player && undoPosition !== undefined) {
+          if (together.state.connected) return together.send({ type: "seek", position: undoPosition });
           await player.command(["seek", undoPosition, "absolute"]);
           undoPosition = undefined;
         }
@@ -1350,7 +1418,9 @@ else {
       app.quit();
     });
   app.on("before-quit", () => {
+    together.disconnect();
     closing = true;
+    discordPresence.close();
     stop();
   });
   app.on("window-all-closed", () => app.quit());

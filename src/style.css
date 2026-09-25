@@ -1778,3 +1778,90 @@ dialog:has(#settings), dialog:has(#help) { width: min(660px, 90vw); max-height: 
 #help h3 { font-size: 20px; }
 #help h4 { font-size: 16px; font-weight: 600; margin: 22px 0 10px; }
 #help h3 + .actions { margin-top: 16px; }
+
+dialog { scrollbar-width: auto; scrollbar-color: auto; }
+dialog::-webkit-scrollbar { width: 10px; }
+dialog::-webkit-scrollbar-track { background: var(--panel); margin-block: 9px; }
+dialog::-webkit-scrollbar-thumb { background: var(--muted); border: 3px solid var(--panel); border-radius: 10px; }
+dialog::-webkit-scrollbar-button { display: none; }
+/* Watch together */
+.together-panel h2 { font-size: 22px; }
+.together-panel [hidden] { display: none !important; }
+.together-entry { min-height: calc(100dvh - 220px); display: flex; align-items: center; justify-content: center; gap: 28px; }
+.together-entry-actions > button { width: 140px; min-height: 64px; font-size: 16px; border-radius: 4px; }
+.together-join { width: min(440px, 90vw); }
+.together-join label, .together-join input { display: block; width: 100%; }
+.together-join input { margin: 12px 0 20px; }
+.together-room { min-height: 60vh; }
+.together-controls { display: grid; gap: 18px; max-width: 760px; }
+.together-controls > p { margin: 0; }
+.together-invite { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.together-invite [data-copy] { font-family: monospace; letter-spacing: 1px; overflow-wrap: anywhere; }
+.together-invite [data-reveal] { display: inline-flex; align-items: center; padding: 8px; }
+.together-members { list-style: none; margin: 0; padding: 0; }
+.together-members li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.together-members li span:last-child { color: var(--muted); }
+.together-host > label { display: block; margin-bottom: 12px; }
+.together-host .actions { margin-top: 16px; }
+.together-error:empty, [data-join-error]:empty { display: none; }
+.together-error, [data-join-error] { color: #dc6969; }
+.together-chat { position: fixed; right: 0; top: 100px; bottom: 0; width: 320px; padding: 20px; background: var(--side); border-left: 1px solid var(--line); display: flex; flex-direction: column; z-index: 10; }
+.together-chat header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.together-chat header h3 { margin: 0; }
+.together-chat [data-collapse] { display: inline-flex; padding: 6px; }
+.together-chat-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.together-messages { flex: 1; overflow-y: auto; overflow-wrap: anywhere; margin-bottom: 12px; min-height: 120px; }
+.together-messages p { margin: 0 0 12px; }
+.together-messages .system-message { color: var(--muted); font-size: 12px; }
+.together-chat form { display: flex; gap: 8px; }
+.together-chat input { min-width: 0; flex: 1; }
+.chat-collapsed .together-chat { width: 52px; padding: 8px; }
+.chat-collapsed .together-chat header h3 { display: none; }
+.watch-together { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; padding: 20px; background: var(--side); overflow-y: auto; z-index: 20; }
+.watch-together[hidden] { display: none; }
+.watch-together .together-room { display: flex; flex-direction: column; min-height: calc(100% - 70px); }
+.watch-together .together-chat { position: static; width: auto; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); margin-top: 20px; flex: 1; min-height: 240px; }
+.watch-together.chat-enabled.chat-collapsed { width: 52px; padding: 8px; }
+.watch-together.chat-enabled.chat-collapsed > h2, .watch-together.chat-enabled.chat-collapsed .together-controls { display: none; }
+.watch-together.chat-collapsed .together-chat { padding: 0; margin: 0; border: 0; }
+.with-together .player-stage { width: calc(100% - 320px); }
+.with-together:has(.watch-together.chat-enabled.chat-collapsed) .player-stage { width: calc(100% - 52px); }
+.with-together .watch-header, .with-together .watch-footer { right: 0; }
+.with-together .skip-popup { right: 25px; }
+.with-together .watch-together { color: var(--text); }
+@media (max-width: 800px) {
+  .together-entry { flex-direction: column; gap: 18px; }
+  .together-entry-actions > button { min-height: 64px; width: 140px; }
+  .together-chat, .watch-together { width: 260px; padding: 12px; }
+  .with-together .player-stage { width: calc(100% - 260px); }
+}
+
+/* Chat is a screen-edge sidebar, with space reserved in the page. */
+#together-lobby .together-room { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.workspace:has(#together-lobby.chat-enabled) { padding-right: 320px; padding-bottom: 0; }
+.workspace:has(#together-lobby.chat-enabled.chat-collapsed) { padding-right: 52px; }
+#together-lobby .together-chat { position: fixed; inset: 0 0 0 auto; height: 100dvh; border-radius: 0; width: 320px; }
+#together-lobby.chat-collapsed .together-chat { width: 52px; }
+.together-controls h3, .together-member-section h3 { margin: 0 0 16px; }
+.watch-together .together-member-section { margin-top: 20px; }
+.watch-together.chat-enabled.chat-collapsed .together-member-section { display: none; }
+.together-chat header { flex-shrink: 0; }
+.together-messages { min-height: 0; padding-top: 2px; }
+.window-fullscreen .watch-together { display: none !important; }
+.window-fullscreen .with-together .player-stage { width: 100%; }
+@media (max-width: 1000px) {
+  #together-lobby .together-room { grid-template-columns: minmax(0, 1fr); }
+  .workspace:has(#together-lobby.chat-enabled:not(.chat-collapsed)) { padding-right: 260px; }
+  #together-lobby:not(.chat-collapsed) .together-chat { width: 260px; }
+}
+
+.together-entry { flex-direction: column; gap: 20px; }
+.together-entry h2 { margin: 0; font-size: 28px; }
+.together-entry-actions { display: flex; gap: 28px; }
+[data-connecting] { font: 24px monospace; height: 28px; }
+.workspace:has(#together-lobby.chat-enabled) .topbar { grid-template-columns: auto minmax(0, 1fr); }
+.workspace:has(#together-lobby.chat-enabled) #page-actions { display: none; }
+
+html.window-fullscreen.player-mode { scrollbar-gutter: auto; }
+
+html:has(#together-lobby.chat-enabled) { scrollbar-gutter: auto; }

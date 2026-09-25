@@ -36,6 +36,7 @@ export class Player {
     settings: Settings,
     resourcePath: string,
     parentHandle?: string,
+    paused = false,
   ) {
     const bundled = join(
       resourcePath,
@@ -50,6 +51,7 @@ export class Player {
         : join(tmpdir(), `nen-${randomUUID()}.sock`);
     const args = [
       "--no-config",
+      ...(paused ? ["--pause=yes"] : []),
       "--audio-client-name=Nen",
       "--cache-pause-wait=1",
       ...(process.platform === "win32"
@@ -141,6 +143,8 @@ export class Player {
       "eof-reached",
       "duration",
       "pause",
+      "seeking",
+      "paused-for-cache",
       "track-list",
       "chapter-list",
       "volume",
@@ -180,6 +184,8 @@ export class Player {
       if (data.name === "speed" && Number.isFinite(data.data))
         this.status.playbackRate = data.data;
       if (data.name === "pause") this.status.paused = !!data.data;
+      if (data.name === "seeking") this.status.seeking = data.data === true;
+      if (data.name === "paused-for-cache") this.status.buffering = data.data === true;
       if (data.name === "chapter-list" && Array.isArray(data.data))
         this.status.chapters = data.data;
       if (data.name === "track-list" && Array.isArray(data.data))
@@ -187,8 +193,9 @@ export class Player {
       this.onChange();
     }
   }
-  command(command: (string | number | boolean)[]): Promise<any> {
-    return new Promise((resolve, reject) => {
+  async command(command: (string | number | boolean)[]): Promise<any> {
+    const resumeAfterSeek = command[0] === "seek" && this.status.ended;
+    const result = await new Promise((resolve, reject) => {
       if (!this.socket?.writable) {
         reject(Error("Player is not connected."));
         return;
@@ -201,6 +208,8 @@ export class Player {
       this.pending.set(request_id, { resolve, reject, timer });
       this.socket.write(JSON.stringify({ command, request_id }) + "\n");
     });
+    if (resumeAfterSeek) await this.command(["set_property", "pause", false]);
+    return result;
   }
   private closeSocket() {
     this.socket?.destroy();
