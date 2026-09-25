@@ -14,6 +14,7 @@ export class Together {
   private lastPing = 0;
   private failure = "";
   constructor(private hooks: {
+    version: string;
     changed: (state: TogetherState) => void;
     cancel?: () => void;
     playback: () => Playback | undefined;
@@ -26,7 +27,7 @@ export class Together {
     this.state = { connected: false, members: [], messages: [] };
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => { socket.close(); reject(Error("The session server did not respond.")); }, 10000);
-      socket.onopen = () => { this.send({ type: code ? "join" : "create", ...(code ? { code } : {}) }); };
+      socket.onopen = () => { this.send({ type: code ? "join" : "create", version: this.hooks.version, ...(code ? { code } : {}) }); };
       socket.onerror = () => { clearTimeout(timeout); reject(Error("Could not connect to Watch together.")); };
       socket.onclose = () => {
         clearTimeout(timeout);
@@ -41,6 +42,7 @@ export class Together {
           const m = JSON.parse(event.data);
           if (m.type === "state") {
             if (!Array.isArray(m.members) || m.members.length > 10 || typeof m.self !== "string" || typeof m.code !== "string" ||
+              (m.playbackRate !== undefined && (!Number.isFinite(m.playbackRate) || m.playbackRate < 0.25 || m.playbackRate > 4)) ||
               typeof m.host !== "boolean" || typeof m.paused !== "boolean" || !Number.isFinite(m.position) ||
               !Number.isFinite(m.at) || !Number.isSafeInteger(m.revision) ||
               (m.selection && (!Number.isSafeInteger(m.selection.mediaId) || !Number.isSafeInteger(m.selection.episode) ||
@@ -133,9 +135,9 @@ export class Together {
       if (!ready) return;
       const now = Date.now() + this.clockOffset;
       const paused = s.paused || now < s.at!;
-      const target = s.position! + (!s.paused ? Math.max(0, now - s.at!) / 1000 : 0);
+      const target = s.position! + (!s.paused ? Math.max(0, now - s.at!) / 1000 * (s.playbackRate ?? 1) : 0);
       if (Math.abs(p.position - target) > 1.5) await this.hooks.command(["seek", Math.min(target, Math.max(0, p.duration - 0.1)), "absolute"]);
-      if ((p.playbackRate ?? 1) !== 1) await this.hooks.command(["set_property", "speed", 1]);
+      if ((p.playbackRate ?? 1) !== (s.playbackRate ?? 1)) await this.hooks.command(["set_property", "speed", s.playbackRate ?? 1]);
       if (p.paused !== paused) await this.hooks.command(["set_property", "pause", !!paused]);
     } catch { /* The player may close or change source during a command. */ }
     finally { this.syncing = false; }

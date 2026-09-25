@@ -74,6 +74,7 @@ let videoView: BaseWindow | undefined;
 let switching: Progress | undefined;
 let worker: UtilityProcess | undefined;
 let player: Player | undefined;
+let sessionPlaybackRate = 1;
 let files: TorrentFile[] = [];
 let selected: Release | undefined;
 let current: Progress | undefined;
@@ -272,6 +273,7 @@ function record() {
   }
 }
 const together = new Together({
+  version: app.getVersion(),
   cancel: () => { playbackRequest++; sourceSearch?.abort(); },
   changed: value => {
     for (const target of new Set([window, controls]))
@@ -650,6 +652,7 @@ async function play(
           ? String(videoView!.getNativeWindowHandle().readBigUInt64LE())
           : undefined,
       together.state.connected,
+      together.state.connected ? together.state.playbackRate ?? 1 : sessionPlaybackRate,
     );
     controls?.show();
     controls?.moveTop();
@@ -1278,7 +1281,11 @@ else {
           return player.command(["set_property", "volume", value]);
         }
         if (together.state.connected && ["pause", "seek", "seekRelative", "speed"].includes(action)) {
-          if (action === "speed") throw Error("Watch together uses normal playback speed.");
+          if (action === "speed") {
+            if (!together.state.host) throw Error("Only the host can change playback speed.");
+            if (!Number.isFinite(value) || value < 0.25 || value > 4) throw Error("Invalid playback speed.");
+            return together.send({ type: "speed", value });
+          }
           if (action === "pause") return together.send({ type: "pause", value: !together.state.paused });
           if (!Number.isFinite(value)) throw Error("Invalid playback time.");
           return together.send({ type: "seek", position: Math.max(0, Math.min(player.status.duration, action === "seekRelative" ? player.status.position + value : value)) });
@@ -1287,7 +1294,9 @@ else {
         if (!Number.isFinite(value)) throw Error("Invalid player value.");
         if (action === "speed") {
           if (value < 0.25 || value > 4) throw Error("Invalid playback speed.");
-          return player.command(["set_property", "speed", value]);
+          await player.command(["set_property", "speed", value]);
+          sessionPlaybackRate = value;
+          return;
         }
         if (action === "seekRelative") {
           if (value !== 5 && value !== -5) throw Error("Invalid seek step.");

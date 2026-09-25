@@ -17,11 +17,11 @@ export function createTogetherServer() {
     r.chat.push(message); r.chat = r.chat.slice(-100);
     for (const peer of r.members.keys()) send(peer, { type: "chat", message });
   };
-  const position = r => r.position + (!r.paused ? Math.max(0, Date.now() - r.at) / 1000 : 0);
+  const position = r => r.position + (!r.paused ? Math.max(0, Date.now() - r.at) / 1000 * r.playbackRate : 0);
   const freeze = r => { r.position = position(r); r.at = Date.now(); r.paused = true; };
   const broadcast = r => {
     const state = { code: r.code, members: [...r.members.values()].map(m => ({ id: m.id, name: m.name, ready: m.ready, error: m.error })),
-      selection: r.selection, chatEnabled: r.chatEnabled, allowPause: r.allowPause, paused: r.paused, waiting: r.wantPlay && r.paused, position: position(r), at: Math.max(Date.now(), r.at), revision: r.revision };
+      selection: r.selection, playbackRate: r.playbackRate, chatEnabled: r.chatEnabled, allowPause: r.allowPause, paused: r.paused, waiting: r.wantPlay && r.paused, position: position(r), at: Math.max(Date.now(), r.at), revision: r.revision };
     for (const [s, m] of r.members) send(s, { type: "state", ...state, self: m.id, host: m.host });
   };
   const gate = r => {
@@ -62,17 +62,22 @@ export function createTogetherServer() {
         if (!m || typeof m !== "object" || typeof m.type !== "string") throw Error("Invalid request.");
         if (m.type === "ping") { if (!Number.isSafeInteger(m.sent) || m.sent < 0) throw Error("Invalid ping."); send(s, { type: "pong", sent: m.sent, now: Date.now() }); return; }
         if (m.type === "leave") { leave(s); send(s, { type: "ended", message: "" }); return; }
+        if (m.type === "create" || m.type === "join") {
+          if (m.version === undefined) m.version = "legacy";
+          if (m.version !== "legacy" && (typeof m.version !== "string" || m.version.length > 64 || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(m.version))) throw Error("Invalid app version.");
+        }
         if (m.type === "create") {
           if (s.room) throw Error("Leave your current session first.");
           if (rooms.size >= 100) throw Error("All sessions are busy. Try again later.");
           const code = randomBytes(18).toString("base64url");
-          const r = { code, members: new Map(), nextGuest: 1, selection: null, revision: 0, allowPause: false, chatEnabled: true, paused: true, wantPlay: false, position: 0, at: Date.now(), chat: [], created: Date.now() };
+          const r = { code, version: m.version, members: new Map(), nextGuest: 1, selection: null, revision: 0, playbackRate: 1, allowPause: false, chatEnabled: true, paused: true, wantPlay: false, position: 0, at: Date.now(), chat: [], created: Date.now() };
           rooms.set(code, r); join(r, true); return;
         }
         if (m.type === "join") {
           if (s.room) throw Error("Leave your current session first.");
           const r = typeof m.code === "string" && rooms.get(m.code);
           if (!r) throw Error("Session not found. Check the code.");
+          if (m.version !== r.version) throw Error(r.version === "legacy" || m.version === "legacy" ? "This session uses a different build type. Everyone must use an unversioned build, or update to the same Nen version." : `This session uses Nen ${r.version}. Install the same version as the host to join.`);
           if (r.members.size >= 10) throw Error("This session is full (10 people).");
           join(r, false); return;
         }
@@ -109,6 +114,10 @@ export function createTogetherServer() {
           if (typeof m.value !== "boolean") throw Error("Invalid pause state.");
           if (m.value && r.wantPlay) chat(r, "System", `${member.name} paused playback.`, true);
           r.wantPlay = !m.value; if (m.value) freeze(r);
+        } else if (m.type === "speed") {
+          if (!member.host) throw Error("Only the host can change playback speed.");
+          if (!Number.isFinite(m.value) || m.value < 0.25 || m.value > 4) throw Error("Invalid playback speed.");
+          r.position = position(r); r.at = Math.max(Date.now(), r.at); r.playbackRate = m.value;
         } else if (m.type === "seek") {
           if (!member.host) throw Error("Only the host can seek.");
           if (!r.selection || !Number.isFinite(m.position) || m.position < 0 || m.position > 86400) throw Error("Invalid time.");

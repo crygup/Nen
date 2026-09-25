@@ -1,3 +1,4 @@
+import { playerNotice } from "./player-notice";
 import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
 import "./style.css";
@@ -180,8 +181,9 @@ function error(e: unknown) {
     message.textContent = text;
     return;
   }
+  if (playerMode) { playerNotice(text); return; }
   const box = document.querySelector<HTMLElement>(
-    playerMode ? "#player-error" : "#message",
+    "#message",
   )!;
   box.textContent = text;
   box.hidden = false;

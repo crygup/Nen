@@ -229,6 +229,7 @@ export interface TogetherState {
   selection?: { mediaId: number; episode: number; hash: string | null } | null;
   revision?: number;
   allowPause?: boolean;
+  playbackRate?: number;
   paused?: boolean;
   waiting?: boolean;
   position?: number;

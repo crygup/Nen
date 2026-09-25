@@ -1,6 +1,6 @@
 {
   "name": "nen",
-  "version": "0.1.117",
+  "version": "0.1.118",
   "private": true,
   "description": "Nen desktop anime player",
   "author": "may-be.gay",
@@ -10,7 +10,6 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "tsc --noEmit && vite build && node scripts/build.mjs",
-    "test:e2e:watch": "node scripts/e2e-watch.mjs",
     "start": "electron .",
     "setup:media": "node scripts/setup-media.mjs",
     "package": "npm run build && electron-builder --dir",

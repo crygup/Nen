@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { join } from "node:path";
 import { app, ipcMain, type BrowserWindow } from "electron";
 
+const closing = new Map<number, Promise<void>>();
+
 export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
   const executable = join(
     app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "vendor"),
@@ -11,6 +13,7 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
   let stopped = false,
     child: ReturnType<typeof spawn>,
     timer: ReturnType<typeof setTimeout>;
+  let retries = 0;
   let pending = 0,
     needsKey = true;
   const acknowledge = (event: Electron.IpcMainEvent) => {
@@ -18,6 +21,8 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
   };
   ipcMain.on("video-frame-ack", acknowledge);
   const start = (hardware: boolean) => {
+    if (stopped || window.isDestroyed()) return;
+    pending = 0; needsKey = true;
     let received = false,
       buffer = Buffer.alloc(0),
       errors = "";
@@ -151,18 +156,29 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
     child.once("exit", (code) => {
       clearTimeout(timer);
       if (stopped) return;
+      if (/gfxcapture|WGC|graphics capture/i.test(errors) && retries < 3) {
+        timer = setTimeout(() => start(hardware), 500 * 2 ** retries++);
+        return;
+      }
       if (hardware && !received) {
         start(false);
         return;
       }
-      fail(`Video capture stopped (${code}). ${errors}`);
+      console.error(`Video capture stopped (${code}). ${errors}`);
+      fail("Video display stopped. Reopen the episode to try again.");
     });
   };
-  start(true);
+  void (closing.get(hwnd) ?? Promise.resolve()).then(() => start(true));
   return () => {
     stopped = true;
     clearTimeout(timer);
     ipcMain.removeListener("video-frame-ack", acknowledge);
-    child.kill();
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const old = child;
+      const done = new Promise<void>(resolve => old.once("close", () => resolve()));
+      closing.set(hwnd, done);
+      void done.then(() => { if (closing.get(hwnd) === done) closing.delete(hwnd); });
+      old.kill();
+    }
   };
 }

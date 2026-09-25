@@ -1,3 +1,4 @@
+import { playerNotice } from "./player-notice";
 import { mountTogether } from "./together";
 import type { Playback, SegmentType } from "./shared";
 const api = window.nen;
@@ -36,13 +37,13 @@ export function mountPlayer(actions: {
     if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, () => {}, true);
     el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;
     el<HTMLInputElement>("seek").disabled = room.connected && !room.host;
-    el<HTMLButtonElement>("speed").disabled = room.connected;
+    el<HTMLButtonElement>("speed").disabled = room.connected && !room.host;
     el<HTMLButtonElement>("play-next").disabled = el<HTMLButtonElement>("next-episode").disabled = room.connected && !room.host;
   };
   const removeRoomListener = api.onTogether(roomUpdate);
   void api.togetherState().then(roomUpdate);
   window.addEventListener("pagehide", () => { removeRoomListener(); removeTogether?.(); }, { once: true });
-  let captureError = "";
+  let captureError = "", lastPlaybackError = "";
   const surface = el<HTMLCanvasElement>("video-surface");
   const context = surface.getContext("2d", { alpha: false })!;
   let waitingForKey = true,
@@ -62,6 +63,10 @@ export function mountPlayer(actions: {
         surface.height = frame.displayHeight;
       }
       context.drawImage(frame, 0, 0);
+      if (captureError) {
+        if (el("player-error").textContent === captureError) playerNotice("");
+        captureError = "";
+      }
       frame.close();
       surface.dataset.ready = "true";
     },
@@ -300,7 +305,11 @@ export function mountPlayer(actions: {
     el("next-episode").title = nextLabel;
     el("next-popup").hidden = !p.nextEpisode || !p.ready || p.duration <= 0 || p.duration - p.position > 15 || !!p.error;
     el<HTMLInputElement>("volume").value = String(p.volume ?? 100);
-    el("player-error").textContent = p.error ?? captureError;
+    const playbackError = p.error || "";
+    if (playbackError !== lastPlaybackError) {
+      if (playbackError || el("player-error").textContent === lastPlaybackError) playerNotice(playbackError);
+      lastPlaybackError = playbackError;
+    }
     const key = JSON.stringify(p.tracks);
     if (key !== trackKey) {
       trackKey = key;

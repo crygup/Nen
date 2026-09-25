@@ -37,6 +37,7 @@ export class Player {
     resourcePath: string,
     parentHandle?: string,
     paused = false,
+    playbackRate = 1,
   ) {
     const bundled = join(
       resourcePath,
@@ -51,6 +52,7 @@ export class Player {
         : join(tmpdir(), `nen-${randomUUID()}.sock`);
     const args = [
       "--no-config",
+      `--speed=${playbackRate}`,
       ...(paused ? ["--pause=yes"] : []),
       "--audio-client-name=Nen",
       "--cache-pause-wait=1",
