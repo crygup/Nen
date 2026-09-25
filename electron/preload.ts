@@ -1,6 +1,20 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { API, Playback, UpdateStatus } from "../src/shared";
+ipcRenderer.on("window-fullscreen", (_event, value: boolean) => {
+  document.documentElement.classList.toggle("window-fullscreen", value === true);
+});
 const api: API = {
+  togetherCopyCode: () => ipcRenderer.invoke("togetherCopyCode"),
+  togetherState: () => ipcRenderer.invoke("togetherState"),
+  togetherConnect: code => ipcRenderer.invoke("togetherConnect", code),
+  togetherSend: message => ipcRenderer.invoke("togetherSend", message),
+  togetherLeave: () => ipcRenderer.invoke("togetherLeave"),
+  togetherReload: () => ipcRenderer.invoke("togetherReload"),
+  onTogether: callback => {
+    const listener = (_: unknown, state: import("../src/shared").TogetherState) => callback(state);
+    ipcRenderer.on("together", listener);
+    return () => ipcRenderer.removeListener("together", listener);
+  },
   favoriteSet: (...a) => ipcRenderer.invoke("favoriteSet", ...a),
   uninstall: () => ipcRenderer.invoke("uninstall"),
   watchAdd: (...a) => ipcRenderer.invoke("watchAdd", ...a),

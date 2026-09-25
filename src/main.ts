@@ -1,3 +1,4 @@
+import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
 import "./style.css";
 import {
@@ -112,6 +113,7 @@ async function browseBack(direction: "back" | "forward" = "back") {
       await openMedia(previous.mediaId);
     else if (previous.route === "history") await watchlist();
     else if (previous.route === "watchlist") await watchlist();
+    else if (previous.route === "together") showTogether();
     else if (previous.route === "discover") await discover(page);
     else await home();
   } finally {
@@ -217,6 +219,7 @@ function movePageHeading() {
 }
 let synopsisSize: ResizeObserver | undefined;
 function activeNav(name: string) {
+  leaveTogetherView?.(); leaveTogetherView = undefined;
   synopsisSize?.disconnect();
   document.querySelector("#page-title")?.replaceChildren();
   document.querySelector("#page-actions")?.replaceChildren();
@@ -227,15 +230,25 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
     filterOptions = undefined;
     throw e;
   }));
+let leaveTogetherView: (() => void) | undefined;
+function showTogether() {
+  setRoute("together");
+  activeNav("together");
+  document.querySelector("#page-title")!.innerHTML = "<h1>Watch together</h1>";
+  const main = document.querySelector<HTMLElement>("#main")!;
+  main.innerHTML = '<div id="together-lobby"></div>';
+  leaveTogetherView?.();
+  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!, () => void home(), false, (id, ep) => void run(async () => releasePicker(await api.media(id), ep)));
+}
 function shell() {
-  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const input = document.querySelector<HTMLInputElement>("#search-input")!;
   const results = document.querySelector<HTMLElement>("#search-suggestions")!;
   const clear = document.querySelector<HTMLButtonElement>("#clear-search")!;
@@ -385,6 +398,7 @@ function shell() {
         else if (b.dataset.nav === "help") help();
         else if (b.dataset.nav === "history") void watchlist();
         else if (b.dataset.nav === "watchlist") void watchlist();
+        else if (b.dataset.nav === "together") showTogether();
         else if (b.dataset.nav === "home") void home();
         else {
           mode = "trending";
@@ -892,6 +906,7 @@ async function chooseRewatch(id: number): Promise<boolean> {
   return choice === "full" || choice === "episode";
 }
 async function startEpisode(m: Media, ep: number) {
+  if ((await api.togetherState()).connected) { await api.autoPlay(m.id, ep); return; }
   if (episodeAvailability(m, ep).released === false) return;
   if (!await chooseRewatch(m.id)) return;
   if (state.settings.sourceMode === "manual") {
@@ -1119,7 +1134,7 @@ function settings() {
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
-    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div></form><p id="settings-message" role="status"></p>`,
+    `<h2 id="dialog-title">Settings</h2><form id="settings"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><hr><h3 class="local-data-heading">Updates</h3><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><label class="check"><input id="development-builds" name="developmentBuilds" type="checkbox" ${s.developmentBuilds ? "checked" : ""}> Use development builds</label></div></form><p id="settings-message" role="status"></p>`,
   );
   d.querySelector(".dialog-header .eyebrow")!.innerHTML = `<strong>NEN</strong> - ${esc(state.version)}`;
   const form = d.querySelector<HTMLFormElement>("#settings")!;
@@ -1193,6 +1208,7 @@ function settings() {
       qualities,
       autoSkip: f.has("autoSkip"),
       autoNext: f.has("autoNext"),
+      discordPresence: f.has("discordPresence"),
       developmentBuilds: d.querySelector<HTMLInputElement>("#development-builds")!.checked,
       showAdult: f.has("showAdult"),
       hideZeroSeeds: f.has("hideZeroSeeds"),
@@ -1356,12 +1372,14 @@ async function start() {
       sources: (p) =>
         void run(async () => {
           if (p.mediaId && p.episode) {
-            if (!p.paused) await api.control("pause");
+            if (!p.paused && !(await api.togetherState()).connected) await api.control("pause");
             await releasePicker(await api.media(p.mediaId), p.episode);
           }
         }),
       next: (p) =>
         void run(async () => {
+          const room = await api.togetherState();
+          if (room.connected && !room.host) throw Error("Only the host can choose the next episode.");
           if (p.mediaId && p.nextEpisode) {
             if (p.episode) state = await api.watchEdit(p.mediaId, { episode: p.episode, watched: true });
             await startEpisode(await api.media(p.nextMediaId ?? p.mediaId), p.nextEpisode);

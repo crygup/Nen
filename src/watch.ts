@@ -1,3 +1,4 @@
+import { mountTogether } from "./together";
 import type { Playback, SegmentType } from "./shared";
 const api = window.nen;
 const esc = (s: unknown) =>
@@ -24,6 +25,23 @@ export function mountPlayer(actions: {
   root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="tracks" class="icon-button" aria-label="Audio and subtitles" title="Audio and subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="track-panel" class="watch-panel" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
+  const togetherPanel = document.createElement("aside");
+  togetherPanel.className = "watch-together";
+  togetherPanel.hidden = true;
+  root.append(togetherPanel);
+  let removeTogether: (() => void) | undefined;
+  const roomUpdate = (room: import("./shared").TogetherState) => {
+    togetherPanel.hidden = !room.connected;
+    root.classList.toggle("with-together", room.connected);
+    if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, () => {}, true);
+    el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;
+    el<HTMLInputElement>("seek").disabled = room.connected && !room.host;
+    el<HTMLButtonElement>("speed").disabled = room.connected;
+    el<HTMLButtonElement>("play-next").disabled = el<HTMLButtonElement>("next-episode").disabled = room.connected && !room.host;
+  };
+  const removeRoomListener = api.onTogether(roomUpdate);
+  void api.togetherState().then(roomUpdate);
+  window.addEventListener("pagehide", () => { removeRoomListener(); removeTogether?.(); }, { once: true });
   let captureError = "";
   const surface = el<HTMLCanvasElement>("video-surface");
   const context = surface.getContext("2d", { alpha: false })!;
@@ -203,6 +221,7 @@ export function mountPlayer(actions: {
       e.target instanceof HTMLSelectElement
     )
       return;
+    if ((e.target as HTMLElement).closest("input,textarea,.watch-together")) return;
     if (e.code === "Space") {
       e.preventDefault();
       if (!e.repeat) run(api.control("pause"));
@@ -217,7 +236,7 @@ export function mountPlayer(actions: {
   document.querySelector(".player-stage")!.addEventListener("click", (e) => {
     if (
       (e.target as HTMLElement).closest(
-        "button,input,select,.watch-panel,.watch-header,.watch-footer,.skip-popup",
+        "button,input,select,textarea,.watch-panel,.watch-header,.watch-footer,.skip-popup",
       )
     )
       return;
@@ -230,9 +249,9 @@ export function mountPlayer(actions: {
   wake();
   return (p: Playback) => {
     latest = p;
-    el("buffering").hidden = !!p.error || !!p.ready;
+    el("buffering").hidden = !!p.error || (!!p.ready && !p.seeking && !p.buffering);
     el("buffering").textContent =
-      p.loadingNotice ?? (p.duration > 0
+      p.loadingNotice ?? (p.seeking || p.buffering ? "Buffering video…" : p.duration > 0
         ? "Opening video…"
         : p.peers === 0
           ? "Waiting for peers. You can choose another source below."

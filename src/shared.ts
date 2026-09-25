@@ -88,6 +88,7 @@ export interface EpisodePage {
   notice?: string;
 }
 export interface Settings {
+  discordPresence?: boolean;
   showAdult?: boolean;
   hideZeroSeeds?: boolean;
   sourceMode?: "auto" | "manual";
@@ -182,12 +183,15 @@ export interface State {
   mappings: Record<string, number>;
 }
 export interface Playback {
+  cover?: string;
   episodeTitle?: string;
   volume?: number;
   playbackRate?: number;
   release?: Release;
   mediaId?: number;
   episode?: number;
+  seeking?: boolean;
+  buffering?: boolean;
   nextEpisode?: number;
   nextMediaId?: number;
   title?: string;
@@ -214,7 +218,31 @@ export interface Playback {
   skipNotice?: string;
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number }
+export interface TogetherState {
+  connected: boolean;
+  code?: string;
+  self?: string;
+  host?: boolean;
+  members: { id: string; name: string; ready: boolean; error?: string }[];
+  messages: { id: string; name: string; text: string; system?: boolean }[];
+  chatEnabled?: boolean;
+  selection?: { mediaId: number; episode: number; hash: string | null } | null;
+  revision?: number;
+  allowPause?: boolean;
+  paused?: boolean;
+  waiting?: boolean;
+  position?: number;
+  at?: number;
+  error?: string;
+}
 export interface API {
+  togetherState(): Promise<TogetherState>;
+  togetherCopyCode(): Promise<void>;
+  togetherConnect(code?: string): Promise<void>;
+  togetherSend(message: object): Promise<void>;
+  togetherLeave(): Promise<void>;
+  togetherReload(): Promise<void>;
+  onTogether(callback: (state: TogetherState) => void): () => void;
   uninstall(): Promise<void>;
   favoriteSet(id: number, favorite: boolean): Promise<State>;
   watchAdd(id: number): Promise<State>;
