@@ -1003,12 +1003,6 @@ html.player-mode body {
 .watch-spacer {
   flex: 1;
 }
-.download-percent {
-  color: #d0d4cd;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
 .seek-row {
   display: flex;
   gap: 16px;

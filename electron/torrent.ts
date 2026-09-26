@@ -24,18 +24,16 @@ function fileDownload() {
   if (!torrent?.ready || !bitfield || !selectedFile || selectedFile.length <= 0) return undefined;
   const { offset, length, first, last } = selectedFile;
   const ranges: [number, number][] = [];
-  let downloaded = 0;
   for (let index = first; index <= last; index++) {
     if (!bitfield.get(index)) continue;
     const start = Math.max(offset, index * torrent.pieceLength) - offset;
     const end = Math.min(offset + length, (index + 1) * torrent.pieceLength) - offset;
     if (end <= start) continue;
-    downloaded += end - start;
     const previous = ranges.at(-1);
     if (previous && previous[1] === start / length) previous[1] = end / length;
     else ranges.push([start / length, end / length]);
   }
-  return { percent: Math.floor(downloaded / length * 100), ranges };
+  return { ranges };
 }
 port.on("message", async ({ data }) => {
   try {

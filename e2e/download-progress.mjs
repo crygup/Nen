@@ -42,19 +42,18 @@ try {
     speed: 0, peers: 1, progress: 0.3, markers: [],
   };
   await page.evaluate(value => window.renderPlayer(value), playback);
-  assert.equal(await page.locator("#download-percent").isHidden(), true);
-  checks.push("Indicator is hidden before file data arrives");
+  assert.equal(await page.locator("#download-percent").count(), 0);
+  checks.push("The percent label is absent");
 
   await page.evaluate(value => window.renderPlayer(value), {
     ...playback,
-    download: { percent: 30, ranges: [[0, 0.2], [0.8, 0.9]] },
+    download: { ranges: [[0, 0.2], [0.8, 0.9]] },
   });
-  assert.equal(await page.locator("#download-percent").innerText(), "Loaded 30%");
   const gradient = await page.locator("#seek").evaluate(element => element.style.getPropertyValue("--downloaded"));
   assert.match(gradient, /20\.000%/);
   assert.match(gradient, /80\.000%/);
   assert.match(gradient, /90\.000%/);
-  checks.push("Separate downloaded ranges and percent appear");
+  checks.push("Separate downloaded ranges appear on the scrubber");
   await page.screenshot({ path: join(artifactDir, "partial-download.png") });
 
   await page.locator("#seek").dispatchEvent("pointerdown");
@@ -64,23 +63,23 @@ try {
   });
   await page.evaluate(value => window.renderPlayer(value), {
     ...playback, position: 90,
-    download: { percent: 30, ranges: [[0, 0.2], [0.8, 0.9]] },
+    download: { ranges: [[0, 0.2], [0.8, 0.9]] },
   });
   assert.equal(await page.locator("#seek").inputValue(), "300");
   assert.equal(await page.locator("#position").innerText(), "01:30");
   checks.push("Download updates do not move the scrubber during a drag");
 
   await page.evaluate(value => window.renderPlayer(value), playback);
-  assert.equal(await page.locator("#download-percent").isHidden(), true);
   const clearedGradient = await page.locator("#seek").evaluate(element => element.style.getPropertyValue("--downloaded"));
   assert.doesNotMatch(clearedGradient, /rgb\(/);
-  checks.push("Indicators clear when the video changes");
+  checks.push("Downloaded ranges clear when the video changes");
 
   await page.evaluate(value => window.renderPlayer(value), {
-    ...playback, download: { percent: 100, ranges: [[0, 1]] },
+    ...playback, download: { ranges: [[0, 1]] },
   });
-  assert.equal(await page.locator("#download-percent").innerText(), "Loaded 100%");
-  checks.push("A complete file shows 100 percent");
+  const fullGradient = await page.locator("#seek").evaluate(element => element.style.getPropertyValue("--downloaded"));
+  assert.match(fullGradient, /100\.000%/);
+  checks.push("A complete file fills the downloaded range");
   assert.deepEqual(errors, []);
   checks.push("No renderer errors");
   await writeFile(join(artifactDir, "result.json"), JSON.stringify({ passed: true, checks, errors }, null, 2));

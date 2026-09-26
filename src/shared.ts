@@ -217,7 +217,6 @@ export interface Playback {
   peers: number;
   progress: number;
   download?: {
-    percent: number;
     ranges: [number, number][];
   };
   markers: Marker[];
