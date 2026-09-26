@@ -1917,8 +1917,8 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 
 #uninstall { font-size: 15px; width: auto; }
 
-.update-toast { display: flex; align-items: center; gap: 14px; }
-.update-toast .toast-close { flex: 0 0 auto; border: 0; background: transparent; color: inherit; padding: 2px 6px; font-size: 22px; line-height: 1; }
+.update-toast { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+.update-toast .toast-close { display: grid; place-items: center; flex: 0 0 24px; width: 24px; height: 24px; border: 0; background: transparent; color: inherit; padding: 0; }
 .seek-track { position: relative; flex: 1; min-width: 30px; }
 .seek-track #seek { display: block; width: 100%; margin: 0; }
 #buffering.failed::before { content: none; }
