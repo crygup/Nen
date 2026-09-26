@@ -18,9 +18,29 @@ let client: WebTorrent.Instance | undefined,
   torrent: WebTorrent.Torrent | undefined,
   server: Server | undefined;
 let timer: NodeJS.Timeout | undefined;
+let selectedFile: { offset: number; length: number; first: number; last: number } | undefined;
+function fileDownload() {
+  const bitfield = (torrent as (WebTorrent.Torrent & { bitfield?: { get(index: number): boolean } }) | undefined)?.bitfield;
+  if (!torrent?.ready || !bitfield || !selectedFile || selectedFile.length <= 0) return undefined;
+  const { offset, length, first, last } = selectedFile;
+  const ranges: [number, number][] = [];
+  let downloaded = 0;
+  for (let index = first; index <= last; index++) {
+    if (!bitfield.get(index)) continue;
+    const start = Math.max(offset, index * torrent.pieceLength) - offset;
+    const end = Math.min(offset + length, (index + 1) * torrent.pieceLength) - offset;
+    if (end <= start) continue;
+    downloaded += end - start;
+    const previous = ranges.at(-1);
+    if (previous && previous[1] === start / length) previous[1] = end / length;
+    else ranges.push([start / length, end / length]);
+  }
+  return { percent: Math.floor(downloaded / length * 100), ranges };
+}
 port.on("message", async ({ data }) => {
   try {
     if (data.action === "inspect") {
+      selectedFile = undefined;
       const infoHash = hash(data.hash);
       const root = resolve(data.path);
       client = new WebTorrent({
@@ -80,6 +100,7 @@ port.on("message", async ({ data }) => {
             speed: torrent?.downloadSpeed ?? 0,
             peers: torrent?.numPeers ?? 0,
             progress: torrent?.progress ?? 0,
+            download: fileDownload(),
           }),
         1000,
       );
@@ -97,6 +118,7 @@ port.on("message", async ({ data }) => {
       const last = Math.floor(
         (offset + file.length - 1) / torrent!.pieceLength,
       );
+      selectedFile = { offset, length: file.length, first, last };
       const count = Math.max(
         1,
         Math.ceil((2 * 1024 * 1024) / torrent!.pieceLength),
@@ -107,6 +129,7 @@ port.on("message", async ({ data }) => {
       server = result.server;
       send({ event: "stream", url: result.url });
     } else if (data.action === "stop") {
+      selectedFile = undefined;
       if (timer) clearInterval(timer);
       server?.closeAllConnections();
       server?.close();

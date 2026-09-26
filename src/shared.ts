@@ -216,6 +216,10 @@ export interface Playback {
   speed: number;
   peers: number;
   progress: number;
+  download?: {
+    percent: number;
+    ranges: [number, number][];
+  };
   markers: Marker[];
   skipNotice?: string;
 }
