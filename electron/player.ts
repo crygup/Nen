@@ -40,6 +40,7 @@ export class Player {
     parentHandle?: string,
     paused = false,
     playbackRate = 1,
+    volume = 100,
   ) {
     const bundled = join(
       resourcePath,
@@ -55,6 +56,7 @@ export class Player {
     const args = [
       "--no-config",
       `--speed=${playbackRate}`,
+      `--volume=${volume}`,
       ...(paused ? ["--pause=yes"] : []),
       "--audio-client-name=Nen",
       "--cache-pause-wait=1",

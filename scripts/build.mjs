@@ -1,7 +1,14 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { NtExecutable, NtExecutableResource, Resource, Data } from "resedit";
 import { build } from "esbuild";
 if (process.platform === "win32") {
+  await mkdir("dist-electron", { recursive: true });
+  execFileSync(join(process.env.WINDIR || "C:/Windows", "Microsoft.NET/Framework64/v4.0.30319/csc.exe"), [
+    "/nologo", "/target:exe", `/out:${join("dist-electron", "video-host.exe")}`,
+    "/reference:System.Windows.Forms.dll", "/reference:System.Drawing.dll", join("electron", "video-host.cs"),
+  ], { stdio: "inherit", windowsHide: true });
   const executable = NtExecutable.from(await readFile("vendor/mpv/mpv.exe"));
   const resources = NtExecutableResource.from(executable);
   const icon = Data.IconFile.from(await readFile("public/n.ico"));

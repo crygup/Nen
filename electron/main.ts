@@ -6,6 +6,7 @@ import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 declare const NEN_BUILD_COMMIT: string;
 declare const NEN_BUILD_VERSION: string;
+import { VideoHost } from "./video-host";
 import { captureVideo } from "./capture";
 import {
   app,
@@ -71,11 +72,13 @@ import type {
 } from "../src/shared";
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
-let videoView: BaseWindow | undefined;
+let videoView: BaseWindow | VideoHost | undefined;
 let switching: Progress | undefined;
 let worker: UtilityProcess | undefined;
 let player: Player | undefined;
 let sessionPlaybackRate = 1;
+let sessionVolume = 100;
+let fullscreenBeforePlayer: boolean | undefined;
 let files: TorrentFile[] = [];
 let selected: Release | undefined;
 let current: Progress | undefined;
@@ -335,6 +338,9 @@ function stop(closeView = true, keepTorrent = false) {
     switching = undefined;
     const returning = !!controls && controls === window;
     controls = undefined;
+    if (returning && !closing && !window.isDestroyed() && fullscreenBeforePlayer !== undefined)
+      window.setFullScreen(fullscreenBeforePlayer);
+    fullscreenBeforePlayer = undefined;
     videoView?.destroy();
     videoView = undefined;
     if (returning && !closing && !window.isDestroyed())
@@ -665,6 +671,7 @@ async function play(
           : undefined,
       together.state.connected,
       together.state.connected ? together.state.playbackRate ?? 1 : sessionPlaybackRate,
+      sessionVolume,
     );
     controls?.show();
     controls?.moveTop();
@@ -842,8 +849,6 @@ function settings(value: Settings): Settings {
   };
 }
 
-if (process.platform === "win32")
-  app.commandLine.appendSwitch("disable-direct-composition");
 app.setName("Nen");
 if (process.env.NEN_E2E_USER_DATA) {
   mkdirSync(process.env.NEN_E2E_USER_DATA, { recursive: true });
@@ -1309,7 +1314,9 @@ else {
         if (action === "volume") {
           if (!Number.isFinite(value) || value < 0 || value > 100)
             throw Error("Invalid volume.");
-          return player.command(["set_property", "volume", value]);
+          await player.command(["set_property", "volume", value]);
+          sessionVolume = value;
+          return;
         }
         if (together.state.connected && ["pause", "seek", "seekRelative", "speed"].includes(action)) {
           if (action === "speed") {
@@ -1473,19 +1480,29 @@ async function loadPage(query: Record<string, string>) {
 async function openPlayerView() {
   if (controls) return;
 
-  videoView = new BaseWindow({
-    ...window.getContentBounds(),
-    ...(process.platform === "win32" ? { type: "toolbar" } : {}),
-    frame: false,
-    show: false,
-    skipTaskbar: true,
-    focusable: false,
-    transparent: true,
-    backgroundColor: "#00000000",
-  });
-  videoView.contentView.setVisible(false);
+  if (process.platform === "win32") {
+    const request = playbackRequest;
+    const host = await VideoHost.create(window.getContentBounds());
+    if (closing || request !== playbackRequest) {
+      host.destroy();
+      throw Error("Playback cancelled.");
+    }
+    videoView = host;
+  } else {
+    videoView = new BaseWindow({
+      ...window.getContentBounds(),
+      frame: false,
+      show: false,
+      skipTaskbar: true,
+      focusable: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+    });
+    videoView.contentView.setVisible(false);
+  }
   videoView.showInactive();
   window.moveTop();
+  fullscreenBeforePlayer = window.isFullScreen();
   controls = window;
   await loadPage({ player: "1" });
 }
