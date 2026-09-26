@@ -1827,7 +1827,6 @@ dialog::-webkit-scrollbar-button { display: none; }
 .with-together .player-stage { width: calc(100% - 320px); }
 .with-together:has(.watch-together.chat-enabled.chat-collapsed) .player-stage { width: calc(100% - 52px); }
 .with-together .watch-header, .with-together .watch-footer { right: 0; }
-.with-together .skip-popup { right: 25px; }
 .with-together .watch-together { color: var(--text); }
 @media (max-width: 800px) {
   .together-entry { flex-direction: column; gap: 18px; }

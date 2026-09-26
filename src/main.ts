@@ -249,7 +249,7 @@ function showTogether() {
   const main = document.querySelector<HTMLElement>("#main")!;
   main.innerHTML = '<div id="together-lobby"></div>';
   leaveTogetherView?.();
-  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!, () => void home(), false, (id, ep) => void run(async () => releasePicker(await api.media(id), ep)));
+  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!, () => void home(), false);
 }
 function shell() {
   root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
@@ -988,6 +988,8 @@ async function chooseFile(
       await play(matched.index);
       return;
     }
+    if ((await api.togetherState()).connected)
+      throw Error("This source has no clear file match for the session episode. Choose another source.");
     d.querySelector("#files")!.innerHTML = files.length
       ? `<form id="file-form"><label>File for episode ${ep}<select id="file" required><option value="">Choose a file</option>${files.map((f) => `<option value="${f.index}">${esc(f.path)}</option>`).join("")}</select></label><button class="primary">Play</button></form>`
       : "<p>No video files were found.</p>";
@@ -1459,15 +1461,31 @@ async function start() {
       edit: editMarker,
       error,
     });
+    let lastSessionFailure = "";
+    const showSessionFailure = (p: Playback) => {
+      if (!p.error) { lastSessionFailure = ""; return; }
+      const key = `${p.mediaId}:${p.episode}:${p.error}`;
+      if (key === lastSessionFailure) return;
+      lastSessionFailure = key;
+      void api.togetherState().then(room => {
+        if (!room.connected || playback?.error !== p.error) return;
+        const d = dialog(`<h2 id="dialog-title">Could not load this episode</h2><p role="alert">${esc(p.error)}</p><p>Automatic source loading failed. Pick a source manually to continue.</p><button id="manual-session-source">Choose a source manually</button>`);
+        d.querySelector<HTMLButtonElement>("#manual-session-source")!.onclick = () => {
+          if (p.mediaId && p.episode) void run(async () => releasePicker(await api.media(p.mediaId!), p.episode!));
+        };
+      }).catch(error);
+    };
     api.onPlayback((p) => {
       playback = p;
       const finding = document.querySelector<HTMLElement>("#finding-source");
       if (finding && p.loadingNotice) finding.textContent = p.loadingNotice;
       update(p);
+      showSessionFailure(p);
     });
     const p = await api.playback();
     playback = p;
     update(p);
+    showSessionFailure(p);
   } else {
     shell();
     api.onWatchState(value => {

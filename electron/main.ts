@@ -185,7 +185,7 @@ const defaults: State = {
     theme: "system",
     autoSkip: false,
     autoNext: false,
-    autoUpdates: false,
+    autoUpdates: true,
     discordPresence: false,
     showAdult: false,
     hideZeroSeeds: true,
@@ -498,6 +498,8 @@ async function play(
           nextAiringEpisode: null,
         }
       : await providers.media(mediaId);
+    if (together.state.connected && matchingFile(files, selected, anime as any, episode)?.index !== file.index)
+      throw Error("This source has no clear file match for the session episode. Choose another source.");
     const fileEpisode = parseRelease(
       file.path.split(/[\\/]/).at(-1) ?? "",
       episode,
@@ -690,12 +692,23 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     ? watchEntry.runs.at(-1)?.episodes[String(episode)]?.position ?? 0
     : watchEntry?.runs.at(-1)?.episodes[String(episode)]?.position ?? saved?.position ?? 0;
   try {
+    if (together.state.connected) {
+      stop(false);
+      startAt = together.state.position ?? 0;
+      pendingPlayback = {
+        active: true, position: startAt, duration: 0, paused: true,
+        speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
+        mediaId, episode, loadingNotice: "Finding a source…",
+      };
+      await openPlayerView();
+      publish();
+    }
     let anime = saved ? {
       id: saved.mediaId,
       title: { english: saved.title, romaji: saved.title },
     } as any : await providers.media(mediaId);
     if (request !== playbackRequest) return;
-    const continuing = !saved && current?.mediaId === mediaId && selected && worker
+    const continuing = !saved && (!preferredHash || selected?.hash === preferredHash) && current?.mediaId === mediaId && selected && worker
       && matchesMedia(selected.title, anime) && matchingFile(files, selected, anime, episode)
       && (state.settings.source === "all" || selected.source === state.settings.source)
       ? selected : undefined;
@@ -766,6 +779,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
         if (player) player.status.error = message;
         else if (pendingPlayback) pendingPlayback.error = message;
         publish();
+        if (together.state.connected) throw Error(message);
       } else throw Error(message);
     }
   } catch (error) {
@@ -774,6 +788,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     const status = player?.status ?? pendingPlayback;
     if (status) status.error = (error as Error).message;
     publish();
+    if (together.state.connected) throw error;
   } finally {
     if (!controls) pendingPlayback = undefined;
     automaticRunning = false;
@@ -815,7 +830,7 @@ function settings(value: Settings): Settings {
     hideZeroSeeds: value.hideZeroSeeds ?? true,
     autoSkip: value.autoSkip,
     autoNext: value.autoNext ?? false,
-    autoUpdates: value.autoUpdates ?? false,
+    autoUpdates: value.autoUpdates ?? true,
     discordPresence: value.discordPresence ?? false,
     audio,
     subtitles,
@@ -1251,17 +1266,18 @@ else {
         return autoPlay(id, ep);
       });
       handle("inspect", (value) => {
+        if (together.state.connected && (automaticRunning || !together.state.members.find(m => m.id === together.state.self)?.error)) throw Error("Session sources load automatically. Manual selection is available after loading fails.");
         playbackRequest++;
         return inspect(hash(value));
       });
-      handle("play", (id, ep, index, malEp) =>
-        play(
+      handle("play", (id, ep, index, malEp) => {
+        return play(
           positive(id),
           positive(ep, 10000),
           positive(Number(index) + 1, 100000) - 1,
           positive(malEp, 10000),
-        ),
-      );
+        );
+      });
       handle("resume", async (key) => {
         const p = state.progress[text(key, 40)];
         if (!p) throw Error("Saved playback was not found.");

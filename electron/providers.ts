@@ -454,6 +454,11 @@ export async function releases(
         }
       } catch (error) { errors.push(name + ": " + (error as Error).message); }
     }));
+  if (!items.size) {
+    for (const key of cache.keys())
+      if (key.startsWith("https://nyaa.si/?page=rss") || key.startsWith("https://bangumi.moe/api/v2/torrent/search")) cache.delete(key);
+    persistCache();
+  }
   return { items: [...items.values()].sort((a, b) => Number(b.confidence === "Episode match") - Number(a.confidence === "Episode match") || b.seeds - a.seeds).slice(0, 100), errors };
 }
 

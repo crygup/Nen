@@ -33,6 +33,7 @@ export function mountPlayer(actions: {
   let removeTogether: (() => void) | undefined;
   const roomUpdate = (room: import("./shared").TogetherState) => {
     togetherPanel.hidden = !room.connected;
+    el("change-source").hidden = room.connected && !room.members.find(m => m.id === room.self)?.error;
     root.classList.toggle("with-together", room.connected);
     if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, () => {}, true);
     el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;

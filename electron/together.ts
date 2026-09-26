@@ -96,12 +96,12 @@ export class Together {
     if (!s.connected || !selection) return;
     if (Date.now() - this.lastPing > 10000) this.ping();
     const key = selection.mediaId + ":" + selection.episode;
-    if (!this.hooks.playback()?.active && this.revision !== s.revision && !selection.hash) this.key = "";
+    if (this.revision !== s.revision && !selection.hash) this.key = "";
     if (key !== this.key && !this.loading && (s.host || selection.hash)) {
       this.key = key; this.loading = true; this.failure = ""; this.readySent = ""; this.revision = s.revision!;
       const generation = this.generation;
-      try { await this.hooks.command(["set_property", "pause", true]); await this.hooks.prepare(selection.mediaId, selection.episode, selection.hash || undefined); }
-      catch { if (generation === this.generation) { this.failure = "Could not load video. Choose another source."; this.send({ type: "ready", revision: s.revision, ready: false, error: this.failure }); } }
+      try { await this.hooks.command(["set_property", "pause", true]).catch(() => {}); await this.hooks.prepare(selection.mediaId, selection.episode, selection.hash || undefined); }
+      catch (error) { if (generation === this.generation && this.state.selection?.mediaId === selection.mediaId && this.state.selection?.episode === selection.episode) { this.failure = String((error as Error).message || "Could not load video. Retry loading.").slice(0, 200); this.send({ type: "ready", revision: s.revision, ready: false, error: this.failure }); } }
       finally { if (generation === this.generation) this.loading = false; }
       return;
     }
@@ -118,7 +118,7 @@ export class Together {
     if (s.host && !selection.hash && p.ready && p.release)
       this.send({ type: "source", revision: s.revision, hash: p.release.hash });
     const ready = !!p.ready && !p.error && !p.seeking && !p.buffering && p.duration > 0;
-    const error = p.error ? "Could not load video. Choose another source." : "";
+    const error = p.error ? p.error.slice(0, 200) : "";
     const readiness = s.revision + ":" + ready + ":" + error;
     this.syncing = true;
     try {
