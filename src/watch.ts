@@ -34,6 +34,33 @@ export function mountPlayer(actions: {
   root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
+  const volumeToast = document.createElement("div");
+  volumeToast.className = "volume-toast";
+  volumeToast.setAttribute("role", "status");
+  volumeToast.setAttribute("aria-live", "polite");
+  volumeToast.innerHTML = '<span>Volume</span><strong>100%</strong><span class="volume-meter" aria-hidden="true"><span></span></span>';
+  document.querySelector(".player-stage")!.append(volumeToast);
+  const volumePercent = volumeToast.querySelector("strong")!;
+  let volumeToastTimer: ReturnType<typeof setTimeout>;
+  const showVolumeToast = (value: number) => {
+    volumePercent.textContent = `${value}%`;
+    volumeToast.style.setProperty("--volume-level", `${value}%`);
+    volumeToast.classList.add("visible");
+    clearTimeout(volumeToastTimer);
+    volumeToastTimer = setTimeout(() => volumeToast.classList.remove("visible"), 1500);
+  };
+  const sliderVolume = document.createElement("output");
+  sliderVolume.className = "volume-value";
+  sliderVolume.setAttribute("for", "volume");
+  sliderVolume.setAttribute("aria-hidden", "true");
+  el("volume").after(sliderVolume);
+  let sliderVolumeTimer: ReturnType<typeof setTimeout>;
+  const showSliderVolume = (value: number) => {
+    sliderVolume.textContent = `${value}%`;
+    sliderVolume.classList.add("visible");
+    clearTimeout(sliderVolumeTimer);
+    sliderVolumeTimer = setTimeout(() => sliderVolume.classList.remove("visible"), 850);
+  };
   const togetherPanel = document.createElement("aside");
   togetherPanel.className = "watch-together";
   togetherPanel.hidden = true;
@@ -126,8 +153,41 @@ export function mountPlayer(actions: {
   let activeMarker: SegmentType | undefined;
   let markerKey = "";
   let priorVolume = 100;
+  let volumeTarget = 100;
+  let pendingVolume: number | undefined;
+  let volumeSending = false;
   const dismissed = new Set<string>();
   const run = (p: Promise<unknown>) => void p.catch(actions.error);
+  const sendVolume = async () => {
+    if (volumeSending) return;
+    volumeSending = true;
+    try {
+      while (pendingVolume !== undefined) {
+        const value = pendingVolume;
+        await api.control("volume", value);
+        if (pendingVolume === value) break;
+      }
+    } catch (error) {
+      pendingVolume = undefined;
+      volumeTarget = latest?.volume ?? 100;
+      el<HTMLInputElement>("volume").value = String(volumeTarget);
+      actions.error(error);
+    } finally {
+      volumeSending = false;
+      if (pendingVolume !== undefined && latest?.volume === pendingVolume)
+        pendingVolume = undefined;
+    }
+  };
+  const setVolume = (value: number, feedback: "toast" | "slider" | "none" = "none") => {
+    const next = Math.max(0, Math.min(100, Math.round(value)));
+    if (next === volumeTarget) return;
+    if (volumeTarget > 0) priorVolume = volumeTarget;
+    volumeTarget = pendingVolume = next;
+    el<HTMLInputElement>("volume").value = String(next);
+    if (feedback === "toast") showVolumeToast(next);
+    if (feedback === "slider") showSliderVolume(next);
+    void sendVolume();
+  };
   const wake = () => {
     el("app").classList.remove("controls-hidden");
     clearTimeout(timer);
@@ -223,12 +283,9 @@ export function mountPlayer(actions: {
     dragging = false;
   };
   el<HTMLInputElement>("volume").oninput = (e) =>
-    run(api.control("volume", Number((e.target as HTMLInputElement).value)));
+    setVolume(Number((e.target as HTMLInputElement).value), "slider");
   el("mute").onclick = () => {
-    if ((latest?.volume ?? 100) > 0) {
-      priorVolume = latest.volume ?? 100;
-      run(api.control("volume", 0));
-    } else run(api.control("volume", priorVolume || 100));
+    setVolume(volumeTarget > 0 ? 0 : priorVolume || 100);
   };
   el("skip-current").onclick = () => {
     dismissed.add(markerKey);
@@ -254,6 +311,10 @@ export function mountPlayer(actions: {
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
       run(api.control("seekRelative", e.key === "ArrowRight" ? 5 : -5));
+    }
+    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      setVolume(volumeTarget + (e.key === "ArrowUp" ? 5 : -5), "toast");
     }
     if (e.key.toLowerCase() === "f") run(api.control("fullscreen"));
     if (e.key === "Escape") run(api.control("stop"));
@@ -346,7 +407,13 @@ export function mountPlayer(actions: {
     el("next-episode").setAttribute("aria-label", nextLabel);
     el("next-episode").title = nextLabel;
     el("next-popup").hidden = !p.nextEpisode || !p.ready || p.duration <= 0 || p.duration - p.position > 15 || !!p.error;
-    el<HTMLInputElement>("volume").value = String(p.volume ?? 100);
+    const actualVolume = p.volume ?? 100;
+    if (pendingVolume === undefined || (!volumeSending && actualVolume === pendingVolume)) {
+      pendingVolume = undefined;
+      volumeTarget = actualVolume;
+      el<HTMLInputElement>("volume").value = String(actualVolume);
+      if (actualVolume > 0) priorVolume = actualVolume;
+    }
     const playbackError = p.error || "";
     if (playbackError !== lastPlaybackError) {
       if (playbackError || el("player-error").textContent === lastPlaybackError) playerNotice(playbackError);
