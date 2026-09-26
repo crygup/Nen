@@ -46,7 +46,8 @@
       "LICENSE"
     ],
     "asarUnpack": [
-      "node_modules/**/*.node"
+      "node_modules/**/*.node",
+      "dist-electron/video-host.exe"
     ],
     "extraResources": [
       {
