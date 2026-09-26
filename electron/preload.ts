@@ -62,7 +62,6 @@ const api: API = {
   catalogOptions: () => ipcRenderer.invoke("catalogOptions"),
   catalog: (...a) => ipcRenderer.invoke("catalog", ...a),
   episodes: (...a) => ipcRenderer.invoke("episodes", ...a),
-  removeHistory: (...a) => ipcRenderer.invoke("removeHistory", ...a),
   playback: () => ipcRenderer.invoke("playbackState"),
   media: (...a) => ipcRenderer.invoke("media", ...a),
   labels: (...a) => ipcRenderer.invoke("labels", ...a),

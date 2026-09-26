@@ -7,6 +7,7 @@ using System.Windows.Forms;
 // A plain Win32 surface for mpv. Chromium must not composite over this window.
 sealed class VideoHost : Form {
   [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
   protected override bool ShowWithoutActivation { get { return true; } }
   protected override CreateParams CreateParams {
     get {
@@ -24,7 +25,10 @@ sealed class VideoHost : Form {
     Text = "Nen video surface";
   }
   void Command(string line) {
-    if (line == "show") Show();
+    if (line == "show") {
+      Show();
+      SetWindowPos(Handle, new IntPtr(1), 0, 0, 0, 0, 0x0013); // HWND_BOTTOM, no activation, move or resize
+    }
     else if (line == "hide") Hide();
     else if (line == "close") { Close(); Application.ExitThread(); }
     else {

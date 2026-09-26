@@ -173,6 +173,7 @@ export interface SyncChange {
 export interface SyncPreview { changes: SyncChange[]; first: boolean }
 export interface ImportPreview { count: number; episodes: number; newEntries: number; changedEntries: number; path: string }
 export interface State {
+  volume?: number;
   version?: string;
   window?: { width: number; height: number; maximized: boolean };
   settings: Settings;
@@ -282,9 +283,8 @@ export interface API {
   ): Promise<Catalog>;
   media(id: number): Promise<Media>;
   episodes(id: number, page: number): Promise<EpisodePage>;
-  removeHistory(key: string): Promise<void>;
   playback(): Promise<Playback>;
-  labels(id: number, mal: number | null): Promise<Labels>;
+  labels(id: number): Promise<Labels>;
   releases(
     id: number,
     episode: number,

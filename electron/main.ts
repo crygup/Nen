@@ -77,7 +77,6 @@ let switching: Progress | undefined;
 let worker: UtilityProcess | undefined;
 let player: Player | undefined;
 let sessionPlaybackRate = 1;
-let sessionVolume = 100;
 let fullscreenBeforePlayer: boolean | undefined;
 let files: TorrentFile[] = [];
 let selected: Release | undefined;
@@ -310,7 +309,7 @@ function publish() {
       if (target && !target.isDestroyed())
         target.webContents.send(
           "playback",
-          player?.status ?? pendingPlayback ?? {
+          (automaticRunning ? pendingPlayback : undefined) ?? player?.status ?? pendingPlayback ?? {
             active: false,
             position: 0,
             duration: 0,
@@ -619,7 +618,7 @@ async function play(
                 publish();
               }
             })
-            .catch((e) => {
+            .catch(() => {
               if (active === player) {
                 active.status.skipNotice = "Skip times are unavailable. You can set them in More playback controls.";
                 if (markerAttempts < 2) setTimeout(() => {
@@ -672,7 +671,7 @@ async function play(
           : undefined,
       together.state.connected,
       together.state.connected ? together.state.playbackRate ?? 1 : sessionPlaybackRate,
-      sessionVolume,
+      state.volume ?? 100,
     );
     controls?.show();
     controls?.moveTop();
@@ -703,14 +702,14 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     if (together.state.connected) {
       stop(false);
       startAt = together.state.position ?? 0;
-      pendingPlayback = {
-        active: true, position: startAt, duration: 0, paused: true,
-        speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
-        mediaId, episode, loadingNotice: "Finding a source…",
-      };
-      await openPlayerView();
-      publish();
     }
+    pendingPlayback = {
+      active: true, position: startAt, duration: 0, paused: true,
+      speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
+      mediaId, episode, loadingNotice: "Finding a source…",
+    };
+    await openPlayerView();
+    publish();
     let anime = saved ? {
       id: saved.mediaId,
       title: { english: saved.title, romaji: saved.title },
@@ -720,7 +719,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
       && matchesMedia(selected.title, anime) && matchingFile(files, selected, anime, episode)
       && (state.settings.source === "all" || selected.source === state.settings.source)
       ? selected : undefined;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       let release = attempt === 0 ? saved?.release ?? continuing : undefined;
       if (!release) {
         if (!candidates) {
@@ -775,17 +774,16 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
           return;
         }
         failure = active.status.error ?? "This source took too long to start.";
-        if (attempt === 5) break;
       } catch (error) {
         if (request !== playbackRequest) return;
         failure = (error as Error).message;
       }
     }
     if (request === playbackRequest) {
-      const message = failure === "No streams found." ? failure : failure + " Choose another source or try again later.";
+      const message = attempted.size ? "None of the available sources could play this episode. Try again later or choose a source manually." : failure;
       if (controls) {
-        if (player) player.status.error = message;
-        else if (pendingPlayback) pendingPlayback.error = message;
+        stop(false);
+        if (pendingPlayback) pendingPlayback.error = message;
         publish();
         if (together.state.connected) throw Error(message);
       } else throw Error(message);
@@ -793,7 +791,8 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
   } catch (error) {
     if (request !== playbackRequest) return;
     if (!controls) throw error;
-    const status = player?.status ?? pendingPlayback;
+    stop(false);
+    const status = pendingPlayback;
     if (status) status.error = (error as Error).message;
     publish();
     if (together.state.connected) throw error;
@@ -801,6 +800,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     if (!controls) pendingPlayback = undefined;
     automaticRunning = false;
     sourceSearch = undefined;
+    publish();
   }
 }
 function settings(value: Settings): Settings {
@@ -886,6 +886,8 @@ else {
           );
         }
       }
+      state.volume = typeof state.volume === "number" && Number.isFinite(state.volume)
+        ? Math.max(0, Math.min(100, state.volume)) : 100;
       state.version = NEN_BUILD_VERSION;
       providers.initCache(join(app.getPath("userData"), "provider-cache.json"));
       const repaired = repairProgress(state.progress);
@@ -1225,7 +1227,7 @@ else {
       handle(
         "playbackState",
         () =>
-          player?.status ?? pendingPlayback ?? {
+          (automaticRunning ? pendingPlayback : undefined) ?? player?.status ?? pendingPlayback ?? {
             active: false,
             position: 0,
             duration: 0,
@@ -1237,14 +1239,8 @@ else {
             progress: 0,
           },
       );
-      handle("removeHistory", (key) => {
-        const valid = text(key, 40);
-        if (!/^\d+:\d+$/.test(valid)) throw Error("Invalid history entry.");
-        delete state.progress[valid];
-        save();
-      });
       handle("media", (id) => providers.media(positive(id)));
-      handle("labels", async (id, mal) => {
+      handle("labels", async (id) => {
         const anime = await providers.media(positive(id));
         return providers.labels(anime.id, anime.idMal);
       });
@@ -1316,7 +1312,8 @@ else {
           if (!Number.isFinite(value) || value < 0 || value > 100)
             throw Error("Invalid volume.");
           await player.command(["set_property", "volume", value]);
-          sessionVolume = value;
+          state.volume = value;
+          save();
           return;
         }
         if (together.state.connected && ["pause", "seek", "seekRelative", "speed"].includes(action)) {

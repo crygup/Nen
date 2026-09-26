@@ -12,19 +12,13 @@ const esc = (s: unknown) =>
   );
 const time = (n: number) =>
   `${Math.floor(n / 3600) ? `${Math.floor(n / 3600)}:` : ""}${String(Math.floor(n / 60) % 60).padStart(2, "0")}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
-const downloadedGradient = (ranges: [number, number][]) => {
-  const stops = ["transparent 0%"];
-  for (const [rawStart, rawEnd] of ranges) {
-    const start = Math.max(0, Math.min(1, rawStart));
-    const end = Math.max(0, Math.min(1, rawEnd));
-    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-    const from = `${(start * 100).toFixed(3)}%`;
-    const to = `${(end * 100).toFixed(3)}%`;
-    stops.push(`transparent ${from}`, `rgb(193 208 176 / 48%) ${from}`,
-      `rgb(193 208 176 / 48%) ${to}`, `transparent ${to}`);
+const downloadedGradient = (ranges: [number, number][], position: number) => {
+  let end = position;
+  for (const [start, stop] of [...ranges].sort((a, b) => a[0] - b[0])) {
+    if (Number.isFinite(start) && Number.isFinite(stop) && start <= end && stop > end)
+      end = Math.min(1, stop);
   }
-  stops.push("transparent 100%");
-  return `linear-gradient(to right, ${stops.join(", ")})`;
+  return `linear-gradient(to right, transparent 0 ${position * 100}%, rgb(255 255 255 / 48%) ${position * 100}% ${end * 100}%, transparent ${end * 100}% 100%)`;
 };
 const icon = (name: string) =>
   `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">${({ back: '<path d="m14 5-7 7 7 7"/>', play: '<path d="m8 4 12 8-12 8z" fill="currentColor" stroke="none"/>', pause: '<path d="M8 4v16M16 4v16" stroke-width="4"/>', next: '<path d="m5 5 11 7-11 7z"/><path d="M19 5v14"/>', volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>', full: '<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>', audio: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>', tracks: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', source: '<path d="M4 5h16v5H4zM4 14h16v5H4zM7 7v1M7 16v1"/>', speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' } as Record<string, string>)[name]}</svg>`;
@@ -37,7 +31,7 @@ export function mountPlayer(actions: {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
   document.documentElement.dataset.theme = "dark";
-  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
   const togetherPanel = document.createElement("aside");
@@ -49,7 +43,7 @@ export function mountPlayer(actions: {
     togetherPanel.hidden = !room.connected;
     el("change-source").hidden = room.connected && !room.members.find(m => m.id === room.self)?.error;
     root.classList.toggle("with-together", room.connected);
-    if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, () => {}, true);
+    if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, true);
     el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;
     el<HTMLInputElement>("seek").disabled = room.connected && !room.host;
     el<HTMLButtonElement>("speed").disabled = room.connected && !room.host;
@@ -127,7 +121,8 @@ export function mountPlayer(actions: {
   let dragging = false;
   let timer: ReturnType<typeof setTimeout>;
   let trackKey = "";
-  let displayedDownloadRanges: [number, number][] | undefined;
+  let displayedDownloadRanges = "";
+  let displayedMarkers = "";
   let activeMarker: SegmentType | undefined;
   let markerKey = "";
   let priorVolume = 100;
@@ -138,7 +133,7 @@ export function mountPlayer(actions: {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (
-        latest?.active &&
+        latest?.active && latest.ready && !latest.loadingNotice && !latest.buffering && !latest.error &&
         !latest.paused &&
         !document.querySelector("dialog[open]") &&
         !dragging &&
@@ -210,6 +205,7 @@ export function mountPlayer(actions: {
   };
   seek.oninput = () => {
     el("position").textContent = time(Number(seek.value));
+    seek.style.setProperty("--downloaded", downloadedGradient(latest?.download?.ranges ?? [], Number(seek.value) / Number(seek.max)));
     seek.style.setProperty(
       "--played",
       `${(Number(seek.value) / Number(seek.max)) * 100}%`,
@@ -278,15 +274,16 @@ export function mountPlayer(actions: {
   wake();
   return (p: Playback) => {
     latest = p;
-    el("buffering").hidden = !!p.error || (!!p.ready && !p.seeking && !p.buffering);
+    el("buffering").hidden = !p.error && !p.loadingNotice && !!p.ready && !p.seeking && !p.buffering;
+    el("buffering").classList.toggle("failed", !!p.error);
     el("buffering").textContent =
-      p.loadingNotice ?? (p.seeking || p.buffering ? "Buffering video…" : p.duration > 0
+      p.error ?? p.loadingNotice ?? (p.seeking || p.buffering ? "Buffering video…" : p.duration > 0
         ? "Opening video…"
         : p.peers === 0
-          ? "Waiting for peers. You can choose another source below."
+          ? "Waiting for peers…"
           : p.speed > 0
             ? `Loading video · ${Math.round(p.speed / 1024)} KB/s`
-            : "Waiting for video data. You can choose another source below.");
+            : "Waiting for video data…");
     el("watch-title").textContent = p.title ?? "Nen";
     el("watch-episode").textContent =
       p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
@@ -318,9 +315,25 @@ export function mountPlayer(actions: {
       );
     }
     const download = p.active ? p.download : undefined;
-    if (download?.ranges !== displayedDownloadRanges) {
-      displayedDownloadRanges = download?.ranges;
-      seek.style.setProperty("--downloaded", downloadedGradient(download?.ranges ?? []));
+    const position = Math.max(0, Math.min(1, Number(seek.value) / (p.duration || 1)));
+    const downloadKey = JSON.stringify([download?.ranges ?? [], position]);
+    if (downloadKey !== displayedDownloadRanges) {
+      displayedDownloadRanges = downloadKey;
+      seek.style.setProperty("--downloaded", downloadedGradient(download?.ranges ?? [], position));
+    }
+    const timelineKey = JSON.stringify([p.active, p.duration, p.markers]);
+    if (timelineKey !== displayedMarkers) {
+      displayedMarkers = timelineKey;
+      const segments = p.active && p.duration > 0 ? p.markers : [];
+      const kinds = { op: "intro", "mixed-op": "intro", ed: "outro", "mixed-ed": "outro", recap: "recap" } as const;
+      const gradients: string[] = [];
+      for (const marker of segments) {
+        const kind = kinds[marker.type];
+        const start = Math.max(0, marker.start), end = Math.min(p.duration, marker.end);
+        if (!kind || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+        gradients.push(`linear-gradient(to right, transparent 0 ${start / p.duration * 100}%, ${{ intro: "#70b8ef", outro: "#c69ae8", recap: "#e8b65e" }[kind]} ${start / p.duration * 100}% ${end / p.duration * 100}%, transparent ${end / p.duration * 100}% 100%)`);
+      }
+      seek.style.setProperty("--segments", gradients.join(",") || "linear-gradient(transparent, transparent)");
     }
     const pauseLabel = p.paused ? "Play" : "Pause";
     if (el("pause").getAttribute("aria-label") !== pauseLabel) {
@@ -379,6 +392,6 @@ export function mountPlayer(actions: {
         : marker?.type === "recap"
           ? "Skip recap"
           : "Skip outro";
-    if (p.paused) el("app").classList.remove("controls-hidden");
+    if (p.paused || p.error || p.loadingNotice || !p.ready || p.buffering) el("app").classList.remove("controls-hidden");
   };
 }

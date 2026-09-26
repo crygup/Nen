@@ -35,25 +35,18 @@ if (process.platform === "win32") {
     Buffer.from(executable.generate()),
   );
 }
-await build({
-  entryPoints: ["electron/main.ts"],
-  define: { NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""), NEN_BUILD_VERSION: JSON.stringify(process.env.GITHUB_SHA ? `Build ${process.env.GITHUB_SHA.slice(0, 7)}` : "Build dev") },
-  outfile: "dist-electron/main.cjs",
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  external: ["electron"],
-  target: "node22",
-});
-await build({
-  entryPoints: ["electron/preload.ts"],
-  outfile: "dist-electron/preload.cjs",
-  bundle: true,
-  platform: "node",
-  format: "cjs",
-  external: ["electron"],
-  target: "node22",
-});
+for (const name of ["main", "preload"]) {
+  await build({
+    entryPoints: [`electron/${name}.ts`],
+    outfile: `dist-electron/${name}.cjs`,
+    define: { NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""), NEN_BUILD_VERSION: JSON.stringify(process.env.GITHUB_SHA ? `Build ${process.env.GITHUB_SHA.slice(0, 7)}` : "Build dev") },
+    bundle: true,
+    platform: "node",
+    format: "cjs",
+    external: ["electron"],
+    target: "node22",
+  });
+}
 await build({
   entryPoints: ["electron/torrent.ts"],
   outfile: "dist-electron/torrent.mjs",

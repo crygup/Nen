@@ -13,7 +13,7 @@ const api = `https://api.github.com/repos/${repository}`;
 const sha = /^[a-f0-9]{40}$/;
 const digest = /^sha256:[a-f0-9]{64}$/;
 const maxSize = 1024 * 1024 * 1024;
-export type Update = { url: string; digest: string; size: number; version?: string; commit?: string };
+export type Update = { url: string; digest: string; size: number; commit: string };
 export type UpdateResult = { update?: Update; message: string };
 
 async function github(path: string): Promise<any> {
@@ -27,7 +27,7 @@ async function github(path: string): Promise<any> {
   return response.json();
 }
 
-function assetUpdate(url: string, value: any): Update {
+function assetUpdate(url: string, value: any): Omit<Update, "commit"> {
   if (!digest.test(value?.digest) || !Number.isSafeInteger(value.size) || value.size < 1 || value.size > maxSize)
     throw Error("The update has no valid download checksum or size.");
   return { url, digest: value.digest, size: value.size };
@@ -51,7 +51,6 @@ export async function downloadUpdate(update: Update, directory: string, progress
   await mkdir(directory, { recursive: true });
   const archive = join(directory, "download.zip");
   const installer = join(directory, "setup.exe");
-  const destination = update.commit ? archive : installer;
   await rm(installer, { force: true });
   await rm(archive, { force: true });
   try {
@@ -67,11 +66,10 @@ export async function downloadUpdate(update: Update, directory: string, progress
         progress(Math.floor(received / update.size * 100));
         callback(null, chunk);
       },
-    }), createWriteStream(destination));
+    }), createWriteStream(archive));
     if (received !== update.size || `sha256:${hash.digest("hex")}` !== update.digest)
       throw Error("The update checksum did not match. Nothing was installed.");
-    if (update.commit) {
-      const script = `$ErrorActionPreference='Stop'
+    const script = `$ErrorActionPreference='Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip=[IO.Compression.ZipFile]::OpenRead($env:NEN_UPDATE_ARCHIVE)
 try {
@@ -86,14 +84,13 @@ try {
   [IO.Compression.ZipFileExtensions]::ExtractToFile($exe,$env:NEN_UPDATE_INSTALLER,$true)
   Write-Output $text
 } finally {$zip.Dispose()}`;
-      const result = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
-        windowsHide: true, timeout: 120000, maxBuffer: 8192,
-        env: { ...process.env, PSModulePath: join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/Modules"), NEN_UPDATE_ARCHIVE: archive, NEN_UPDATE_INSTALLER: installer, NEN_UPDATE_COMMIT: update.commit },
-      });
-      const meta = JSON.parse(result.stdout.replace(/^\uFEFF/, ""));
-      if (meta.commit !== update.commit || !valid(meta.version) || meta.installer !== `Nen-Setup-${meta.version}.exe`)
-        throw Error("The development installer does not match its build details.");
-    }
+    const result = await promisify(execFile)("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      windowsHide: true, timeout: 120000, maxBuffer: 8192,
+      env: { ...process.env, PSModulePath: join(process.env.SystemRoot ?? "C:\\Windows", "System32/WindowsPowerShell/v1.0/Modules"), NEN_UPDATE_ARCHIVE: archive, NEN_UPDATE_INSTALLER: installer, NEN_UPDATE_COMMIT: update.commit },
+    });
+    const meta = JSON.parse(result.stdout.replace(/^\uFEFF/, ""));
+    if (meta.commit !== update.commit || !valid(meta.version) || meta.installer !== `Nen-Setup-${meta.version}.exe`)
+      throw Error("The development installer does not match its build details.");
     return installer;
   } catch (error) {
     await rm(installer, { force: true });

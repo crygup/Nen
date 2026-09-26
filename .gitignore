@@ -24,3 +24,5 @@ test-results/
 Thumbs.db
 
 test-builds/
+
+e2e/

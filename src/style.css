@@ -1033,7 +1033,7 @@ html.player-mode body {
   background: #ffffff50;
 }
 .player-mode #seek::-webkit-slider-runnable-track {
-  background: linear-gradient(to right,
+  background: var(--segments, linear-gradient(transparent, transparent)), linear-gradient(to right,
     #c1d0b0 0 var(--played, 0%),
     transparent var(--played, 0%) 100%),
     var(--downloaded, linear-gradient(transparent, transparent)),
@@ -1724,7 +1724,7 @@ dialog {
   color: var(--text);
   font-size: 13px;
   text-align: center;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 0;
   transition: opacity 250ms ease;
 }
@@ -1765,7 +1765,6 @@ dialog {
 
 html { scrollbar-gutter: stable; }
 * { scrollbar-width: thin; scrollbar-color: var(--muted) var(--bg); }
-dialog:has(#settings, #help-content), dialog:has(#help) { width: min(660px, 90vw); max-height: min(76vh, 760px); }
 #uninstall, #confirm-uninstall { background: #a62b38; border-color: #a62b38; color: #fff; }
 #uninstall:hover, #confirm-uninstall:hover { background: #bf3544; }
 .recent-play, .recent-title { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; }
@@ -1775,9 +1774,6 @@ dialog:has(#settings, #help-content), dialog:has(#help) { width: min(660px, 90vw
 
 .sidebar-bottom { display: grid; gap: 6px; }
 
-#help h3 { font-size: 20px; }
-#help h4 { font-size: 16px; font-weight: 600; margin: 22px 0 10px; }
-#help h3 + .actions { margin-top: 16px; }
 
 dialog { scrollbar-width: auto; scrollbar-color: auto; }
 dialog::-webkit-scrollbar { width: 10px; }
@@ -1787,7 +1783,7 @@ dialog::-webkit-scrollbar-button { display: none; }
 /* Watch together */
 .together-panel h2 { font-size: 22px; }
 .together-panel [hidden] { display: none !important; }
-.together-entry { min-height: calc(100dvh - 220px); display: flex; align-items: center; justify-content: center; gap: 28px; }
+.together-entry { min-height: calc(100dvh - 220px); display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 20px; }
 .together-entry-actions > button { width: 124px; min-height: 46px; font-size: 14px; border-radius: 6px; }
 .together-join { width: min(440px, 90vw); }
 .together-join label, .together-join input { display: block; width: 100%; }
@@ -1829,7 +1825,6 @@ dialog::-webkit-scrollbar-button { display: none; }
 .with-together .watch-header, .with-together .watch-footer { right: 0; }
 .with-together .watch-together { color: var(--text); }
 @media (max-width: 800px) {
-  .together-entry { flex-direction: column; gap: 18px; }
   .together-chat, .watch-together { width: 260px; padding: 12px; }
   .with-together .player-stage { width: calc(100% - 260px); }
 }
@@ -1853,7 +1848,6 @@ dialog::-webkit-scrollbar-button { display: none; }
   #together-lobby:not(.chat-collapsed) .together-chat { width: 260px; }
 }
 
-.together-entry { flex-direction: column; gap: 20px; }
 .together-entry h2 { margin: 0; font-size: 28px; }
 .together-entry-actions { display: flex; gap: 18px; }
 [data-connecting] { font: 24px monospace; height: 28px; }
@@ -1922,3 +1916,9 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 #settings-streaming .field-pair select { width: 100%; min-width: 0; }
 
 #uninstall { font-size: 15px; width: auto; }
+
+.update-toast { display: flex; align-items: center; gap: 14px; }
+.update-toast .toast-close { flex: 0 0 auto; border: 0; background: transparent; color: inherit; padding: 2px 6px; font-size: 22px; line-height: 1; }
+.seek-track { position: relative; flex: 1; min-width: 30px; }
+.seek-track #seek { display: block; width: 100%; margin: 0; }
+#buffering.failed::before { content: none; }

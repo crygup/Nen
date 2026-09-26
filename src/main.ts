@@ -4,7 +4,6 @@ import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
 import "./style.css";
 import {
   recentSeasons,
-  isWatched,
   labelForEpisode,
   episodeAvailability,
   latestEpisode,
@@ -22,7 +21,6 @@ import type {
   Playback,
   SegmentType,
   EpisodePage,
-  WatchEntry,
   WatchStatus,
   SyncChange,
 } from "./shared";
@@ -130,15 +128,6 @@ if (!playerMode)
       JSON.stringify({ mode, query, page, route, seriesReturn, visits, forwardVisits }),
     );
   });
-const backToList = () =>
-  seriesReturn === "home"
-    ? home()
-    : seriesReturn === "watchlist"
-      ? watchlist()
-    : seriesReturn === "history"
-      ? watchlist()
-      : discover(page);
-
 let dismissToast = () => {};
 function showToast(message: string, parent: HTMLElement = document.body, persistent = false) {
   dismissToast();
@@ -147,7 +136,13 @@ function showToast(message: string, parent: HTMLElement = document.body, persist
   toast.setAttribute("popover", "manual");
   toast.setAttribute("role", "status");
   toast.setAttribute("aria-live", "polite");
-  toast.textContent = message;
+  const label = document.createElement("span");
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "toast-close";
+  close.setAttribute("aria-label", "Dismiss notification");
+  close.textContent = "×";
+  toast.append(label, close);
   parent.append(toast);
   toast.showPopover();
   toast.classList.add("visible");
@@ -156,7 +151,7 @@ function showToast(message: string, parent: HTMLElement = document.body, persist
   const update = (text: string, keepVisible = false) => {
     clearTimeout(fade);
     clearTimeout(remove);
-    toast.textContent = text;
+    label.textContent = text;
     toast.classList.add("visible");
     if (!keepVisible) fade = setTimeout(() => {
       toast.classList.remove("visible");
@@ -164,6 +159,7 @@ function showToast(message: string, parent: HTMLElement = document.body, persist
     }, 3000);
   };
   dismissToast = () => { clearTimeout(fade); clearTimeout(remove); toast.remove(); };
+  close.onclick = dismissToast;
   update(message, persistent);
   return { element: toast, update };
 }
@@ -249,7 +245,7 @@ function showTogether() {
   const main = document.querySelector<HTMLElement>("#main")!;
   main.innerHTML = '<div id="together-lobby"></div>';
   leaveTogetherView?.();
-  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!, () => void home(), false);
+  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!);
 }
 function shell() {
   root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
@@ -696,7 +692,7 @@ async function openMedia(id: number) {
         row!.scrollIntoView({ block: "center" });
     });
     void api
-      .labels(m.id, m.idMal)
+      .labels(m.id)
       .then((labels) => {
         if (token === request) {
           labelData = labels;
