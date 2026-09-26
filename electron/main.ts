@@ -422,21 +422,22 @@ async function inspect(value: string, timeout = 60000) {
       serviceName: "Nen torrent engine",
       stdio: "ignore",
     });
+    const activeWorker = worker;
     worker.on("message", (data: any) => {
-      if (data.event === "stats" && player) {
+      if (data.event === "stats" && worker === activeWorker && player) {
         Object.assign(player.status, {
           speed: data.speed,
           peers: data.peers,
           progress: data.progress,
+          download: data.download,
         });
         publish();
       }
-      if (data.event === "error" && player) {
+      if (data.event === "error" && worker === activeWorker && player) {
         player.status.error = data.message;
         publish();
       }
     });
-    const activeWorker = worker;
     worker.on("exit", () => {
       if (worker === activeWorker && player?.status.active) {
         player.status.error = "Torrent engine stopped.";

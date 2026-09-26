@@ -1003,6 +1003,12 @@ html.player-mode body {
 .watch-spacer {
   flex: 1;
 }
+.download-percent {
+  color: #d0d4cd;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .seek-row {
   display: flex;
   gap: 16px;
@@ -1033,11 +1039,11 @@ html.player-mode body {
   background: #ffffff50;
 }
 .player-mode #seek::-webkit-slider-runnable-track {
-  background: linear-gradient(
-    to right,
-    #c1d0b0 var(--played, 0%),
-    #ffffff50 var(--played, 0%)
-  );
+  background: linear-gradient(to right,
+    #c1d0b0 0 var(--played, 0%),
+    transparent var(--played, 0%) 100%),
+    var(--downloaded, linear-gradient(transparent, transparent)),
+    #ffffff50;
 }
 .player-mode input[type="range"]::-webkit-slider-thumb {
   appearance: none;
