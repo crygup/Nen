@@ -141,7 +141,7 @@ function showToast(message: string, parent: HTMLElement = document.body, persist
   close.type = "button";
   close.className = "toast-close";
   close.setAttribute("aria-label", "Dismiss notification");
-  close.textContent = "×";
+  close.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>';
   toast.append(label, close);
   parent.append(toast);
   toast.showPopover();
