@@ -26,6 +26,7 @@ export interface Media {
       node: {
         id: number;
         title: { romaji: string };
+        episodes?: number | null;
         format: string;
         type: string;
       };
@@ -50,6 +51,7 @@ export interface Labels {
   needsMapping: boolean;
 }
 export interface Release {
+  sourceOffset?: number;
   hash: string;
   title: string;
   source: "Nyaa" | "Bangumi Moe";
@@ -402,6 +404,20 @@ export function latestEpisode(media: Media, now = Date.now() / 1000): number {
     next ? next.episode - (next.airingAt && next.airingAt <= now ? 0 : 1) : 0,
   );
 }
+export const audioLanguages = [["jpn", "Japanese"], ["eng", "English"], ["spa", "Spanish"], ["fra", "French"], ["deu", "German"], ["ita", "Italian"], ["por", "Portuguese"], ["zho", "Chinese"], ["kor", "Korean"], ["rus", "Russian"], ["ara", "Arabic"], ["hin", "Hindi"]] as const;
+export function releaseAudio(release: Pick<Release, "title">): { languages: string[]; inferred: boolean } {
+  const title = release.title.replace(/[._-]/g, " ");
+  const languages = audioLanguages.filter(([code, name]) => new RegExp("\\b(?:" + code + "|" + name + ")\\s*(?:dub(?:bed)?|audio)\\b|\\b(?:dub(?:bed)?|audio)\\s*[:=]?\\s*(?:" + code + "|" + name + ")\\b", "i").test(title)).map(([code]) => code);
+  // Dual audio is only a language hint until the player reads the actual tracks.
+  return languages.length ? { languages, inferred: false } : /\bdual\s*audio\b/i.test(title)
+    ? { languages: ["eng", "jpn"], inferred: true } : { languages: [], inferred: false };
+}
+export function audioRank(release: Release, preference: string): number {
+  const preferred = preference.split(",")[0].trim().toLowerCase();
+  if (!preferred) return 0;
+  const audio = releaseAudio(release);
+  return audio.languages.includes(preferred) ? Number(audio.inferred) : audio.languages.length ? 3 : 2;
+}
 export function rankReleases(
   releases: Release[],
   episode: number,
@@ -426,6 +442,7 @@ export function rankReleases(
       };
       return (
         Number(Number.isNaN(parseInt(a.resolution))) - Number(Number.isNaN(parseInt(b.resolution))) ||
+        audioRank(a, settings.audio ?? "") - audioRank(b, settings.audio ?? "") ||
         Number(a.confidence !== "Episode match") -
           Number(b.confidence !== "Episode match") ||
         rank(a) - rank(b) ||
@@ -449,7 +466,7 @@ export function automaticRelease(
     )
     .sort(
       (a, b) =>
-        parseInt(b.resolution) - parseInt(a.resolution) || b.seeds - a.seeds,
+        audioRank(a, settings.audio ?? "") - audioRank(b, settings.audio ?? "") || parseInt(b.resolution) - parseInt(a.resolution) || b.seeds - a.seeds,
     )[0];
 }
 

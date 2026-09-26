@@ -13,7 +13,7 @@ const esc = (s: unknown) =>
 const time = (n: number) =>
   `${Math.floor(n / 3600) ? `${Math.floor(n / 3600)}:` : ""}${String(Math.floor(n / 60) % 60).padStart(2, "0")}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
 const icon = (name: string) =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">${({ back: '<path d="m14 5-7 7 7 7"/>', play: '<path d="m8 4 12 8-12 8z" fill="currentColor" stroke="none"/>', pause: '<path d="M8 4v16M16 4v16" stroke-width="4"/>', next: '<path d="m5 5 11 7-11 7z"/><path d="M19 5v14"/>', volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>', full: '<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>', tracks: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', source: '<path d="M4 5h16v5H4zM4 14h16v5H4zM7 7v1M7 16v1"/>', speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">${({ back: '<path d="m14 5-7 7 7 7"/>', play: '<path d="m8 4 12 8-12 8z" fill="currentColor" stroke="none"/>', pause: '<path d="M8 4v16M16 4v16" stroke-width="4"/>', next: '<path d="m5 5 11 7-11 7z"/><path d="M19 5v14"/>', volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>', full: '<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>', audio: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>', tracks: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', source: '<path d="M4 5h16v5H4zM4 14h16v5H4zM7 7v1M7 16v1"/>', speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' } as Record<string, string>)[name]}</svg>`;
 export function mountPlayer(actions: {
   sources: (p: Playback) => void;
   next: (p: Playback) => void;
@@ -23,7 +23,7 @@ export function mountPlayer(actions: {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
   document.documentElement.dataset.theme = "dark";
-  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="tracks" class="icon-button" aria-label="Audio and subtitles" title="Audio and subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="track-panel" class="watch-panel" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
   const togetherPanel = document.createElement("aside");
@@ -126,7 +126,7 @@ export function mountPlayer(actions: {
         !latest.paused &&
         !document.querySelector("dialog[open]") &&
         !dragging &&
-        el("track-panel").hidden &&
+        el("track-panel").hidden && el("audio-panel").hidden &&
         el("more-panel").hidden &&
         el("speed-panel").hidden
       )
@@ -142,19 +142,27 @@ export function mountPlayer(actions: {
     run(api.control("fullscreen"));
   el("play-next").onclick = el("next-episode").onclick = () => actions.next(latest);
   el("change-source").onclick = () => actions.sources(latest);
+  el("audio-tracks").onclick = () => {
+    el("audio-panel").hidden = !el("audio-panel").hidden;
+    el("track-panel").hidden = el("more-panel").hidden = el("speed-panel").hidden = true;
+    wake();
+  };
   el("tracks").onclick = () => {
+    el("audio-panel").hidden = true;
     el("speed-panel").hidden = true;
     el("track-panel").hidden = !el("track-panel").hidden;
     el("more-panel").hidden = true;
     wake();
   };
   el("player-more").onclick = () => {
+    el("audio-panel").hidden = true;
     el("speed-panel").hidden = true;
     el("more-panel").hidden = !el("more-panel").hidden;
     el("track-panel").hidden = true;
     wake();
   };
   el("speed").onclick = () => {
+    el("audio-panel").hidden = true;
     el("speed-panel").hidden = !el("speed-panel").hidden;
     el("track-panel").hidden = el("more-panel").hidden = true;
     wake();
@@ -313,30 +321,17 @@ export function mountPlayer(actions: {
     const key = JSON.stringify(p.tracks);
     if (key !== trackKey) {
       trackKey = key;
-      el("track-panel").innerHTML = (["audio", "sub"] as const)
-        .map(
-          (type) =>
-            `<label>${type === "audio" ? "Audio" : "Subtitles"}<select data-track="${type}">${type === "sub" ? `<option value="0" ${!p.tracks.some((t) => t.type === "sub" && t.selected) ? "selected" : ""}>Off</option>` : ""}${p.tracks
-              .filter((t) => t.type === type)
-              .map(
-                (t) =>
-                  `<option value="${t.id}" ${t.selected ? "selected" : ""}>${esc(t.title || t.lang || `Track ${t.id}`)}</option>`,
-              )
-              .join("")}</select></label>`,
-        )
-        .join("");
-      el("track-panel")
-        .querySelectorAll<HTMLSelectElement>("select")
-        .forEach(
-          (select) =>
-            (select.onchange = () =>
-              run(
-                api.control(
-                  select.dataset.track as "audio" | "sub",
-                  Number(select.value),
-                ),
-              )),
-        );
+      for (const type of ["audio", "sub"] as const) {
+        const panel = el(type === "audio" ? "audio-panel" : "track-panel");
+        const tracks = p.tracks.filter(t => t.type === type);
+        panel.innerHTML = '<strong>' + (type === "audio" ? "Audio tracks" : "Subtitles") + '</strong><div class="track-list">'
+          + (type === "sub" ? '<button data-track-id="0" aria-pressed="' + !tracks.some(t => t.selected) + '">Off</button>' : "")
+          + tracks.map(t => '<button data-track-id="' + t.id + '" aria-pressed="' + !!t.selected + '">' + esc(t.title || t.lang || 'Track ' + t.id) + '</button>').join("")
+          + (!tracks.length ? '<p>No ' + (type === "audio" ? 'audio tracks' : 'subtitles') + ' available.</p>' : "") + '</div>';
+        panel.querySelectorAll<HTMLButtonElement>("[data-track-id]").forEach(button => {
+          button.onclick = () => run(api.control(type, Number(button.dataset.trackId)));
+        });
+      }
     }
     const marker = p.markers.find(
       (m) => p.position >= m.start && p.position < m.end,

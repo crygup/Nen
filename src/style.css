@@ -1906,3 +1906,9 @@ dialog:has(#settings) h2 { grid-column: 1 / -1; margin: 0; padding: 25px 60px 22
 #together-lobby .together-chat header { justify-content: flex-end; min-height: 34px; }
 #together-lobby .together-chat header h3 { margin-right: auto; padding-left: 12px; }
 #together-lobby .together-chat-body { padding-inline: 12px; }
+
+.track-options { width: min(360px, calc(100vw - 40px)); }
+.track-options strong { display: block; margin-bottom: 12px; }
+.track-list { display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.track-list button { text-align: left; white-space: normal; padding: 12px; border: 0; }
+.track-list button[aria-pressed="true"] { background: var(--hover); }

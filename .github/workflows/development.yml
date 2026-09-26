@@ -20,6 +20,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run setup:media
+      - shell: pwsh
+        run: |
+          $base = (Get-Content package.json | ConvertFrom-Json).version -replace "-.*$", ""
+          npm version "$base-beta.$($env:GITHUB_SHA.Substring(0, 7))" --no-git-tag-version
       - run: npm run release
       - shell: pwsh
         run: |

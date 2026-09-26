@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 declare const NEN_BUILD_COMMIT: string;
+declare const NEN_BUILD_VERSION: string;
 import { captureVideo } from "./capture";
 import {
   app,
@@ -273,7 +274,7 @@ function record() {
   }
 }
 const together = new Together({
-  version: app.getVersion(),
+  version: NEN_BUILD_COMMIT ? app.getVersion() : `${app.getVersion()}-dev`,
   cancel: () => { playbackRequest++; sourceSearch?.abort(); },
   changed: value => {
     for (const target of new Set([window, controls]))
@@ -479,11 +480,20 @@ async function play(
     if (!selected || !worker) throw Error("Choose a release first.");
     const file = files.find((f) => f.index === index);
     if (!file) throw Error("Choose a playable file.");
+    const anime = resume && !selected.sourceOffset && !selected.season && !/\bSTAGE\b/i.test(resume.title)
+      ? {
+          title: { english: resume.title, romaji: resume.title },
+          coverImage: { large: resume.cover },
+          idMal: resume.malId ?? null,
+          episodes: resume.totalEpisodes ?? null,
+          nextAiringEpisode: null,
+        }
+      : await providers.media(mediaId);
     const fileEpisode = parseRelease(
       file.path.split(/[\\/]/).at(-1) ?? "",
       episode,
     ).episode;
-    if (fileEpisode !== null && fileEpisode !== episode + sourceOffset(mediaId))
+    if (fileEpisode !== null && fileEpisode !== episode + (selected.sourceOffset ?? sourceOffset(anime as any)))
       throw Error(
         `This file is episode ${fileEpisode}. Choose a source for episode ${episode}.`,
       );
@@ -496,15 +506,6 @@ async function play(
       throw Error("The saved file does not match this release.");
     if (player)
       throw Error("Stop the current player before opening another file.");
-    const anime = resume
-      ? {
-          title: { english: resume.title, romaji: resume.title },
-          coverImage: { large: resume.cover },
-          idMal: resume.malId ?? null,
-          episodes: resume.totalEpisodes ?? null,
-          nextAiringEpisode: null,
-        }
-      : await providers.media(mediaId);
     if (request !== playbackRequest) throw Error("Playback cancelled.");
     if ((!resume && !matchesMedia(selected.title, anime as any)) || !matchesSeason(file.path, anime as any))
       throw Error("This source uses a different season. Choose another source.");
@@ -694,7 +695,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
       if (!release) {
         if (!candidates) {
           anime = await providers.media(mediaId);
-          const result = await providers.releases(anime, episode, undefined, state.settings.source, sourceSearch.signal);
+          const result = await providers.releases(anime, episode, undefined, state.settings.source, sourceSearch.signal, state.settings.audio);
           candidates = result.items;
           if (!candidates.length && result.errors.length) failure = result.errors.join(" ");
           for (const row of candidates) known.set(row.hash, row);
@@ -855,7 +856,7 @@ else {
           );
         }
       }
-      state.version = app.getVersion();
+      state.version = NEN_BUILD_VERSION;
       providers.initCache(join(app.getPath("userData"), "provider-cache.json"));
       const repaired = repairProgress(state.progress);
       if (JSON.stringify(repaired) !== JSON.stringify(state.progress)) {
@@ -1224,6 +1225,8 @@ else {
           positive(ep, 10000),
           query === undefined ? undefined : text(query),
           state.settings.source,
+          undefined,
+          state.settings.audio,
         );
         known.clear();
         for (const r of result.items) known.set(r.hash, r);
