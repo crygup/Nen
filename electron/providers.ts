@@ -10,7 +10,7 @@ import type {
   Marker,
   EpisodePage,
 } from "../src/shared";
-import { episodeAvailability, latestEpisode } from "../src/shared";
+import { episodeAvailability, latestEpisode, audioLanguages, releaseAudio } from "../src/shared";
 import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases } from "./rules";
 const cache = new Map<
   string,
@@ -197,6 +197,20 @@ export async function catalogOptions(): Promise<{
       .sort(),
   };
 }
+function searchWords(text: string): string[] {
+  return text.normalize("NFKC").toLowerCase().replace(/['’]/g, "").match(/[\p{L}\p{N}]+/gu) ?? [];
+}
+function similarWord(a: string, b: string): boolean {
+  if (b.startsWith(a)) return true;
+  if (Math.abs(a.length - b.length) > 2) return false;
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(next[j - 1] + 1, row[j] + 1, row[j - 1] + Number(a[i - 1] !== b[j - 1]));
+    row = next;
+  }
+  return row[b.length] <= (a.length >= 6 ? 2 : a.length >= 4 ? 1 : 0);
+}
 export async function catalog(
   mode: string,
   search: string,
@@ -246,12 +260,19 @@ export async function catalog(
         ? "TRENDING_DESC"
         : "POPULARITY_DESC",
   };
-  const data = await gql(
-    "query($page:Int,$perPage:Int,$search:String,$genre:[String],$tag:[String],$year:Int,$season:MediaSeason,$format:MediaFormat,$status:MediaStatus,$adult:Boolean,$sort:[MediaSort]){Page(page:$page,perPage:$perPage){pageInfo{hasNextPage lastPage}media(type:ANIME,isAdult:$adult,search:$search,genre_in:$genre,tag_in:$tag,seasonYear:$year,season:$season,format:$format,status:$status,sort:$sort){" +
-      "id idMal isAdult title { english romaji native } coverImage { large } format status episodes seasonYear averageScore genres tags { name rank }" +
-      "}}}",
-    vars,
-  );
+  const query = "query($page:Int,$perPage:Int,$search:String,$genre:[String],$tag:[String],$year:Int,$season:MediaSeason,$format:MediaFormat,$status:MediaStatus,$adult:Boolean,$sort:[MediaSort]){Page(page:$page,perPage:$perPage){pageInfo{hasNextPage lastPage}media(type:ANIME,isAdult:$adult,search:$search,genre_in:$genre,tag_in:$tag,seasonYear:$year,season:$season,format:$format,status:$status,sort:$sort){" +
+      "id idMal isAdult title { english romaji native } coverImage { large } format status episodes seasonYear averageScore genres synonyms tags { name rank }" +
+      "}}}";
+  let data = await gql(query, vars);
+  if (f.search && !data.Page.media.length) {
+    const words = searchWords(f.search);
+    const terms = [...new Set(words.filter(w => w.length >= 3).map(w => w.slice(0, Math.max(3, w.length - 1))))].slice(0, 2);
+    const alternatives = await Promise.all(terms.map(search => gql(query, { ...vars, search, page: 1, perPage: 50 })));
+    const candidates = [...new Map(alternatives.flatMap(result => result.Page.media).map((m: any) => [m.id, m])).values()] as any[];
+    const matches = candidates.filter(m => [m.title.english, m.title.romaji, m.title.native, ...(m.synonyms ?? [])]
+      .filter(Boolean).some(title => words.every(word => searchWords(title).some(candidate => similarWord(word, candidate)))));
+    return { media: matches.slice((page - 1) * perPage, page * perPage).map(normalizeMedia), hasNextPage: page * perPage < matches.length, lastPage: Math.max(1, Math.ceil(matches.length / perPage)) };
+  }
   return {
     media: data.Page.media.map(normalizeMedia),
     hasNextPage: data.Page.pageInfo.hasNextPage,
@@ -262,7 +283,7 @@ export async function media(id: number): Promise<Media> {
   return normalizeMedia(
     (
       await gql(
-        `query($id:Int){Media(id:$id,type:ANIME){${fields} streamingEpisodes { title } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { romaji } format type } } }}}`,
+        `query($id:Int){Media(id:$id,type:ANIME){${fields} streamingEpisodes { title } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { romaji } episodes format type } } }}}`,
         { id },
       )
     ).Media,
@@ -326,7 +347,7 @@ async function nyaa(query: string, episode: number, signal?: AbortSignal): Promi
   const xml = await request(
     `https://nyaa.si/?page=rss&c=1_2&f=0&q=${encodeURIComponent(query)}`, { signal },
   );
-  const root = new XMLParser({ processEntities: false }).parse(xml);
+  const root = new XMLParser({ processEntities: true }).parse(xml);
   const entries = root.rss?.channel?.item ?? [];
   return (Array.isArray(entries) ? entries : [entries]).flatMap(
     (r: Record<string, string>) => {
@@ -383,87 +404,59 @@ export async function releases(
   override?: string,
   source = "all",
   signal?: AbortSignal,
+  audio = "",
 ): Promise<{ items: Release[]; errors: string[] }> {
-  const offset = sourceOffset(anime.id);
-  episode += offset;
+  const offset = sourceOffset(anime);
+  const normalize = (name: string) => name.normalize("NFKC").toLowerCase().replace(/['’]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const prequels = anime.relations?.edges.filter(e => e.relationType === "PREQUEL" && e.node.type === "ANIME"
+    && e.node.episodes && normalize(anime.title.romaji).startsWith(normalize(e.node.title.romaji) + " ")) ?? [];
+  const continuousOffset = prequels.length === 1 ? prequels[0].node.episodes! : 0;
   const deadline = AbortSignal.timeout(25000);
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
-  const aliases = override
-    ? [override]
-    : [
-        ...sourceAliases(anime),
-        anime.title.romaji,
-        anime.title.english,
-        anime.title.native,
-        ...anime.synonyms,
-      ].filter((s): s is string => !!s);
-  const queries = [...new Set(aliases)].slice(0, 2);
+  const preferred = audio.split(",")[0].trim().toLowerCase();
+  const language = audioLanguages.find(([code]) => code === preferred)?.[1];
+  const aliases = override ? [override] : [...sourceAliases(anime), anime.title.romaji, anime.title.english, ...anime.synonyms].filter((s): s is string => !!s);
+  // Shorter queries only widen discovery. Every result must still match a catalog alias.
+  const queries = [...new Set(aliases.flatMap(alias => [alias, alias.includes(":") ? alias.split(":").slice(1).join(":").split(/\s[-–]\s/)[0] : alias]).map(normalize))].slice(0, 12);
   const errors: string[] = [];
   const items = new Map<string, Release>();
-  await Promise.all(
-    [
-      ["Nyaa", nyaa],
-      ["Bangumi Moe", bangumi],
-    ].filter(([name]) => source === "all" || name === source).map(async ([name, adapter]) => {
+  const accept = (row: Release) => {
+    if (!matchesMedia(row.title, anime)) return;
+    const shift = offset || (continuousOffset && row.episode !== null && row.episode > (anime.episodes ?? Infinity)
+      && row.episode <= continuousOffset + (anime.episodes ?? 0) ? continuousOffset : 0);
+    const item = { ...row, sourceOffset: shift,
+      episode: row.episode === null ? null : row.episode - shift,
+      endEpisode: row.endEpisode === null ? null : row.endEpisode - shift,
+      confidence: row.episode === episode + shift && !row.batch ? "Episode match" : "Check match",
+    } as Release;
+    items.set(item.hash, item);
+  };
+  const usable = (r: Release) => r.seeds > 0 && (r.confidence === "Episode match" ||
+    (r.batch && (r.episode === null || (r.episode <= episode && (r.endEpisode ?? 0) >= episode))));
+  await Promise.all(([ ["Nyaa", nyaa], ["Bangumi Moe", bangumi] ] as const)
+    .filter(([name]) => source === "all" || name === source).map(async ([name, adapter]) => {
       try {
-        const usable = (r: Release) => r.seeds > 0 && (r.confidence === "Episode match" ||
-          (r.batch && (r.episode === null || (r.episode <= episode && (r.endEpisode ?? 0) >= episode))));
+        const titles = [...new Set([anime.title.english, anime.title.romaji].filter((title): title is string => !!title))];
+        const suffixes = language && preferred !== "jpn" ? [language + " audio", ...(preferred === "eng" ? ["dual audio"] : [language + " dub"])] : ["dual audio"];
+        await Promise.all(titles.flatMap(title => suffixes.map(async suffix => {
+          try { (await adapter(normalize(title) + " " + suffix, episode + offset, signal)).forEach(accept); }
+          catch (error) { if (!signal.aborted) errors.push(name + ": " + (error as Error).message); }
+        })));
         for (const query of queries) {
           signal.throwIfAborted();
-          let rows = await (adapter as typeof nyaa)(
-            `${query} ${String(episode).padStart(2, "0")}`,
-            episode, signal,
-          );
-          rows = rows.filter(r => matchesMedia(r.title, anime));
-          if (!rows.some(usable))
-            rows = [
-              ...rows,
-              ...(await (adapter as typeof nyaa)(query, episode, signal)),
-            ];
-          rows = rows.filter(r => matchesMedia(r.title, anime));
-          for (const row of rows)
-            if (!items.has(row.hash)) items.set(row.hash, row);
-          if (!rows.some(r => r.batch && usable(r))) {
-            for (const suffix of ["batch", "complete"]) {
-              const batches = await (adapter as typeof nyaa)(
-                query + " " + suffix,
-                episode, signal,
-              );
-              for (const row of batches)
-                if (
-                  matchesMedia(row.title, anime) &&
-                  row.batch &&
-                  row.seeds > 0 &&
-                  (row.episode === null ||
-                    (row.episode <= episode &&
-                      (row.endEpisode ?? 0) >= episode))
-                )
-                  items.set(row.hash, row);
-              if (batches.some(r => matchesMedia(r.title, anime) && usable(r))) break;
-            }
+          for (const number of [...new Set([episode + offset, ...(continuousOffset ? [episode + continuousOffset] : [])])]) {
+            (await adapter(query + " " + String(number).padStart(2, "0"), number, signal)).forEach(accept);
+            if ([...items.values()].some(r => r.source === name && usable(r))) break;
           }
           if ([...items.values()].some(r => r.source === name && usable(r))) break;
+          (await adapter(query, episode + offset, signal)).forEach(accept);
+          if ([...items.values()].some(r => r.source === name && usable(r))) break;
         }
-      } catch (error) {
-        errors.push(`${name}: ${(error as Error).message}`);
-      }
-    }),
-  );
-  return {
-    items: [...items.values()]
-      .map(row => offset ? { ...row,
-        episode: row.episode === null ? null : row.episode - offset,
-        endEpisode: row.endEpisode === null ? null : row.endEpisode - offset,
-      } : row)
-      .sort(
-        (a, b) =>
-          Number(b.confidence === "Episode match") -
-            Number(a.confidence === "Episode match") || b.seeds - a.seeds,
-      )
-      .slice(0, 100),
-    errors,
-  };
+      } catch (error) { errors.push(name + ": " + (error as Error).message); }
+    }));
+  return { items: [...items.values()].sort((a, b) => Number(b.confidence === "Episode match") - Number(a.confidence === "Episode match") || b.seeds - a.seeds).slice(0, 100), errors };
 }
+
 export async function skips(
   mal: number,
   episode: number,
@@ -582,6 +575,7 @@ function normalizeMedia(input: any): Media {
           relationType: str(e.relationType, 30),
           node: {
             id: e.node.id,
+            episodes: number(e.node.episodes, 10000) || null,
             title: { romaji: str(e.node.title?.romaji) },
             format: str(e.node.format, 30),
             type: str(e.node.type, 30),

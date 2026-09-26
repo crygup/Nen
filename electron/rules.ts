@@ -1,14 +1,23 @@
 import type { Marker, Release, Progress, Media, TorrentFile } from "../src/shared";
-// AniList separates the one-episode first stage; releases continue numbering at 02.
-export function sourceOffset(mediaId: number): number {
-  return mediaId === 210482 ? 1 : 0;
+// Only join split stages when the catalog confirms the preceding first stage.
+export function sourceOffset(media: Pick<Media, "title" | "relations">): number {
+  const stage = /\s*-?\s*(\d+)(?:st|nd|rd|th)(?:\s*(?:&|-)\s*\d+(?:st|nd|rd|th))?\s+STAGE$/i;
+  const current = media.title.romaji.match(stage);
+  if (!current || Number(current[1]) !== 2) return 0;
+  const base = media.title.romaji.replace(stage, "").trim().toLowerCase();
+  const previous = media.relations?.edges.filter(e => e.relationType === "PREQUEL" && e.node.type === "ANIME"
+    && Number(e.node.title.romaji.match(stage)?.[1]) === 1
+    && e.node.title.romaji.replace(stage, "").trim().toLowerCase() === base);
+  return previous?.length === 1 ? previous[0].node.episodes ?? 0 : 0;
 }
 export function sourceAliases(media: Media): string[] {
-  // AniList groups the first two cours under Part 1 & 2; releases call them S4.
-  if (media.id === 182205) return ["Tensei Shitara Slime Datta Ken S4"];
-  if (media.id === 210482) return ["JoJo no Kimyou na Bouken: Steel Ball Run"];
-  return [media.title.romaji, media.title.english].filter((name): name is string => !!name)
-    .map(normalizeSeason).filter((name, i) => name !== [media.title.romaji, media.title.english][i]);
+  return [...new Set([media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+    .filter((name): name is string => !!name).map(name => {
+      let alias = normalizeSeason(name).replace(/\s+Part\s+1(?:\s*&\s*2)?$/i, "");
+      if (sourceOffset(media) || /\b1st\s+STAGE$/i.test(alias))
+        alias = alias.replace(/\s*-?\s*\d+(?:st|nd|rd|th)(?:\s*(?:&|-)\s*\d+(?:st|nd|rd|th))?\s+STAGE$/i, "");
+      return alias.trim();
+    }))];
 }
 export function positive(value: unknown, max = 10000000): number {
   if (!Number.isInteger(value) || Number(value) < 1 || Number(value) > max)
@@ -73,7 +82,7 @@ export function parseRelease(
         ? Number((single || bare)![1])
         : null;
   const end = range ? Number(range[2]) : null;
-  const batch = !!range || /\bbatch\b|\bcomplete\b/i.test(title)
+  const batch = /\+\s*(?:OVAs?|specials)\b/i.test(title) || !!range || /\bbatch\b|\bcomplete\b/i.test(title)
     || (start === null && seasonNumber(normalized) !== null);
   return {
     season: seasonEpisode ? Number(seasonEpisode[1]) : seasonNumber(normalized),
@@ -125,12 +134,12 @@ export function repairProgress(
       saved.episode,
     );
     const release = parseRelease(saved.release.title, saved.episode);
-    const number = file.episode === null ? null : file.episode - sourceOffset(saved.mediaId);
+    const number = file.episode === null ? null : file.episode - (saved.release.sourceOffset ?? 0);
     const p =
-      number &&
+      !/\bSTAGE\b/i.test(saved.title) && number &&
       number !== saved.episode &&
       !release.batch &&
-      release.episode !== null && release.episode - sourceOffset(saved.mediaId) === number &&
+      release.episode !== null && release.episode - (saved.release.sourceOffset ?? 0) === number &&
       number <= (saved.totalEpisodes ?? 10000)
         ? {
             ...saved,
@@ -158,11 +167,11 @@ export function matchesSeason(title: string, media: Media): boolean {
   const season = parseRelease(title, 1).season;
   const expected = seasonNumber(media.title.english ?? "")
     ?? seasonNumber(media.title.romaji) ?? 1;
-  return season == null || season === expected;
+  return season == null || season === expected || (media.synonyms ?? []).some(alias => seasonNumber(alias) === season);
 }
 export function matchingFile(files: TorrentFile[], release: Release, media: Media, episode: number): TorrentFile | undefined {
   if (!matchesMedia(release.title, media)) return;
-  episode += sourceOffset(media.id);
+  episode += release.sourceOffset ?? sourceOffset(media);
   const matches = files.filter(f => {
     const parsed = parseRelease(f.path.split(/[\\/]/).at(-1) ?? "", episode);
     return parsed.episode === episode && !parsed.batch && matchesSeason(f.path, media)
@@ -176,7 +185,7 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
 
 export function matchesMedia(title: string, media: Media): boolean {
   if (!matchesSeason(title, media)) return false;
-  const normalize = (value: string) => normalizeSeason(value.normalize("NFKC")).toLowerCase()
+  const normalize = (value: string) => normalizeSeason(value.normalize("NFKC").replace(/['’]/g, "")).toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const name = normalize(title.replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
   return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media)]
@@ -186,6 +195,6 @@ export function matchesMedia(title: string, media: Media): boolean {
       if (name === prefix) return true;
       if (!name.startsWith(prefix + " ")) return false;
       const suffix = name.slice(prefix.length + 1);
-      return /^(?:\d|s\d|season \d|batch\b|complete\b|remaster\b|bd\b|bdrip\b|bluray\b|blu ray\b|dvd\b|dvdrip\b|web\b|dual audio\b|multi\b|hevc\b|x26[45]\b|tv\b)/i.test(suffix);
+      return /^(?:\d|s\d|season \d|batch\b|complete\b|ovas?\b|specials\b|series\b|remaster\b|bd\b|bdrip\b|bluray\b|blu ray\b|dvd\b|dvdrip\b|web\b|dual audio\b|multi\b|hevc\b|x26[45]\b|tv\b)/i.test(suffix);
     });
 }

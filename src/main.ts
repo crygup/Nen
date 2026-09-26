@@ -9,6 +9,8 @@ import {
   episodeAvailability,
   latestEpisode,
   rankReleases,
+  audioLanguages,
+  releaseAudio,
 } from "./shared";
 import { matchingFile } from "../electron/rules";
 import { mountPlayer } from "./watch";
@@ -498,8 +500,21 @@ function bindContinue(root: ParentNode) {
     void openMedia(Number(button.dataset.openSeries));
   });
   root.querySelectorAll<HTMLElement>("[data-resume]").forEach(button => button.onclick = () => void run(() => resumeFromHistory(button.dataset.resume!)));
-  root.querySelectorAll<HTMLElement>("[data-continue]").forEach(button => button.onclick = () => void run(async () =>
-    startEpisode(await api.media(Number(button.dataset.continue)), Number(button.dataset.episode))));
+  root.querySelectorAll<HTMLElement>("[data-continue]").forEach(button => button.onclick = () => void run(async () => {
+    const d = dialog('<h2 id="dialog-title">Continue watching</h2><p class="loading" role="status">Loading episode details…</p>');
+    const loading = d.querySelector<HTMLElement>(".loading")!;
+    let media: Media;
+    try {
+      media = await api.media(Number(button.dataset.continue));
+    } catch (e) {
+      loading.hidden = true;
+      if (d.open && loading.isConnected) throw e;
+      return;
+    }
+    if (!d.open || !loading.isConnected) return;
+    d.close();
+    await startEpisode(media, Number(button.dataset.episode));
+  }));
   root.querySelectorAll<HTMLElement>("[data-watch-edit]").forEach(button => button.onclick = () => editWatch(Number(button.dataset.watchEdit)));
 }
 async function home() {
@@ -733,6 +748,7 @@ function renderSeries() {
     m.relations?.edges.length
       ? `<section class="related"><h2>Related titles</h2><div class="related-list">${m.relations.edges
           .filter((e) => e.node.type === "ANIME")
+          .sort((a, b) => (["SEQUEL", "PREQUEL"].includes(a.relationType) ? ["SEQUEL", "PREQUEL"].indexOf(a.relationType) : 2) - (["SEQUEL", "PREQUEL"].includes(b.relationType) ? ["SEQUEL", "PREQUEL"].indexOf(b.relationType) : 2))
           .map(
             (e) =>
               `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.romaji)}</span></button>`,
@@ -875,21 +891,26 @@ async function releasePicker(m: Media, ep: number) {
     const result = await api.releases(m.id, ep);
     if (token !== pickerRequest || !d.open) return;
     const rows = rankReleases(result.items, ep, state.settings);
-    d.querySelector("#releases")!.innerHTML =
-      result.errors.map((e) => `<p class="notice">${esc(e)}</p>`).join("") +
-      (rows.length
-        ? rows
-            .map(
-              (r, i) =>
-                `<button class="release" data-release="${i}"><span class="release-title">${esc(r.title)}</span><span class="release-meta"><b>${r.source}</b><span>${esc(r.resolution)}</span><span>${esc(r.size)}</span><span>${r.seeds} seeds</span></span></button>`,
-            )
-            .join("")
-        : '<div class="empty"><h3>No releases found</h3><p>Try again later or change the source in Settings.</p></div>');
-    d.querySelectorAll<HTMLButtonElement>("[data-release]").forEach(
-      (b) =>
-        (b.onclick = () =>
-          void chooseFile(m, ep, rows[Number(b.dataset.release)])),
-    );
+    d.querySelector("#releases")!.innerHTML = '<label>Audio language<select id="source-language"><option value="">All languages</option>'
+      + audioLanguages.map(([code, name]) => '<option value="' + code + '">' + name + '</option>').join("")
+      + '<option value="unknown">Not specified</option></select></label><div id="source-results"></div>';
+    const filter = d.querySelector<HTMLSelectElement>("#source-language")!;
+    const render = () => {
+      const visible = rows.map((release, index) => ({ release, index })).filter(({ release }) => {
+        const audio = releaseAudio(release);
+        return !filter.value || (filter.value === "unknown" ? !audio.languages.length : audio.languages.includes(filter.value));
+      });
+      d.querySelector("#source-results")!.innerHTML = visible.length ? visible.map(({ release: r, index }) => {
+        const audio = releaseAudio(r);
+        const label = audio.inferred ? "Dual audio (languages unverified)" : audio.languages.length ? audioLanguages.filter(([code]) => audio.languages.includes(code)).map(([,name]) => name).join(", ") + " audio (title)" : "Audio not specified";
+        return '<button class="release" data-release="' + index + '"><span class="release-title">' + esc(r.title) + '</span><span class="release-meta"><b>' + r.source + '</b><span>' + esc(r.resolution) + '</span><span>' + esc(r.size) + '</span><span>' + r.seeds + ' seeds</span><span>' + label + '</span></span></button>';
+      }).join("") : '<div class="empty"><h3>No matching sources</h3><p>Try All languages or change the source in Settings.</p></div>';
+      d.querySelectorAll<HTMLButtonElement>("[data-release]").forEach(button => {
+        button.onclick = () => void chooseFile(m, ep, rows[Number(button.dataset.release)]);
+      });
+    };
+    filter.onchange = render;
+    render();
   } catch (e) {
     if (token === pickerRequest && d.open)
       d.querySelector("#releases")!.innerHTML =
@@ -918,7 +939,7 @@ async function startEpisode(m: Media, ep: number) {
   const saved = state.progress[`${m.id}:${ep}`];
   if (saved) {
     const d = dialog(
-      `<h2 id="dialog-title">Resuming ${esc(title(m))}</h2><p>Opening ${esc(saved.episodeTitle ?? `episode ${ep}`)}…</p>`,
+      `<h2 id="dialog-title">Resuming ${esc(title(m))}</h2><p class="loading" role="status">Opening ${esc(saved.episodeTitle ?? `episode ${ep}`)}…</p>`,
     );
     try {
       await api.resume(`${m.id}:${ep}`);
@@ -997,7 +1018,19 @@ async function resumeFromHistory(key: string) {
   const saved = state.progress[key];
   if (!saved) return;
   if (!await chooseRewatch(saved.mediaId)) return;
-  await api.resume(key);
+  const d = dialog('<h2 id="dialog-title">' + esc(saved.title) + '</h2><p class="loading" role="status">Opening ' + esc(saved.episodeTitle ?? 'episode ' + saved.episode) + '…</p>');
+  const loading = d.querySelector<HTMLElement>(".loading")!;
+  d.onclose = () => { void api.control("stop").catch(() => {}); };
+  try {
+    await api.resume(key);
+    if (loading.isConnected) {
+      d.onclose = null;
+      if (d.open) d.close();
+    }
+  } catch (e) {
+    loading.hidden = true;
+    if (d.open && loading.isConnected) throw e;
+  }
 }
 const watchStatuses: [WatchStatus, string][] = [["CURRENT", "Watching"], ["REPEATING", "Rewatching"], ["COMPLETED", "Completed"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["PLANNING", "Planning"]];
 async function watchlist() {
@@ -1121,20 +1154,7 @@ function help() {
 }
 function settings() {
   const s = state.settings;
-  const languages = [
-    ["jpn", "Japanese"],
-    ["eng", "English"],
-    ["spa", "Spanish"],
-    ["fra", "French"],
-    ["deu", "German"],
-    ["ita", "Italian"],
-    ["por", "Portuguese"],
-    ["zho", "Chinese"],
-    ["kor", "Korean"],
-    ["rus", "Russian"],
-    ["ara", "Arabic"],
-    ["hin", "Hindi"],
-  ];
+  const languages = audioLanguages;
   const options = (value: string, sub = false) =>
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
