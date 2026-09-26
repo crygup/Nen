@@ -1,4 +1,4 @@
-name: Development build
+name: Build installer
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
       - shell: pwsh
         run: |
           $base = (Get-Content package.json | ConvertFrom-Json).version -replace "-.*$", ""
-          npm version "$base-beta.$($env:GITHUB_SHA.Substring(0, 7))" --no-git-tag-version
+          npm version "$base-build.$($env:GITHUB_SHA.Substring(0, 7))" --no-git-tag-version
       - run: npm run release
       - shell: pwsh
         run: |

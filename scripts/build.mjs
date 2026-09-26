@@ -30,7 +30,7 @@ if (process.platform === "win32") {
 }
 await build({
   entryPoints: ["electron/main.ts"],
-  define: { NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""), NEN_BUILD_VERSION: JSON.stringify(process.env.GITHUB_SHA ? (process.env.GITHUB_REF_TYPE === "tag" ? JSON.parse(await readFile("package.json", "utf8")).version : `beta ${process.env.GITHUB_SHA.slice(0, 7)}`) : "dev build") },
+  define: { NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""), NEN_BUILD_VERSION: JSON.stringify(process.env.GITHUB_SHA ? `Build ${process.env.GITHUB_SHA.slice(0, 7)}` : "Build dev") },
   outfile: "dist-electron/main.cjs",
   bundle: true,
   platform: "node",

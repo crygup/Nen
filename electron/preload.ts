@@ -34,6 +34,7 @@ const api: API = {
   },
   startupUpdate: () => ipcRenderer.invoke("startupUpdate"),
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
+  installUpdate: () => ipcRenderer.invoke("installUpdate"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
   onUpdateStatus: callback => {
     const listener = (_: unknown, status: UpdateStatus) => callback(status);

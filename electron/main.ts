@@ -1,6 +1,6 @@
 import { Together } from "./together";
 import { DiscordPresence } from "./discord";
-import { findUpdate, downloadUpdate } from "./updates";
+import { findUpdate, downloadUpdate, type Update } from "./updates";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -185,7 +185,7 @@ const defaults: State = {
     theme: "system",
     autoSkip: false,
     autoNext: false,
-    developmentBuilds: false,
+    autoUpdates: false,
     discordPresence: false,
     showAdult: false,
     hideZeroSeeds: true,
@@ -207,41 +207,50 @@ function setUpdateStatus(value: UpdateStatus) {
   updateStatus = value;
   if (window && !window.isDestroyed()) window.webContents.send("update-status", value);
 }
-let startupChecked = false;
-async function startupUpdate() {
-  if (startupChecked) return false;
-  startupChecked = true;
-  try {
-    const result = await findUpdate(state.settings.developmentBuilds === true, app.getVersion(), NEN_BUILD_COMMIT);
-    return !!result.update;
-  } catch {
-    return false;
-  }
+let availableUpdate: Update | undefined;
+let startupCheck: Promise<UpdateStatus> | undefined;
+function startupUpdate() {
+  return startupCheck ??= (async () => {
+    await checkUpdates();
+    if (availableUpdate && state.settings.autoUpdates && app.isPackaged) await installUpdate();
+    return updateStatus;
+  })();
 }
 async function checkUpdates() {
   if (updateStatus.busy) return updateStatus;
-  setUpdateStatus({ busy: true, message: "Checking for updates…" });
+  setUpdateStatus({ busy: true, message: "Checking for updates…", available: !!availableUpdate });
   try {
-    const result = await findUpdate(state.settings.developmentBuilds === true, app.getVersion(), NEN_BUILD_COMMIT);
-    if (!result.update) setUpdateStatus({ busy: false, message: result.message });
-    else if (!app.isPackaged) setUpdateStatus({ busy: false, message: "An update is available. Run the installed app to install it." });
-    else {
-      setUpdateStatus({ busy: true, message: result.message, percent: 0 });
-      const installer = await downloadUpdate(result.update, join(app.getPath("userData"), "update-cache"), percent => {
-        if (percent !== updateStatus.percent) setUpdateStatus({ busy: true, message: result.message, percent });
-      });
-      setUpdateStatus({ busy: true, message: "Installing update. Nen will restart…" });
-      record();
-      save();
-      await new Promise<void>((resolve, reject) => {
-        const child = spawn(installer, ["/S", "--updated", "--force-run"], { detached: true, stdio: "ignore", windowsHide: true });
-        child.once("error", reject);
-        child.once("spawn", () => { child.unref(); resolve(); });
-      });
-      setTimeout(() => app.quit(), 250);
-    }
+    const result = await findUpdate(NEN_BUILD_COMMIT);
+    availableUpdate = result.update;
+    setUpdateStatus({ busy: false, message: result.message, available: !!availableUpdate });
   } catch (error) {
-    setUpdateStatus({ busy: false, message: error instanceof Error ? error.message : "The update failed. Try again later." });
+    setUpdateStatus({ busy: false, available: !!availableUpdate, message: error instanceof Error ? error.message : "The update check failed. Try again later." });
+  }
+  return updateStatus;
+}
+async function installUpdate() {
+  if (updateStatus.busy || !availableUpdate) return updateStatus;
+  if (!app.isPackaged) {
+    setUpdateStatus({ busy: false, available: true, message: "Run the installed app to install this update." });
+    return updateStatus;
+  }
+  const update = availableUpdate;
+  setUpdateStatus({ busy: true, installing: true, available: true, message: "Updating…", percent: 0 });
+  try {
+    const installer = await downloadUpdate(update, join(app.getPath("userData"), "update-cache"), percent => {
+      if (percent !== updateStatus.percent) setUpdateStatus({ busy: true, installing: true, available: true, message: "Updating…", percent });
+    });
+    setUpdateStatus({ busy: true, installing: true, available: true, message: "Installing update. Nen will restart…" });
+    record();
+    save();
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(installer, ["/S", "--updated", "--force-run"], { detached: true, stdio: "ignore", windowsHide: true });
+      child.once("error", reject);
+      child.once("spawn", () => { child.unref(); resolve(); });
+    });
+    setTimeout(() => app.quit(), 250);
+  } catch (error) {
+    setUpdateStatus({ busy: false, available: true, message: error instanceof Error ? error.message : "The update failed. Try again later." });
   }
   return updateStatus;
 }
@@ -793,7 +802,7 @@ function settings(value: Settings): Settings {
       ))
   )
     throw Error("Select at least one quality.");
-  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "developmentBuilds", "discordPresence"] as const)
+  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "autoUpdates", "discordPresence"] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
   const audio = text(value.audio, 60),
@@ -806,7 +815,7 @@ function settings(value: Settings): Settings {
     hideZeroSeeds: value.hideZeroSeeds ?? true,
     autoSkip: value.autoSkip,
     autoNext: value.autoNext ?? false,
-    developmentBuilds: value.developmentBuilds ?? false,
+    autoUpdates: value.autoUpdates ?? false,
     discordPresence: value.discordPresence ?? false,
     audio,
     subtitles,
@@ -1344,10 +1353,9 @@ else {
       handle("state", () => state);
       handle("startupUpdate", startupUpdate);
       handle("checkUpdates", checkUpdates);
+      handle("installUpdate", installUpdate);
       handle("updateStatus", () => updateStatus);
       handle("settings", (value) => {
-        if (updateStatus.busy && !!value?.developmentBuilds !== !!state.settings.developmentBuilds)
-          throw Error("Wait for the update to finish before changing the update channel.");
         state.settings = settings(value);
         discordPresence.update(state.settings.discordPresence === true, player?.status);
         nativeTheme.themeSource = state.settings.theme;

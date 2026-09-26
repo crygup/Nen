@@ -98,7 +98,7 @@ export interface Settings {
   theme: Theme;
   autoSkip: boolean;
   autoNext?: boolean;
-  developmentBuilds?: boolean;
+  autoUpdates?: boolean;
   audio: string;
   subtitles: string;
   source: "all" | "Nyaa" | "Bangumi Moe";
@@ -219,7 +219,7 @@ export interface Playback {
   markers: Marker[];
   skipNotice?: string;
 }
-export interface UpdateStatus { busy: boolean; message: string; percent?: number }
+export interface UpdateStatus { busy: boolean; message: string; percent?: number; available?: boolean; installing?: boolean }
 export interface TogetherState {
   connected: boolean;
   code?: string;
@@ -259,7 +259,8 @@ export interface API {
   anilistApply(choices: SyncChange[]): Promise<State>;
   anilistDisconnect(): Promise<State>;
   onWatchState(callback: (state: State) => void): () => void;
-  startupUpdate(): Promise<boolean>;
+  startupUpdate(): Promise<UpdateStatus>;
+  installUpdate(): Promise<UpdateStatus>;
   checkUpdates(): Promise<UpdateStatus>;
   updateStatus(): Promise<UpdateStatus>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;

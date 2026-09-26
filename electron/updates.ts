@@ -1,4 +1,4 @@
-import { valid, gt, rcompare, prerelease } from "semver";
+import { valid } from "semver";
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
@@ -33,36 +33,18 @@ function assetUpdate(url: string, value: any): Update {
   return { url, digest: value.digest, size: value.size };
 }
 
-export async function findUpdate(development: boolean, version: string, commit: string): Promise<UpdateResult> {
-  if (!valid(version)) throw Error("The installed version is invalid.");
-  if (!development) {
-    const releases = await github("/releases?per_page=100");
-    if (!Array.isArray(releases)) throw Error("The update repository is unavailable.");
-    const release = releases.filter(r => !r.draft && !r.prerelease && valid(r.tag_name)
-      && !prerelease(r.tag_name) && gt(r.tag_name, version))
-      .sort((a, b) => rcompare(a.tag_name, b.tag_name))[0];
-    if (!release) return { message: "No newer public release is available." };
-    const next = valid(release.tag_name)!;
-    const asset = release.assets?.find((a: any) => a.name === `Nen-Setup-${next}.exe`);
-    const prefix = `https://github.com/${repository}/releases/download/`;
-    if (!asset || typeof asset.browser_download_url !== "string" || !asset.browser_download_url.startsWith(prefix))
-      return { message: `Version ${next} has no Windows installer yet.` };
-    return { update: { ...assetUpdate(asset.browser_download_url, asset), version: next }, message: `Downloading Nen ${next}…` };
-  }
-  if (!sha.test(commit)) throw Error("This build has no commit ID. Install the latest test build first.");
-  const head = await github("/commits/main");
-  if (!sha.test(head?.sha)) throw Error("The development branch is unavailable.");
-  if (head.sha === commit) return { message: "You have the latest development build." };
-  const comparison = await github(`/compare/${commit}...${head.sha}`);
-  if (comparison?.status !== "ahead") return { message: "No newer development commit is available for this build." };
+export async function findUpdate(commit: string): Promise<UpdateResult> {
+  if (!commit) return { message: "You are on the latest build" };
   const runs = await github("/actions/workflows/development.yml/runs?branch=main&status=success&per_page=1");
   const run = runs?.workflow_runs?.[0];
-  if (!run || run.head_sha !== head.sha || run.conclusion !== "success" || !["push", "workflow_dispatch"].includes(run.event) || run.head_repository?.full_name !== repository)
-    return { message: "A newer commit is available. Its test build is not ready yet." };
-  const list = await github(`/actions/runs/${run.id}/artifacts`);
+  if (!run || !sha.test(run.head_sha) || run.conclusion !== "success" || run.head_branch !== "main"
+    || !["push", "workflow_dispatch"].includes(run.event) || run.head_repository?.full_name !== repository)
+    return { message: "No completed build is available. Try again later." };
+  if (run.head_sha === commit) return { message: "You are on the latest build" };
+  const list = await github("/actions/runs/" + run.id + "/artifacts");
   const artifact = list?.artifacts?.find((a: any) => a.name === "nen-windows-x64" && !a.expired);
-  if (!artifact || !Number.isSafeInteger(artifact.id)) return { message: "The development installer is unavailable. Its build may have expired." };
-  return { update: { ...assetUpdate(`https://nightly.link/${repository}/actions/artifacts/${artifact.id}.zip`, { ...artifact, size: artifact.size_in_bytes }), commit: head.sha }, message: "Downloading the development build…" };
+  if (!artifact || !Number.isSafeInteger(artifact.id)) return { message: "The latest build download is unavailable. Try again later." };
+  return { update: { ...assetUpdate("https://nightly.link/" + repository + "/actions/artifacts/" + artifact.id + ".zip", { ...artifact, size: artifact.size_in_bytes }), commit: run.head_sha }, message: "New update available" };
 }
 
 export async function downloadUpdate(update: Update, directory: string, progress: (percent: number) => void): Promise<string> {
