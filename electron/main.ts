@@ -85,6 +85,7 @@ let current: Progress | undefined;
 let busy = false;
 let playbackRequest = 0;
 let automaticRunning = false;
+let automaticFinished = Promise.resolve();
 let sourceSearch: AbortController | undefined;
 let pendingPlayback: Playback | undefined;
 let closing = false;
@@ -396,6 +397,12 @@ function workerRequest(event: string, payload: object, timeout = 60000): Promise
       target.removeListener("exit", exit);
     };
     const message = (data: any) => {
+      if (event === "files" && data.event === "verifying") {
+        clearTimeout(timer);
+        timer = setTimeout(() => { cleanup(); reject(Error("Checking cached files took too long.")); }, 10 * 60 * 1000);
+        if (pendingPlayback) pendingPlayback.loadingNotice = "Connecting to the source…";
+        publish();
+      }
       if (data.event === event) {
         cleanup();
         resolve(data);
@@ -408,7 +415,7 @@ function workerRequest(event: string, payload: object, timeout = 60000): Promise
       cleanup();
       reject(Error("Torrent engine stopped."));
     };
-    const timer = setTimeout(() => {
+    let timer = setTimeout(() => {
       cleanup();
       reject(
         Error("No torrent metadata arrived. Try a release with more seeds."),
@@ -705,9 +712,20 @@ async function play(
     busy = false;
   }
 }
+async function cancelAutomatic() {
+  if (!automaticRunning) return;
+  playbackRequest++;
+  sourceSearch?.abort();
+  stop(false);
+  await automaticFinished;
+  if (pendingPlayback) pendingPlayback.loadingNotice = "Choose a source to continue.";
+  publish();
+}
 async function autoPlay(mediaId: number, episode: number, saved?: Progress, preferredHash?: string) {
   if (automaticRunning || busy) throw Error("Wait for the current playback request.");
   automaticRunning = true;
+  let finished!: () => void;
+  automaticFinished = new Promise<void>(resolve => { finished = resolve; });
   sourceSearch = new AbortController();
   const request = ++playbackRequest;
   const attempted = new Set<string>();
@@ -819,6 +837,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     if (!controls) pendingPlayback = undefined;
     automaticRunning = false;
     sourceSearch = undefined;
+    finished();
     publish();
   }
 }
@@ -1289,10 +1308,11 @@ else {
         }
         return autoPlay(id, ep);
       });
-      handle("inspect", (value) => {
-        if (together.state.connected && (automaticRunning || !together.state.members.find(m => m.id === together.state.self)?.error)) throw Error("Session sources load automatically. Manual selection is available after loading fails.");
+      handle("inspect", async (value) => {
+        const releaseHash = hash(value);
+        await cancelAutomatic();
         playbackRequest++;
-        return inspect(hash(value));
+        return inspect(releaseHash);
       });
       handle("play", (id, ep, index, malEp) => {
         return play(
@@ -1327,6 +1347,12 @@ else {
           const fullscreen = !window.isFullScreen();
           window.setFullScreen(fullscreen);
           window.webContents.send("window-fullscreen", fullscreen);
+          return;
+        }
+        if (action === "sources") {
+          await cancelAutomatic();
+          if (player?.status.ready && !player.status.paused && !together.state.connected)
+            await player.command(["set_property", "pause", true]);
           return;
         }
         if (!player) throw Error("Start playback first.");

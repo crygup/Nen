@@ -308,6 +308,7 @@ export interface API {
       | "pause"
       | "seek"
       | "seekRelative"
+      | "sources"
       | "speed"
       | "audio"
       | "sub"

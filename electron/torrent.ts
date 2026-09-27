@@ -90,6 +90,7 @@ port.on("message", async ({ data }) => {
           send({ event: "files", files });
         },
       );
+      torrent.once("metadata", () => send({ event: "verifying" }));
       torrent.on("error", (e) => send({ event: "error", message: String(e) }));
       timer = setInterval(
         () =>

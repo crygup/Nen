@@ -894,6 +894,7 @@ async function releasePicker(m: Media, ep: number) {
     `<h2 id="dialog-title">${esc(title(m))}</h2><p class="muted">Episode ${ep} · Choose a source</p><div id="releases"><p class="loading">Finding sources…</p></div>`,
   );
   try {
+    await api.control("sources");
     const result = await api.releases(m.id, ep);
     if (token !== pickerRequest || !d.open) return;
     const rows = rankReleases(result.items, ep, state.settings);
@@ -1573,7 +1574,6 @@ async function start() {
       sources: (p) =>
         void run(async () => {
           if (p.mediaId && p.episode) {
-            if (!p.paused && !(await api.togetherState()).connected) await api.control("pause");
             await releasePicker(await api.media(p.mediaId), p.episode);
           }
         }),

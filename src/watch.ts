@@ -240,11 +240,10 @@ export function mountPlayer(actions: {
   };
   const speedSlider = el<HTMLInputElement>("speed-slider");
   let speedDragging = false;
-  speedSlider.onpointerdown = (e) => {
+  speedSlider.onpointerdown = () => {
     speedDragging = true;
-    speedSlider.setPointerCapture(e.pointerId);
   };
-  speedSlider.onlostpointercapture = speedSlider.onblur = () => {
+  speedSlider.onchange = speedSlider.onpointerup = speedSlider.onpointercancel = speedSlider.onblur = () => {
     speedDragging = false;
   };
   speedSlider.oninput = () => {
