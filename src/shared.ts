@@ -138,6 +138,7 @@ export interface WatchRun {
 }
 export interface WatchEntry {
   mediaId: number;
+  format?: string;
   isAdult?: boolean;
   title: string;
   cover: string;

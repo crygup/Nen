@@ -36,6 +36,7 @@
   "build": {
     "appId": "app.nen.desktop",
     "productName": "Nen",
+    "protocols": [{ "name": "Nen Discord invites", "schemes": ["discord-1553060136417759366"] }],
     "directories": {
       "output": "test-builds"
     },

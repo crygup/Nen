@@ -2,6 +2,7 @@ import type { AniListState, SyncBase, SyncChange, SyncPreview, WatchEntry, Watch
 import { newEntry } from "./watch-data";
 
 interface RemoteEntry extends SyncBase {
+  format?: string;
   mediaId: number;
   title: string;
   cover: string;
@@ -32,13 +33,13 @@ async function request<T>(token: string, query: string, variables: Record<string
 
 export async function readRemote(token: string): Promise<{ user: string; entries: Record<string, RemoteEntry> }> {
   const viewer = await request<{ Viewer: { id: number; name: string } }>(token, "query { Viewer { id name } }");
-  const data = await request<{ MediaListCollection: { lists: { entries: { mediaId: number; status: WatchStatus; progress: number; repeat: number; media: { title: { english: string | null; romaji: string }; coverImage: { large: string }; episodes: number | null; isAdult: boolean } }[] }[] } }>(token,
-    "query($userId:Int){ MediaListCollection(userId:$userId,type:ANIME){ lists { entries { mediaId status progress repeat media { title { english romaji } coverImage { large } episodes isAdult } } } } }", { userId: viewer.Viewer.id });
+  const data = await request<{ MediaListCollection: { lists: { entries: { mediaId: number; status: WatchStatus; progress: number; repeat: number; media: { title: { english: string | null; romaji: string }; coverImage: { large: string }; episodes: number | null; format: string; isAdult: boolean } }[] }[] } }>(token,
+    "query($userId:Int){ MediaListCollection(userId:$userId,type:ANIME){ lists { entries { mediaId status progress repeat media { title { english romaji } coverImage { large } episodes format isAdult } } } } }", { userId: viewer.Viewer.id });
   const entries: Record<string, RemoteEntry> = {};
   for (const list of data.MediaListCollection?.lists ?? [])
     for (const row of list.entries ?? [])
       if (row.mediaId && row.status)
-        entries[String(row.mediaId)] = { mediaId: row.mediaId, status: row.status, count: row.progress ?? 0, repeat: row.repeat ?? 0, title: row.media.title.english || row.media.title.romaji, cover: row.media.coverImage.large, episodes: row.media.episodes, isAdult: row.media.isAdult };
+        entries[String(row.mediaId)] = { mediaId: row.mediaId, format: row.media.format, status: row.status, count: row.progress ?? 0, repeat: row.repeat ?? 0, title: row.media.title.english || row.media.title.romaji, cover: row.media.coverImage.large, episodes: row.media.episodes, isAdult: row.media.isAdult };
   return { user: viewer.Viewer.name, entries };
 }
 
@@ -46,6 +47,7 @@ export function preview(local: Record<string, WatchEntry>, remote: Record<string
   const changes: SyncChange[] = [];
   for (const id of new Set([...Object.keys(local), ...Object.keys(remote)])) {
     const here = local[id], there = remote[id], base = sync.baseline[id];
+    if (there?.format === "MUSIC" || here?.format === "MUSIC") continue;
     for (const field of ["status", "count", "repeat"] as const) {
       const a = here?.[field] ?? null, b = there?.[field] ?? null;
       if (a === b) continue;
@@ -92,6 +94,7 @@ export async function apply(token: string, local: Record<string, WatchEntry>, re
   }
   for (const [id, there] of Object.entries(remote)) {
     const here = local[id];
+    if (here) here.format = there.format;
     if (here && here.status === there.status && here.count === there.count && here.repeat === there.repeat)
       sync.baseline[id] = { status: here.status, count: here.count, repeat: here.repeat };
   }
@@ -127,9 +130,9 @@ export async function syncFavorites(token: string, local: Record<string, WatchEn
   }
   const favorites: Record<string, WatchEntry> = {};
   for (let page = 1; ; page++) {
-    const { Viewer } = await request<{ Viewer: { favourites: { anime: { pageInfo: { hasNextPage: boolean }; nodes: { id: number; title: { english: string | null; romaji: string; native: string | null }; coverImage: { large: string }; episodes: number | null; isAdult: boolean }[] } } } }>(token,
-      "query($page:Int){ Viewer { favourites { anime(page:$page,perPage:50){ pageInfo { hasNextPage } nodes { id title { english romaji native } coverImage { large } episodes isAdult } } } } }", { page });
-    for (const media of Viewer.favourites.anime.nodes) favorites[String(media.id)] = local[String(media.id)] ?? newEntry(media);
+    const { Viewer } = await request<{ Viewer: { favourites: { anime: { pageInfo: { hasNextPage: boolean }; nodes: { id: number; title: { english: string | null; romaji: string; native: string | null }; coverImage: { large: string }; episodes: number | null; format: string; isAdult: boolean }[] } } } }>(token,
+      "query($page:Int){ Viewer { favourites { anime(page:$page,perPage:50){ pageInfo { hasNextPage } nodes { id title { english romaji native } coverImage { large } episodes format isAdult } } } } }", { page });
+    for (const media of Viewer.favourites.anime.nodes) if (media.format !== "MUSIC") favorites[String(media.id)] = local[String(media.id)] ?? newEntry(media);
     if (!Viewer.favourites.anime.pageInfo.hasNextPage) break;
   }
   for (const id of Object.keys(local)) delete local[id];

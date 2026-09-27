@@ -1,5 +1,5 @@
 import { Together } from "./together";
-import { DiscordPresence } from "./discord";
+import { DiscordPresence, DISCORD_APP_ID } from "./discord";
 import { findUpdate, downloadUpdate, type Update } from "./updates";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
@@ -288,6 +288,7 @@ const together = new Together({
   version: NEN_BUILD_COMMIT ? app.getVersion() : `${app.getVersion()}-dev`,
   cancel: () => { playbackRequest++; sourceSearch?.abort(); },
   changed: value => {
+    discordPresence.update(state.settings.discordPresence === true, player?.status, value);
     for (const target of new Set([window, controls]))
       if (target && !target.isDestroyed()) target.webContents.send("together", value);
   },
@@ -298,13 +299,28 @@ const together = new Together({
   },
   command: command => player ? player.command(command) : Promise.resolve(),
 });
-const discordPresence = new DiscordPresence();
+let joiningDiscord = false;
+const discordPresence = new DiscordPresence(secret => { void joinDiscordSession(secret); });
+async function joinDiscordSession(secret: string) {
+  if (joiningDiscord || closing) return;
+  if (together.state.connected && together.state.code === secret) return;
+  joiningDiscord = true;
+  try {
+    if (together.state.connected) throw Error("Leave your current Watch together session before joining another one.");
+    if (busy || automaticRunning) throw Error("Wait for the current video to finish loading, then try the invite again.");
+    await stop(true, false, { together: "1" });
+    await together.connect(secret);
+  } catch (error) {
+    if (!closing && window && !window.isDestroyed())
+      void dialog.showMessageBox(window, { type: "error", title: "Watch together", message: "Could not join the session", detail: error instanceof Error ? error.message : String(error) });
+  } finally { joiningDiscord = false; }
+}
 let publishTimer: NodeJS.Timeout | undefined;
 function publish() {
   if (publishTimer) return;
   publishTimer = setTimeout(() => {
     publishTimer = undefined;
-    discordPresence.update(state.settings.discordPresence === true, player?.status);
+    discordPresence.update(state.settings.discordPresence === true, player?.status, together.state);
     for (const target of new Set([window, controls]))
       if (target && !target.isDestroyed())
         target.webContents.send(
@@ -323,8 +339,9 @@ function publish() {
         );
   }, 100);
 }
-function stop(closeView = true, keepTorrent = false) {
-  discordPresence.close();
+function stop(closeView = true, keepTorrent = false, returnQuery?: Record<string, string>) {
+  let page: Promise<void> | undefined;
+  discordPresence.update(state.settings.discordPresence === true, undefined, together.state);
   record();
   const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
   if (closeView) {
@@ -342,8 +359,8 @@ function stop(closeView = true, keepTorrent = false) {
     fullscreenBeforePlayer = undefined;
     videoView?.destroy();
     videoView = undefined;
-    if (returning && !closing && !window.isDestroyed())
-      void loadPage({ returnMedia: String(returnMedia ?? "") });
+    if ((returning || returnQuery) && !closing && !window.isDestroyed())
+      page = loadPage(returnQuery ?? { returnMedia: String(returnMedia ?? "") });
   }
   player?.stop();
   player = undefined;
@@ -366,6 +383,7 @@ function stop(closeView = true, keepTorrent = false) {
   files = [];
   selected = undefined;
   publish();
+  return page;
 }
 function workerRequest(event: string, payload: object, timeout = 60000): Promise<any> {
   const target = worker;
@@ -936,6 +954,9 @@ else {
           webSecurity: true,
         },
       });
+      if (app.isPackaged && !process.env.NEN_E2E_USER_DATA)
+        app.setAsDefaultProtocolClient(`discord-${DISCORD_APP_ID}`);
+      window.webContents.once("did-finish-load", () => discordPresence.start());
       installZoom(window);
       const syncVideo = () => {
         if (videoView && !window.isDestroyed())
@@ -1378,7 +1399,7 @@ else {
       handle("updateStatus", () => updateStatus);
       handle("settings", (value) => {
         state.settings = settings(value);
-        discordPresence.update(state.settings.discordPresence === true, player?.status);
+        discordPresence.update(state.settings.discordPresence === true, player?.status, together.state);
         nativeTheme.themeSource = state.settings.theme;
         save();
       });

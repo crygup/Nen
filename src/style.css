@@ -1971,3 +1971,12 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 .seek-track { position: relative; flex: 1; min-width: 30px; }
 .seek-track #seek { display: block; width: 100%; margin: 0; }
 #buffering.failed::before { content: none; }
+
+.episode-content { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 240ms ease; }
+.episode-content.collapsed { grid-template-rows: 0fr; }
+.episode-content > div { min-height: 0; overflow: hidden; }
+#toggle-episodes { display: grid; place-items: center; align-self: stretch; height: auto; width: 38px; padding: 0; }
+#toggle-episodes[aria-expanded="true"] .expand-stroke { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .episode-content { transition: none; }
+}

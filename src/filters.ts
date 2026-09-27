@@ -6,7 +6,6 @@ export const formats = [
   "SPECIAL",
   "OVA",
   "ONA",
-  "MUSIC",
 ];
 export const statuses = [
   "RELEASING",

@@ -77,6 +77,7 @@ let labelData: Labels | undefined;
 let hideFiller = false;
 let showAllEpisodes = false;
 let descendingEpisodes = false;
+let episodesCollapsed = false;
 let episodeLoad = 0;
 let episodeData: EpisodePage | undefined;
 const playerMode = new URLSearchParams(location.search).has("player");
@@ -477,9 +478,9 @@ function watchEditButton(id: number, name: string) {
   return `<button class="list-edit square-button" data-watch-edit="${id}" aria-label="Edit ${esc(name)}" title="Edit"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m16 3 5 5M3 21l5-1L21 7a2 2 0 0 0-5-5L3 15z"/></svg></button>`;
 }
 function continueCards() {
-  const local = recentSeasons(state.progress, state.settings.showAdult);
+  const local = recentSeasons(state.progress, state.settings.showAdult).filter(([, p]) => state.watch[String(p.mediaId)]?.format !== "MUSIC");
   const ids = new Set(local.map(([, p]) => p.mediaId));
-  const imported = Object.values(state.watch).filter(e => !ids.has(e.mediaId)
+  const imported = Object.values(state.watch).filter(e => e.format !== "MUSIC" && !ids.has(e.mediaId)
     && (e.status === "CURRENT" || e.status === "REPEATING") && (state.settings.showAdult || !e.isAdult))
     .sort((a, b) => b.updated - a.updated);
   return [
@@ -683,6 +684,7 @@ async function openMedia(id: number) {
       .sort((a, b) => b.updated - a.updated)[0];
     showAllEpisodes = !!latest && latest.episode > 50;
     descendingEpisodes = false;
+    episodesCollapsed = false;
     renderSeries();
     if (latest) requestAnimationFrame(() => {
       if (token !== request) return;
@@ -801,11 +803,11 @@ function renderEpisodes() {
     },
   ).filter((e) => !hideFiller || e.status !== "filler");
   const el = document.querySelector("#episodes")!;
-  el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button>${labelData?.items.some((e) => e.status === "filler") ? `<label class="check"><input id="hide-filler" type="checkbox" ${hideFiller ? "checked" : ""}> Hide filler</label>` : ""}</div></div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
+  el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button><button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button>${labelData?.items.some((e) => e.status === "filler") ? `<label class="check"><input id="hide-filler" type="checkbox" ${hideFiller ? "checked" : ""}> Hide filler</label>` : ""}</div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
     .map((e) => {
       const watched = state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ?? state.progress[`${m.id}:${e.n}`];
       const future = e.released === false;
-      const finished = watched?.watched === true;
+      const finished = e.n <= (state.watch[String(m.id)]?.count ?? 0) || watched?.watched === true;
       const date = e.airingAt
         ? new Date(e.airingAt * 1000).toLocaleDateString(undefined, {
             month: "short",
@@ -823,7 +825,16 @@ function renderEpisodes() {
     })
     .join(
       "",
-    )}</div><div class="pagination">${!showAllEpisodes && count > 50 ? '<button id="load-episodes">Load more</button>' : ""}</div>`;
+    )}</div><div class="pagination">${!showAllEpisodes && count > 50 ? '<button id="load-episodes">Load more</button>' : ""}</div></div></div>`;
+  const toggle = el.querySelector<HTMLButtonElement>("#toggle-episodes")!;
+  toggle.onclick = () => {
+    episodesCollapsed = !episodesCollapsed;
+    toggle.setAttribute("aria-expanded", String(!episodesCollapsed));
+    toggle.setAttribute("aria-label", episodesCollapsed ? "Expand episodes" : "Collapse episodes");
+    const content = el.querySelector<HTMLElement>("#episode-content")!;
+    content.classList.toggle("collapsed", episodesCollapsed);
+    content.inert = episodesCollapsed;
+  };
   el.querySelectorAll<HTMLButtonElement>("[data-episode]").forEach(
     (b) => (b.onclick = () => void startEpisode(m, Number(b.dataset.episode))),
   );
@@ -1033,9 +1044,9 @@ async function watchlist() {
   setRoute("watchlist");
   activeNav("watchlist");
   state = await api.state();
-  const entries = Object.values(state.watch).filter(e => state.settings.showAdult || !e.isAdult).sort((a, b) => b.updated - a.updated);
+  const entries = Object.values(state.watch).filter(e => e.format !== "MUSIC" && (state.settings.showAdult || !e.isAdult)).sort((a, b) => b.updated - a.updated);
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${([["CURRENT", "Continue watching"], ["PLANNING", "Planning"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["FAVORITES", "Favorites"], ["COMPLETED", "Completed"]] as const).map(([status, label]) => { const name = status === "CURRENT" ? "Continue watching" : label; return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${(status === "CURRENT" ? continueCards() : (status === "FAVORITES" ? Object.values(state.favorites).filter(e => state.settings.showAdult || !e.isAdult).map(e => state.watch[String(e.mediaId)] ?? e) : entries.filter(e => e.status === status)).map(e => {
+  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${([["CURRENT", "Continue watching"], ["PLANNING", "Planning"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["FAVORITES", "Favorites"], ["COMPLETED", "Completed"]] as const).map(([status, label]) => { const name = status === "CURRENT" ? "Continue watching" : label; return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${(status === "CURRENT" ? continueCards() : (status === "FAVORITES" ? Object.values(state.favorites).filter(e => e.format !== "MUSIC" && (state.settings.showAdult || !e.isAdult)).map(e => state.watch[String(e.mediaId)] ?? e) : entries.filter(e => e.status === status)).map(e => {
     const saved = Object.values(state.progress).filter(p => p.mediaId === e.mediaId).sort((a, b) => b.updated - a.updated)[0];
     const latest = Object.entries(e.runs.at(-1)?.episodes ?? {}).sort((a, b) => b[1].updated - a[1].updated)[0];
     const episode = latest && latest[1].updated > e.countUpdated ? Number(latest[0]) : e.count;
@@ -1524,7 +1535,8 @@ async function start() {
       } catch {}
       await openMedia(returnMedia);
       goingBack = false;
-    } else await home();
+    } else if (new URLSearchParams(location.search).has("together")) showTogether();
+    else await home();
     clearInterval(animation);
     splash.classList.add("finished");
     setTimeout(() => splash.remove(), 300);

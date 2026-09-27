@@ -260,7 +260,7 @@ export async function catalog(
         ? "TRENDING_DESC"
         : "POPULARITY_DESC",
   };
-  const query = "query($page:Int,$perPage:Int,$search:String,$genre:[String],$tag:[String],$year:Int,$season:MediaSeason,$format:MediaFormat,$status:MediaStatus,$adult:Boolean,$sort:[MediaSort]){Page(page:$page,perPage:$perPage){pageInfo{hasNextPage lastPage}media(type:ANIME,isAdult:$adult,search:$search,genre_in:$genre,tag_in:$tag,seasonYear:$year,season:$season,format:$format,status:$status,sort:$sort){" +
+  const query = "query($page:Int,$perPage:Int,$search:String,$genre:[String],$tag:[String],$year:Int,$season:MediaSeason,$format:MediaFormat,$status:MediaStatus,$adult:Boolean,$sort:[MediaSort]){Page(page:$page,perPage:$perPage){pageInfo{hasNextPage lastPage}media(type:ANIME,format_not:MUSIC,isAdult:$adult,search:$search,genre_in:$genre,tag_in:$tag,seasonYear:$year,season:$season,format:$format,status:$status,sort:$sort){" +
       "id idMal isAdult title { english romaji native } coverImage { large } format status episodes seasonYear averageScore genres synonyms tags { name rank }" +
       "}}}";
   let data = await gql(query, vars);
@@ -269,12 +269,12 @@ export async function catalog(
     const terms = [...new Set(words.filter(w => w.length >= 3).map(w => w.slice(0, Math.max(3, w.length - 1))))].slice(0, 2);
     const alternatives = await Promise.all(terms.map(search => gql(query, { ...vars, search, page: 1, perPage: 50 })));
     const candidates = [...new Map(alternatives.flatMap(result => result.Page.media).map((m: any) => [m.id, m])).values()] as any[];
-    const matches = candidates.filter(m => [m.title.english, m.title.romaji, m.title.native, ...(m.synonyms ?? [])]
+    const matches = candidates.filter(m => m.format !== "MUSIC" && [m.title.english, m.title.romaji, m.title.native, ...(m.synonyms ?? [])]
       .filter(Boolean).some(title => words.every(word => searchWords(title).some(candidate => similarWord(word, candidate)))));
     return { media: matches.slice((page - 1) * perPage, page * perPage).map(normalizeMedia), hasNextPage: page * perPage < matches.length, lastPage: Math.max(1, Math.ceil(matches.length / perPage)) };
   }
   return {
-    media: data.Page.media.map(normalizeMedia),
+    media: data.Page.media.filter((m: any) => m.format !== "MUSIC").map(normalizeMedia),
     hasNextPage: data.Page.pageInfo.hasNextPage,
     lastPage: data.Page.pageInfo.lastPage,
   };
@@ -528,6 +528,7 @@ function normalizeMedia(input: any): Media {
     }
   };
   const id = positive(input?.id);
+  if (input.format === "MUSIC") throw Error("Music entries are not supported.");
   return {
     id,
     isAdult: input.isAdult === true,
@@ -575,7 +576,7 @@ function normalizeMedia(input: any): Media {
         : []
       )
         .slice(0, 100)
-        .filter((e: any) => number(e?.node?.id, 10000000))
+        .filter((e: any) => number(e?.node?.id, 10000000) && e.node.format !== "MUSIC")
         .map((e: any) => ({
           relationType: str(e.relationType, 30),
           node: {
