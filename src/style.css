@@ -235,12 +235,7 @@ small {
   border-radius: 3px;
   padding: 1px 7px;
 }
-.local-note {
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 1.8px;
-  white-space: nowrap;
-}
+
 main {
   width: 100%;
   max-width: none;
@@ -443,19 +438,8 @@ main {
   width: 15px;
   height: 15px;
 }
-.episode-notice {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  font-size: 11px;
-  color: var(--muted);
-  margin: 12px 0;
-}
-.episode-notice button {
-  white-space: nowrap;
-  font-size: 11px;
-}
+
+
 .episode-list {
   border-top: 1px solid var(--line);
 }
@@ -482,10 +466,7 @@ main {
   margin-top: 4px;
   font-size: 10px;
 }
-.episode-arrow {
-  text-align: right;
-  color: var(--muted);
-}
+
 .badge {
   font-size: 10px;
   border: 1px solid var(--line);
@@ -542,14 +523,8 @@ main {
   gap: 10px;
   margin-top: 20px;
 }
-#manual-episode {
-  display: flex;
-  gap: 10px;
-  margin-top: 20px;
-}
-#manual-episode input {
-  width: 100px;
-}
+
+
 .primary {
   background: var(--accent);
   color: var(--accent-text);
@@ -623,14 +598,9 @@ dialog select {
   padding: 0 3px;
   line-height: 1;
 }
-.release-search {
-  display: flex;
-  gap: 10px;
-  margin: 24px 0 12px;
-}
-.release-search input {
-  flex: 1;
-}
+
+
+#source-results { margin-top: 12px; }
 .release {
   display: block;
   width: 100%;
@@ -674,29 +644,10 @@ hr {
   border-top: 1px solid var(--line);
   margin: 25px 0;
 }
-.history-row {
-  display: grid;
-  grid-template-columns: 80px 1fr auto;
-  gap: 23px;
-  align-items: center;
-  border-top: 1px solid var(--line);
-  padding: 24px 0;
-}
-.history-row img {
-  width: 80px;
-  aspect-ratio: 2/3;
-  object-fit: cover;
-  border-radius: 4px;
-}
-.history-row p {
-  font-size: 12px;
-  color: var(--muted);
-}
-.history-row small {
-  display: block;
-  overflow-wrap: anywhere;
-  font-size: 10px;
-}
+
+
+
+
 .text-link {
   padding: 0;
   border: 0;
@@ -714,35 +665,11 @@ progress {
   accent-color: var(--accent);
   margin-bottom: 10px;
 }
-.player {
-  position: fixed;
-  left: 224px;
-  right: 0;
-  bottom: 0;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
-  padding: 18px 30px;
-  z-index: 3;
-  box-shadow: 0 -5px 20px #0001;
-}
-.player-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 15px;
-  align-items: center;
-}
-.player-top strong {
-  font-size: 12px;
-}
-.player-top small {
-  display: block;
-  font-size: 10px;
-  margin-top: 3px;
-}
-.player button {
-  font-size: 11px;
-  padding: 6px 10px;
-}
+
+
+
+
+
 .timeline {
   display: flex;
   gap: 13px;
@@ -757,22 +684,9 @@ progress {
   height: 4px;
   accent-color: var(--accent);
 }
-.player-bottom {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.player-bottom label {
-  font-size: 10px;
-  color: var(--muted);
-}
-.player-bottom select {
-  font-size: 10px;
-  padding: 3px 6px;
-  max-width: 180px;
-  margin-left: 7px;
-}
+
+
+
 #player-error {
   font-size: 11px;
   color: var(--notice);
@@ -800,9 +714,7 @@ progress {
   .workspace {
     margin-left: 185px;
   }
-  .player {
-    left: 185px;
-  }
+
   main {
     padding: 30px 26px;
   }
@@ -820,22 +732,14 @@ progress {
     grid-template-columns: repeat(4, minmax(110px, 1fr));
     gap: 24px 15px;
   }
-  .local-note {
-    display: none;
-  }
+
   .sidebar button {
     font-size: 12px;
     padding: 11px 7px;
   }
-  .player-top {
-    align-items: flex-start;
-  }
-  .player-top .actions {
-    justify-content: flex-end;
-  }
-  .player-bottom select {
-    max-width: 120px;
-  }
+
+
+
 }
 @media (prefers-reduced-motion: reduce) {
   * {
@@ -882,20 +786,9 @@ progress {
 .section-heading .primary {
   font-size: 12px;
 }
-.history-row {
-  grid-template-columns: 80px 1fr auto 30px;
-}
-.history-row progress {
-  display: block;
-  margin-top: 12px;
-}
-.remove-history {
-  background: none;
-  border: 0;
-  padding: 4px;
-  font-size: 22px;
-  color: var(--muted);
-}
+
+
+
 .quality-dropdown {
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -1220,13 +1113,8 @@ html.player-mode body {
   .section-heading h2 {
     font-size: 20px;
   }
-  .history-row {
-    grid-template-columns: 65px 1fr auto 24px;
-    gap: 14px;
-  }
-  .history-row img {
-    width: 65px;
-  }
+
+
 }
 
 dialog form label.check {
@@ -1742,10 +1630,7 @@ dialog {
 .recent-card:hover img {
   transform: scale(1.025);
 }
-.history-row:first-child {
-  border-top: 0;
-  padding-top: 0;
-}
+
 
 .episode-badges { display: flex; align-items: center; gap: 8px; }
 .sync-changes { max-height: 50vh; overflow: auto; display: grid; gap: 12px; margin: 16px 0; }
@@ -1764,7 +1649,7 @@ dialog {
 .changelog-day h3 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .changelog-entry { border-top: 1px solid var(--line); padding: 12px 0; }
 .changelog-day h3 + .changelog-entry { border-top: 0; }
-.changelog-title { font-size: 15px; font-weight: 600; margin: 0 0 6px; overflow-wrap: anywhere; }
+.changelog-title { font-size: 14px; font-weight: 400; margin: 0 0 6px; overflow-wrap: anywhere; }
 .changelog-meta { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .changelog-meta button { border: 0; background: transparent; color: var(--accent); padding: 0; font: inherit; text-decoration: underline; }
 .changelog-meta span { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
@@ -1988,3 +1873,7 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 @media (prefers-reduced-motion: reduce) {
   .episode-content { transition: none; }
 }
+
+#anime-context-menu { position: fixed; inset: auto; margin: 0; padding: 4.5px; min-width: 171px; font-size: 12.6px; max-width: calc(100vw - 8px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+#anime-context-menu button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 8.1px 10.8px; }
+#anime-context-menu button:hover, #anime-context-menu button:focus-visible { background: var(--hover); outline: none; }

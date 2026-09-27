@@ -742,16 +742,12 @@ function renderSeries() {
   const m = current!;
   const main = document.querySelector("#main")!;
   main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes ?? "?"} episodes</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p class="synopsis">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
-    m.relations?.edges.length
-      ? `<section class="related"><h2>Related titles</h2><div class="related-list">${m.relations.edges
-          .filter((e) => e.node.type === "ANIME")
-          .sort((a, b) => (["SEQUEL", "PREQUEL"].includes(a.relationType) ? ["SEQUEL", "PREQUEL"].indexOf(a.relationType) : 2) - (["SEQUEL", "PREQUEL"].includes(b.relationType) ? ["SEQUEL", "PREQUEL"].indexOf(b.relationType) : 2))
-          .map(
-            (e) =>
-              `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.romaji)}</span></button>`,
-          )
-          .join("")}</div></section>`
-      : ""
+    [true, false].map(related => {
+      const edges = (m.relations?.edges ?? []).filter(e => e.node.type === "ANIME" && e.node.format !== "MUSIC"
+        && ["PREQUEL", "SEQUEL"].includes(e.relationType) === related)
+        .sort((a, b) => Number(a.relationType === "SEQUEL") - Number(b.relationType === "SEQUEL"));
+      return edges.length ? `<section class="related"><h2>${related ? "Related Titles" : "Other titles"}</h2><div class="related-list">${edges.map(e => `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.english || e.node.title.romaji)}</span></button>`).join("")}</div></section>` : "";
+    }).join("")
   }`;
   document.querySelector<HTMLElement>("#back")!.onclick = () =>
     void browseBack();
@@ -790,6 +786,11 @@ function renderEpisodes() {
   const offset = state.mappings[String(m.id)];
   const count =
     m.episodes ?? Math.max(latestEpisode(m), m.nextAiringEpisode?.episode ?? 0);
+  const el = document.querySelector("#episodes")!;
+  if (!count) {
+    el.innerHTML = "<p>No episodes here yet</p>";
+    return;
+  }
   const items = Array.from(
     { length: showAllEpisodes ? count : Math.min(50, count) },
     (_, i) => {
@@ -803,7 +804,6 @@ function renderEpisodes() {
       };
     },
   ).filter((e) => !hideFiller || e.status !== "filler");
-  const el = document.querySelector("#episodes")!;
   el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button><button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button>${labelData?.items.some((e) => e.status === "filler") ? `<label class="check"><input id="hide-filler" type="checkbox" ${hideFiller ? "checked" : ""}> Hide filler</label>` : ""}</div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
     .map((e) => {
       const watched = state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ?? state.progress[`${m.id}:${e.n}`];
@@ -863,6 +863,7 @@ function renderEpisodes() {
 
 function dialog(content: string) {
   const d = document.querySelector<HTMLDialogElement>("#dialog")!;
+  d.setAttribute("closedby", "any");
   d.innerHTML = `<div class="dialog-header"><span class="eyebrow">Nen</span><button id="close-dialog" aria-label="Close dialog">${uiIcon("close")}</button></div>${content}`;
   d.onclose = null;
   if (!d.open) d.showModal();
@@ -1075,6 +1076,78 @@ async function watchlist() {
     update();
   });
 }
+
+let contextRequest = 0;
+document.addEventListener("contextmenu", event => {
+  const target = event.target as HTMLElement;
+  const episodeRow = target.closest<HTMLElement>("#episodes [data-episode]");
+  const card = target.closest<HTMLElement>("[data-media], [data-open-series], [data-continue], [data-resume], [data-watch-edit], .series-poster");
+  const id = episodeRow ? current?.id : card?.classList.contains("series-poster") ? current?.id
+    : Number(card?.dataset.media || card?.dataset.openSeries || card?.dataset.continue || card?.dataset.watchEdit || card?.dataset.resume?.split(":")[0]);
+  if (!id || episodeRow?.hasAttribute("disabled")) return;
+  event.preventDefault();
+  const request = ++contextRequest;
+  document.querySelector("#anime-context-menu")?.remove();
+  void run(async () => {
+    const media = current?.id === id ? current : await api.media(id);
+    if (request !== contextRequest) return;
+    const entry = state.watch[String(id)];
+    const actions: [string, () => Promise<unknown>][] = [];
+    if (episodeRow) {
+      const episode = Number(episodeRow.dataset.episode);
+      const progress = entry?.runs.at(-1)?.episodes[String(episode)] ?? state.progress[`${id}:${episode}`];
+      if (!(episode <= (entry?.count ?? 0) || progress?.watched))
+        actions.push(["Mark as completed", () => api.watchEdit(id, { episode, watched: true }).then(value => { state = value; })]);
+      if ((progress?.position ?? 0) > 0)
+        actions.push(["Reset watch time", () => api.watchEdit(id, { episode, position: 0 }).then(value => { state = value; })]);
+    } else {
+      actions.push([state.favorites[String(id)] ? "Unfavorite" : "Favorite", () => api.favoriteSet(id, !state.favorites[String(id)]).then(value => { state = value; })]);
+      if (entry?.status !== "COMPLETED" && !(media.episodes && (entry?.count ?? 0) >= media.episodes))
+        actions.push(["Mark as completed", () => api.watchEdit(id, { status: "COMPLETED", count: media.episodes ?? entry?.count ?? 0 }).then(value => { state = value; })]);
+      if (entry?.status !== "PLANNING")
+        actions.push([entry ? "Move to watch list" : "Add to watch list", () => api.watchAdd(id).then(value => { state = value; })]);
+      actions.push(["Edit", () => editWatch(id)]);
+      if (!state.settings.hideOpenAniList) actions.push(["Open on AniList", () => api.external("anilist", id)]);
+    }
+    if (!actions.length) return;
+    const menu = document.createElement("div");
+    menu.id = "anime-context-menu";
+    menu.popover = "auto";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", episodeRow ? "Episode actions" : "Anime actions");
+    for (const [label, action] of actions) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = () => {
+        menu.hidePopover();
+        void run(async () => {
+          await action();
+          if (route === "series") { updateSeriesActions(); renderEpisodes(); }
+          else if (route === "watchlist") await watchlist();
+          else if (route === "home") await home();
+        });
+      };
+      menu.append(button);
+    }
+    menu.onkeydown = e => {
+      const buttons = [...menu.querySelectorAll("button")];
+      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+        e.preventDefault();
+        buttons[e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+      }
+    };
+    menu.addEventListener("toggle", () => { if (!menu.matches(":popover-open")) menu.remove(); });
+    document.body.append(menu);
+    menu.showPopover();
+    menu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4)) + "px";
+    menu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4)) + "px";
+    menu.querySelector("button")?.focus();
+  });
+});
+
 function updateSeriesActions() {
   if (!current) return;
   const list = document.querySelector<HTMLButtonElement>("#watchlist-toggle");
@@ -1087,9 +1160,9 @@ function updateSeriesActions() {
     favorite.title = selected ? "Remove from favorites" : "Add to favorites";
   }
 }
-function editWatch(id: number) {
-  const entry = state.watch[String(id)];
-  if (!entry) return;
+async function editWatch(id: number) {
+  const media = state.watch[String(id)] ? undefined : await api.media(id);
+  const entry = state.watch[String(id)] ?? { title: title(media!), status: "PLANNING" as WatchStatus, count: 0, totalEpisodes: media!.episodes };
   const d = dialog(`<h2 id="dialog-title">${esc(entry.title)}</h2><form id="watch-form"><label>Watch status<select name="status">${watchStatuses.map(([value, name]) => `<option value="${value}" ${entry.status === value ? "selected" : ""}>${name}</option>`).join("")}</select></label><label>Episode progress<input name="count" type="number" min="0" step="1" ${entry.totalEpisodes != null ? `max="${entry.totalEpisodes}"` : ""} value="${entry.count}" required></label></form><hr><button id="delete-watch">Delete entry</button>`);
   d.querySelector<HTMLButtonElement>("#delete-watch")!.onclick = () => void run(async () => {
     state = await api.watchDelete(id);
@@ -1203,7 +1276,7 @@ function settings() {
     `<h2 id="dialog-title">Settings</h2>
     <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account", "Changelog"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase()}" aria-controls="settings-${name.toLowerCase()}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(name === "App" ? "settings" : name === "Changelog" ? "history" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
     <form id="settings">
-    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
+    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="hideOpenAniList" type="checkbox" ${s.hideOpenAniList ? "checked" : ""}> Hide Open on AniList button</label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
     <section id="settings-streaming" role="tabpanel" aria-labelledby="settings-tab-streaming" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
     <section id="settings-account" role="tabpanel" aria-labelledby="settings-tab-account" hidden></section>
     <section id="settings-changelog" role="tabpanel" aria-labelledby="settings-tab-changelog" hidden><p id="changelog-status" role="status"></p><div id="changelog-list"></div><button id="changelog-more" type="button" hidden>Load more</button></section>
@@ -1375,6 +1448,7 @@ function settings() {
       autoUpdates: f.has("autoUpdates"),
       showAdult: f.has("showAdult"),
       hideZeroSeeds: f.has("hideZeroSeeds"),
+      hideOpenAniList: f.has("hideOpenAniList"),
     };
     state.settings = next;
     applyTheme();

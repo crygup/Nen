@@ -868,7 +868,7 @@ function settings(value: Settings): Settings {
       ))
   )
     throw Error("Select at least one quality.");
-  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "autoUpdates", "discordPresence"] as const)
+  for (const key of ["showAdult", "hideZeroSeeds", "autoNext", "autoUpdates", "discordPresence", "hideOpenAniList"] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
   const audio = text(value.audio, 60),
@@ -879,6 +879,7 @@ function settings(value: Settings): Settings {
     theme: value.theme,
     showAdult: value.showAdult ?? false,
     hideZeroSeeds: value.hideZeroSeeds ?? true,
+    hideOpenAniList: value.hideOpenAniList ?? false,
     autoSkip: value.autoSkip,
     autoNext: value.autoNext ?? false,
     autoUpdates: value.autoUpdates ?? true,
@@ -1128,9 +1129,10 @@ else {
           return state;
         } finally { syncRunning = false; }
       });
-      handle("watchEdit", (id, patch) => {
-        const entry = state.watch[String(positive(id))];
-        if (!entry || !patch || typeof patch !== "object") throw Error("Watch entry was not found.");
+      handle("watchEdit", async (id, patch) => {
+        const mediaId = positive(id);
+        if (!patch || typeof patch !== "object") throw Error("Invalid watch edit.");
+        const entry = structuredClone(state.watch[String(mediaId)] ?? newEntry(await providers.media(mediaId)));
         if (patch.count !== undefined && (!Number.isSafeInteger(patch.count) || patch.count < 0
           || (entry.totalEpisodes != null && patch.count > entry.totalEpisodes)))
           throw Error("Episode progress exceeds the valid range.");
@@ -1165,8 +1167,25 @@ else {
             if (value !== undefined && (!Number.isFinite(value) || value < 0 || value > 1000000)) throw Error("Invalid playback time.");
           markEpisode(entry, episode, { watched: patch.watched, position: patch.position, duration: patch.duration });
           if (patch.watched !== undefined) activeRun(entry).episodes[String(episode)].manual = true;
+          if (patch.watched === true && entry.status === "PLANNING") {
+            entry.status = "CURRENT"; entry.statusUpdated = now;
+          }
+          if (patch.watched === true && entry.totalEpisodes && entry.count >= entry.totalEpisodes) {
+            entry.status = "COMPLETED"; entry.statusUpdated = now;
+            const run = activeRun(entry);
+            if (!run.completed) { run.completed = now; if (entry.runs.length > 1) { entry.repeat++; entry.repeatUpdated = now; } }
+          }
         }
         entry.updated = now;
+        state.watch[String(mediaId)] = entry;
+        if (patch.episode !== undefined) {
+          const saved = state.progress[`${mediaId}:${patch.episode}`];
+          if (saved) {
+            if (patch.position !== undefined) saved.position = patch.position;
+            if (patch.watched !== undefined) saved.watched = patch.watched;
+            saved.updated = now;
+          }
+        }
         save();
         queueSync();
         return state;

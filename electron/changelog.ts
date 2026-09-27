@@ -23,12 +23,11 @@ export async function listChangelog(page: number, refresh = false) {
     const entries: ChangelogEntry[] = data.map((item: any) => {
       if (!sha.test(item?.sha) || typeof item?.commit?.message !== "string")
         throw Error("GitHub sent an invalid commit.");
-      const [first, ...rest] = item.commit.message.replace(/\r\n/g, "\n").split("\n");
+      const first = item.commit.message.split("\n", 1)[0];
       const date = item.commit.committer?.date ?? item.commit.author?.date;
       return {
         sha: item.sha,
         title: (first.trim() || "Untitled commit").slice(0, 300),
-        body: rest.join("\n").trim().slice(0, 3000),
         date: typeof date === "string" && !Number.isNaN(Date.parse(date)) ? date : "",
         merge: Array.isArray(item.parents) && item.parents.length > 1,
       };

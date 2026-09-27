@@ -205,6 +205,10 @@ export function mountPlayer(actions: {
   };
   document.addEventListener("pointermove", wake);
   document.addEventListener("pointerdown", wake);
+  document.addEventListener("pointerdown", event => {
+    if ((event.target as HTMLElement).closest(".watch-panel, #speed, #audio-tracks, #tracks, #player-more")) return;
+    for (const panel of document.querySelectorAll<HTMLElement>(".watch-panel")) panel.hidden = true;
+  });
   document.addEventListener("keydown", wake);
   document.addEventListener("focusin", wake);
   document.addEventListener("pointerup", () => { dragging = false; wake(); });
@@ -215,31 +219,13 @@ export function mountPlayer(actions: {
     run(api.control("fullscreen"));
   el("play-next").onclick = el("next-episode").onclick = () => actions.next(latest);
   el("change-source").onclick = () => actions.sources(latest);
-  el("audio-tracks").onclick = () => {
-    el("audio-panel").hidden = !el("audio-panel").hidden;
-    el("track-panel").hidden = el("more-panel").hidden = el("speed-panel").hidden = true;
-    wake();
-  };
-  el("tracks").onclick = () => {
-    el("audio-panel").hidden = true;
-    el("speed-panel").hidden = true;
-    el("track-panel").hidden = !el("track-panel").hidden;
-    el("more-panel").hidden = true;
-    wake();
-  };
-  el("player-more").onclick = () => {
-    el("audio-panel").hidden = true;
-    el("speed-panel").hidden = true;
-    el("more-panel").hidden = !el("more-panel").hidden;
-    el("track-panel").hidden = true;
-    wake();
-  };
-  el("speed").onclick = () => {
-    el("audio-panel").hidden = true;
-    el("speed-panel").hidden = !el("speed-panel").hidden;
-    el("track-panel").hidden = el("more-panel").hidden = true;
-    wake();
-  };
+  for (const [button, panel] of [["audio-tracks", "audio-panel"], ["tracks", "track-panel"], ["player-more", "more-panel"], ["speed", "speed-panel"]]) {
+    el(button).onclick = () => {
+      const opening = el(panel).hidden;
+      for (const item of document.querySelectorAll<HTMLElement>(".watch-panel")) item.hidden = item.id !== panel || !opening;
+      wake();
+    };
+  }
   const speedSlider = el<HTMLInputElement>("speed-slider");
   let speedDragging = false;
   speedSlider.onpointerdown = () => {

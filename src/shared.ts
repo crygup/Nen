@@ -25,7 +25,7 @@ export interface Media {
       relationType: string;
       node: {
         id: number;
-        title: { romaji: string };
+        title: { english?: string | null; romaji: string };
         episodes?: number | null;
         format: string;
         type: string;
@@ -93,6 +93,7 @@ export interface Settings {
   discordPresence?: boolean;
   showAdult?: boolean;
   hideZeroSeeds?: boolean;
+  hideOpenAniList?: boolean;
   sourceMode?: "auto" | "manual";
   qualities?: number[];
   theme: Theme;
@@ -226,7 +227,7 @@ export interface Playback {
   skipNotice?: string;
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number; available?: boolean; installing?: boolean }
-export interface ChangelogEntry { sha: string; title: string; body: string; date: string; merge: boolean }
+export interface ChangelogEntry { sha: string; title: string; date: string; merge: boolean }
 export interface ChangelogPage { entries: ChangelogEntry[]; hasMore: boolean; stale: boolean; buildCommit: string }
 export interface TogetherState {
   connected: boolean;

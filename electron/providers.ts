@@ -283,7 +283,7 @@ export async function media(id: number): Promise<Media> {
   return normalizeMedia(
     (
       await gql(
-        `query($id:Int){Media(id:$id,type:ANIME){${fields} streamingEpisodes { title } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { romaji } episodes format type } } }}}`,
+        `query($id:Int){Media(id:$id,type:ANIME){${fields} streamingEpisodes { title } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { english romaji } episodes format type } } }}}`,
         { id },
       )
     ).Media,
@@ -582,7 +582,7 @@ function normalizeMedia(input: any): Media {
           node: {
             id: e.node.id,
             episodes: number(e.node.episodes, 10000) || null,
-            title: { romaji: str(e.node.title?.romaji) },
+            title: { english: str(e.node.title?.english) || null, romaji: str(e.node.title?.romaji) },
             format: str(e.node.format, 30),
             type: str(e.node.type, 30),
           },
