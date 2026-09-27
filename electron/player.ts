@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import type { Playback, Settings } from "../src/shared";
+import { audioTrackLanguage, type Playback, type Settings } from "../src/shared";
 export class Player {
   child?: ChildProcess;
   socket?: Socket;
   private request = 0;
   private fileLoaded = false;
   private restarted = false;
+  private preferredAudio?: string;
+  private audioChosen = false;
   private pending = new Map<
     number,
     {
@@ -42,6 +44,8 @@ export class Player {
     playbackRate = 1,
     volume = 100,
   ) {
+    this.preferredAudio = audioTrackLanguage({ lang: settings.audio.split(",")[0] });
+    this.audioChosen = false;
     const bundled = join(
       resourcePath,
       "mpv",
@@ -200,8 +204,16 @@ export class Player {
       if (data.name === "paused-for-cache") this.status.buffering = data.data === true;
       if (data.name === "chapter-list" && Array.isArray(data.data))
         this.status.chapters = data.data;
-      if (data.name === "track-list" && Array.isArray(data.data))
+      if (data.name === "track-list" && Array.isArray(data.data)) {
         this.status.tracks = data.data;
+        if (!this.audioChosen && this.preferredAudio) {
+          const track = this.status.tracks.find(t => t.type === "audio" && audioTrackLanguage(t) === this.preferredAudio);
+          if (track) {
+            this.audioChosen = true;
+            if (!track.selected) void this.command(["set_property", "aid", track.id]).catch(() => {});
+          }
+        }
+      }
       if (this.fileLoaded && this.restarted && this.status.duration > 0) this.status.ready = true;
       this.onChange();
     }

@@ -53,6 +53,7 @@ import {
 } from "./rules";
 import {
   isWatched,
+  audioTrackLanguage,
   canAutoSkip,
   episodeAvailability,
   automaticRelease,
@@ -261,6 +262,10 @@ async function installUpdate() {
 function save() {
   writeFileSync(statePath + ".tmp", JSON.stringify(state));
   renameSync(statePath + ".tmp", statePath);
+}
+function playbackSettings(mediaId: number): Settings {
+  const audio = state.seriesAudio?.[String(mediaId)];
+  return { ...state.settings, audio: typeof audio === "string" && /^[a-z]{3}$/.test(audio) ? audio : state.settings.audio };
 }
 function record() {
   if (current && player && player.status.duration > 0) {
@@ -688,7 +693,7 @@ async function play(
     await active.start(
       result.url,
       startAt,
-      state.settings,
+      playbackSettings(mediaId),
       app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "vendor"),
       process.platform === "win32"
         ? String(videoView!.getNativeWindowHandle().readUInt32LE())
@@ -761,13 +766,13 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
       if (!release) {
         if (!candidates) {
           anime = await providers.media(mediaId);
-          const result = await providers.releases(anime, episode, undefined, state.settings.source, sourceSearch.signal, state.settings.audio);
+          const result = await providers.releases(anime, episode, undefined, state.settings.source, sourceSearch.signal, playbackSettings(mediaId).audio);
           candidates = result.items;
           if (!candidates.length && result.errors.length) failure = result.errors.join(" ");
           for (const row of candidates) known.set(row.hash, row);
         }
         if (request !== playbackRequest) return;
-        release = candidates.find(r => r.hash === preferredHash && !attempted.has(r.hash)) ?? automaticRelease(candidates.filter(r => !attempted.has(r.hash)), episode, state.settings);
+        release = candidates.find(r => r.hash === preferredHash && !attempted.has(r.hash)) ?? automaticRelease(candidates.filter(r => !attempted.has(r.hash)), episode, playbackSettings(mediaId));
       }
       if (!release) break;
       attempted.add(release.hash);
@@ -1293,7 +1298,7 @@ else {
           query === undefined ? undefined : text(query),
           state.settings.source,
           undefined,
-          state.settings.audio,
+          playbackSettings(anime.id).audio,
         );
         known.clear();
         for (const r of result.items) known.set(r.hash, r);
@@ -1401,11 +1406,20 @@ else {
             )
           )
             throw Error("Track not found.");
-          return player.command([
+          const active = player;
+          const mediaId = active.status.mediaId;
+          const track = active.status.tracks.find(t => t.type === "audio" && t.id === value);
+          await active.command([
             "set_property",
             action === "audio" ? "aid" : "sid",
             value === 0 ? "no" : value,
           ]);
+          const language = track && audioTrackLanguage(track);
+          if (action === "audio" && mediaId && language) {
+            (state.seriesAudio ??= {})[String(mediaId)] = language;
+            save();
+          }
+          return;
         }
         throw Error("Invalid player action.");
       });

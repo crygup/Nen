@@ -151,3 +151,8 @@ export function mergeWatch(target: Record<string, WatchEntry>, incoming: Record<
     current.updated = Math.max(current.updated, row.updated);
   }
 }
+
+export function canSyncWatch(entry: WatchEntry): boolean {
+  return entry.status !== "CURRENT" || entry.count > 0 || entry.repeat > 0
+    || entry.runs.some(run => Object.values(run.episodes).some(episode => episode.watched));
+}

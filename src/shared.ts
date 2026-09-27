@@ -174,6 +174,7 @@ export interface SyncChange {
 export interface SyncPreview { changes: SyncChange[]; first: boolean }
 export interface ImportPreview { count: number; episodes: number; newEntries: number; changedEntries: number; path: string }
 export interface State {
+  seriesAudio?: Record<string, string>;
   volume?: number;
   version?: string;
   window?: { width: number; height: number; maximized: boolean };
@@ -415,6 +416,19 @@ export function latestEpisode(media: Media, now = Date.now() / 1000): number {
   );
 }
 export const audioLanguages = [["jpn", "Japanese"], ["eng", "English"], ["spa", "Spanish"], ["fra", "French"], ["deu", "German"], ["ita", "Italian"], ["por", "Portuguese"], ["zho", "Chinese"], ["kor", "Korean"], ["rus", "Russian"], ["ara", "Arabic"], ["hin", "Hindi"]] as const;
+const audioAliases: Record<string, string> = { ja: "jpn", en: "eng", es: "spa", fr: "fra", fre: "fra", de: "deu", ger: "deu", it: "ita", pt: "por", zh: "zho", chi: "zho", ko: "kor", ru: "rus", ar: "ara", hi: "hin" };
+export function audioTrackLanguage(track: { lang?: string; title?: string }): string | undefined {
+  const raw = track.lang?.trim().toLowerCase().split(/[-_]/)[0] ?? "";
+  const code = audioAliases[raw] ?? raw;
+  const language = audioLanguages.find(([id, name]) => id === code || name.toLowerCase() === code)
+    ?? audioLanguages.find(([id, name]) => new RegExp("\\b(?:" + id + "|" + name + ")\\b", "i").test(track.title ?? ""));
+  return language?.[0];
+}
+export function audioTrackName(track: { id: number; lang?: string; title?: string }): string {
+  const language = audioTrackLanguage(track);
+  return language === "jpn" ? "Japanese/Native" : audioLanguages.find(([id]) => id === language)?.[1] ?? `Track ${track.id}`;
+}
+
 export function releaseAudio(release: Pick<Release, "title">): { languages: string[]; inferred: boolean } {
   const title = release.title.replace(/[._-]/g, " ");
   const languages = audioLanguages.filter(([code, name]) => new RegExp("\\b(?:" + code + "|" + name + ")\\s*(?:dub(?:bed)?|audio)\\b|\\b(?:dub(?:bed)?|audio)\\s*[:=]?\\s*(?:" + code + "|" + name + ")\\b", "i").test(title)).map(([code]) => code);

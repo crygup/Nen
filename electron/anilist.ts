@@ -1,5 +1,5 @@
 import type { AniListState, SyncBase, SyncChange, SyncPreview, WatchEntry, WatchStatus } from "../src/shared";
-import { newEntry } from "./watch-data";
+import { newEntry, canSyncWatch } from "./watch-data";
 
 interface RemoteEntry extends SyncBase {
   format?: string;
@@ -46,7 +46,7 @@ export async function readRemote(token: string): Promise<{ user: string; entries
 export function preview(local: Record<string, WatchEntry>, remote: Record<string, RemoteEntry>, sync: AniListState): SyncPreview {
   const changes: SyncChange[] = [];
   for (const id of new Set([...Object.keys(local), ...Object.keys(remote)])) {
-    const here = local[id], there = remote[id], base = sync.baseline[id];
+    const here = local[id] && canSyncWatch(local[id]) ? local[id] : undefined, there = remote[id], base = sync.baseline[id];
     if (there?.format === "MUSIC" || here?.format === "MUSIC") continue;
     for (const field of ["status", "count", "repeat"] as const) {
       const a = here?.[field] ?? null, b = there?.[field] ?? null;
@@ -70,7 +70,7 @@ export async function apply(token: string, local: Record<string, WatchEntry>, re
     const there = remote[String(id)];
     const here = local[String(id)];
     const upload = rows.filter(row => row.choice === "local" && row.local !== null);
-    if (upload.length) {
+    if (upload.length && here && canSyncWatch(here)) {
       const fields = upload.map(row => `${row.field === "count" ? "progress" : row.field}:$${row.field}`).join(",");
       const decl = upload.map(row => `$${row.field}:${row.field === "status" ? "MediaListStatus" : "Int"}`).join(",");
       const vars = Object.fromEntries(upload.map(row => [row.field, row.local]));

@@ -15,7 +15,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
-:root[data-theme="dark"] {
+:root[data-theme="dark"], .player-stage, .player-mode dialog {
   color-scheme: dark;
   --bg: #202530;
   --panel: #302d3f;
@@ -924,7 +924,6 @@ html.player-mode body {
   background: transparent !important;
   overflow: hidden;
   color: #fff;
-  color-scheme: dark;
 }
 .player-mode #app {
   height: 100vh;
@@ -1178,11 +1177,6 @@ html.player-mode body {
 .controls-hidden .watch-footer {
   opacity: 0;
   pointer-events: none;
-}
-.controls-hidden .watch-header:focus-within,
-.controls-hidden .watch-footer:focus-within {
-  opacity: 1;
-  pointer-events: auto;
 }
 .controls-hidden .player-stage,
 .controls-hidden .player-stage * {
@@ -1707,13 +1701,14 @@ dialog {
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 650px) minmax(0, 1fr);
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 650px) minmax(0, 1fr);
 }
 .topbar #search {
   width: 100%;
   margin: 0;
 }
 #page-title h1 {
+  white-space: nowrap;
   font-size: 26px;
   margin: 0;
   line-height: 1.2;
@@ -1730,7 +1725,7 @@ dialog {
 }
 @media (max-width: 1250px) {
   .topbar {
-    grid-template-columns: auto minmax(180px, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 16px;
   }
   #page-title h1 {
@@ -1878,6 +1873,7 @@ dialog::-webkit-scrollbar-button { display: none; }
 .chat-collapsed .together-chat header h3 { display: none; }
 .watch-together { position: fixed; right: 0; top: 0; bottom: 0; width: 320px; padding: 20px; background: var(--side); overflow-y: auto; z-index: 20; }
 .watch-together[hidden] { display: none; }
+.watch-together > h2 { margin-bottom: 20px; }
 .watch-together .together-room { display: flex; flex-direction: column; min-height: calc(100% - 70px); }
 .watch-together .together-chat { position: static; width: auto; padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); margin-top: 20px; flex: 1; min-height: 240px; }
 .watch-together.chat-enabled.chat-collapsed { width: 52px; padding: 8px; }
@@ -1914,8 +1910,6 @@ dialog::-webkit-scrollbar-button { display: none; }
 .together-entry h2 { margin: 0; font-size: 28px; }
 .together-entry-actions { display: flex; gap: 18px; }
 [data-connecting] { font: 24px monospace; height: 28px; }
-.workspace:has(#together-lobby.chat-enabled) .topbar { grid-template-columns: auto minmax(0, 1fr); }
-.workspace:has(#together-lobby.chat-enabled) #page-actions { display: none; }
 
 html.window-fullscreen.player-mode { scrollbar-gutter: auto; }
 

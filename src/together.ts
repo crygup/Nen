@@ -7,8 +7,8 @@ export function mountTogether(root: HTMLElement, player = false) {
   root.innerHTML = `${player ? "<h2>Watch together</h2>" : ""}<p class="together-error" role="alert"></p>
     <div class="together-entry"><h2>Watch together</h2><div class="together-entry-actions"><button data-create>Create session</button><button data-join-open>Join session</button></div><span data-connecting role="status" aria-label="Creating session" hidden>|</span></div>
     <dialog class="together-join" aria-label="Join session"><h2>Join session</h2><form data-join><label>Session code<input name="code" type="password" maxlength="24" required autocomplete="off" spellcheck="false"></label><div class="actions"><button type="button" data-join-cancel>Cancel</button><button class="primary">Join session</button></div><p data-join-error role="alert"></p></form></dialog>
-    <div class="together-room" hidden><div class="together-controls"><h3>Controls and settings</h3><div class="together-invite"><span>Session code</span><button data-copy aria-label="Copy session code" title="Copy session code"></button><button data-reveal aria-label="Reveal session code" aria-pressed="false"></button><span data-copied role="status"></span></div>
-    <p data-title hidden></p><p data-status role="status"></p>
+    <div class="together-room" hidden><div class="together-controls">${player ? "" : "<h3>Controls and settings</h3>"}<div class="together-invite"><span>Session code</span><button data-copy aria-label="Copy session code" title="Copy session code"></button><button data-reveal aria-label="Reveal session code" aria-pressed="false"></button><span data-copied role="status"></span></div>
+    <p data-title hidden></p><p data-status role="status" ${player ? "hidden" : ""}></p>
     <div class="together-host" hidden>
     <label><input type="checkbox" data-permission> Allow anyone to pause or resume</label>
     <label><input type="checkbox" data-chat-permission> Enable chat</label>
@@ -54,12 +54,12 @@ export function mountTogether(root: HTMLElement, player = false) {
     el(".together-host").hidden = !s.host;
     el<HTMLInputElement>("[data-permission]").checked = !!s.allowPause;
     el<HTMLInputElement>("[data-chat-permission]").checked = s.chatEnabled !== false;
-    el("[data-title]").hidden = !s.selection;
+    el("[data-title]").hidden = player || !s.selection;
     el("[data-status]").textContent = !s.selection ? (s.host ? "" : "Waiting for the host to choose an episode.") : s.waiting ? "Waiting for everyone to load." : s.paused ? "Paused" : "Watching together";
     const self = s.members.find(m => m.id === s.self);
     const loading = !!s.selection && !self?.ready && !self?.error;
     el("[data-status]").classList.toggle("loading", loading);
-    if (loading) el("[data-status]").textContent = s.selection?.hash || s.host ? "Loading episode…" : "Waiting for the host’s source…";
+    if (loading) el("[data-status]").textContent = "Loading episode…";
     el("[data-retry]").hidden = !s.selection || !self?.error;
     const key = s.selection ? s.selection.mediaId + ":" + s.selection.episode : "";
     if (key !== titleKey) {

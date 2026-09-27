@@ -1,6 +1,6 @@
 import { playerNotice } from "./player-notice";
 import { mountTogether } from "./together";
-import type { Playback, SegmentType } from "./shared";
+import { audioTrackName, type Playback, type SegmentType } from "./shared";
 const api = window.nen;
 const esc = (s: unknown) =>
   String(s ?? "").replace(
@@ -30,7 +30,6 @@ export function mountPlayer(actions: {
 }) {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
-  document.documentElement.dataset.theme = "dark";
   root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Opening video…</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
@@ -207,6 +206,9 @@ export function mountPlayer(actions: {
   document.addEventListener("pointermove", wake);
   document.addEventListener("pointerdown", wake);
   document.addEventListener("keydown", wake);
+  document.addEventListener("focusin", wake);
+  document.addEventListener("pointerup", () => { dragging = false; wake(); });
+  document.addEventListener("pointercancel", () => { dragging = false; wake(); });
   el("stop").onclick = () => run(api.control("stop"));
   el("pause").onclick = () => run(api.control("pause"));
   el("fullscreen").onclick = el("fullscreen-top").onclick = () =>
@@ -333,7 +335,9 @@ export function mountPlayer(actions: {
   });
   wake();
   return (p: Playback) => {
+    const wasBlocked = !latest?.ready || latest.paused || latest.buffering || latest.loadingNotice || latest.error;
     latest = p;
+    if (wasBlocked && p.ready && !p.paused && !p.buffering && !p.loadingNotice && !p.error) wake();
     el("buffering").hidden = !p.error && !p.loadingNotice && !!p.ready && !p.seeking && !p.buffering;
     el("buffering").classList.toggle("failed", !!p.error);
     el("buffering").textContent =
@@ -426,7 +430,7 @@ export function mountPlayer(actions: {
         const tracks = p.tracks.filter(t => t.type === type);
         panel.innerHTML = '<strong>' + (type === "audio" ? "Audio tracks" : "Subtitles") + '</strong><div class="track-list">'
           + (type === "sub" ? '<button data-track-id="0" aria-pressed="' + !tracks.some(t => t.selected) + '">Off</button>' : "")
-          + tracks.map(t => '<button data-track-id="' + t.id + '" aria-pressed="' + !!t.selected + '">' + esc(t.title || t.lang || 'Track ' + t.id) + '</button>').join("")
+          + tracks.map(t => '<button data-track-id="' + t.id + '" aria-pressed="' + !!t.selected + '">' + esc(type === "audio" ? audioTrackName(t) : t.title || t.lang || 'Track ' + t.id) + '</button>').join("")
           + (!tracks.length ? '<p>No ' + (type === "audio" ? 'audio tracks' : 'subtitles') + ' available.</p>' : "") + '</div>';
         panel.querySelectorAll<HTMLButtonElement>("[data-track-id]").forEach(button => {
           button.onclick = () => run(api.control(type, Number(button.dataset.trackId)));

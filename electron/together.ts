@@ -97,16 +97,12 @@ export class Together {
     if (Date.now() - this.lastPing > 10000) this.ping();
     const key = selection.mediaId + ":" + selection.episode;
     if (this.revision !== s.revision && !selection.hash) this.key = "";
-    if (key !== this.key && !this.loading && (s.host || selection.hash)) {
+    if (key !== this.key && !this.loading) {
       this.key = key; this.loading = true; this.failure = ""; this.readySent = ""; this.revision = s.revision!;
       const generation = this.generation;
       try { await this.hooks.command(["set_property", "pause", true]).catch(() => {}); await this.hooks.prepare(selection.mediaId, selection.episode, selection.hash || undefined); }
       catch (error) { if (generation === this.generation && this.state.selection?.mediaId === selection.mediaId && this.state.selection?.episode === selection.episode) { this.failure = String((error as Error).message || "Could not load video. Retry loading.").slice(0, 200); this.send({ type: "ready", revision: s.revision, ready: false, error: this.failure }); } }
       finally { if (generation === this.generation) this.loading = false; }
-      return;
-    }
-    if (key !== this.key && !s.host && !selection.hash) {
-      await this.hooks.command(["set_property", "pause", true]).catch(() => {});
       return;
     }
     const p = this.hooks.playback();
