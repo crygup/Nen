@@ -36,6 +36,8 @@ const api: API = {
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
+  changelog: (page, refresh) => ipcRenderer.invoke("changelog", page, refresh),
+  openChangelogCommit: sha => ipcRenderer.invoke("openChangelogCommit", sha),
   onUpdateStatus: callback => {
     const listener = (_: unknown, status: UpdateStatus) => callback(status);
     ipcRenderer.on("update-status", listener);

@@ -225,6 +225,8 @@ export interface Playback {
   skipNotice?: string;
 }
 export interface UpdateStatus { busy: boolean; message: string; percent?: number; available?: boolean; installing?: boolean }
+export interface ChangelogEntry { sha: string; title: string; body: string; date: string; merge: boolean }
+export interface ChangelogPage { entries: ChangelogEntry[]; hasMore: boolean; stale: boolean; buildCommit: string }
 export interface TogetherState {
   connected: boolean;
   code?: string;
@@ -269,6 +271,8 @@ export interface API {
   checkUpdates(): Promise<UpdateStatus>;
   updateStatus(): Promise<UpdateStatus>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+  changelog(page: number, refresh?: boolean): Promise<ChangelogPage>;
+  openChangelogCommit(sha?: string): Promise<void>;
   autoPlay(mediaId: number, episode: number): Promise<void>;
   startVideo(): Promise<void>;
   onVideo(

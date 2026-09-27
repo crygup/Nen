@@ -1760,6 +1760,25 @@ dialog {
 
 .update-actions { gap: 16px; }
 .update-actions button { width: 150px; height: 40px; }
+.changelog-view .settings-tabs, .changelog-view #settings, .changelog-view #settings-message { display: none; }
+#settings-changelog[hidden] { display: none; }
+#settings-changelog { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow-y: auto; padding: 20px 30px 28px; }
+.changelog-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.changelog-intro { color: var(--muted); margin: 18px 0 8px; }
+#changelog-status { min-height: 20px; color: var(--muted); margin: 8px 0; }
+#changelog-status:empty { display: none; }
+.changelog-day { margin-top: 20px; }
+.changelog-day h3 { color: var(--muted); font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.changelog-entry { border-top: 1px solid var(--line); padding: 12px 0; }
+.changelog-title { font-size: 15px; font-weight: 600; margin: 0 0 6px; overflow-wrap: anywhere; }
+.changelog-meta { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.changelog-meta button { border: 0; background: transparent; color: var(--accent); padding: 0; font-size: 12px; text-decoration: underline; }
+.changelog-meta span { border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+.changelog-entry details { margin-top: 8px; }
+.changelog-entry summary { width: fit-content; color: var(--muted); font-size: 12px; cursor: pointer; }
+.changelog-entry details p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 0; }
+#changelog-more { margin-top: 18px; }
+@media (max-width: 600px) { #settings-changelog { padding: 18px 16px 24px; } }
 .update-toast {
   position: fixed;
   inset: auto auto 24px 50%;

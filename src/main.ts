@@ -23,6 +23,7 @@ import type {
   EpisodePage,
   WatchStatus,
   SyncChange,
+  ChangelogEntry,
 } from "./shared";
 const api = window.nen;
 document.addEventListener(
@@ -1201,10 +1202,10 @@ function settings() {
     `<h2 id="dialog-title">Settings</h2>
     <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase()}" aria-controls="settings-${name.toLowerCase()}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(i === 0 ? "settings" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
     <form id="settings">
-    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
+    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button><button id="open-changelog" type="button">Changelog</button></div></section>
     <section id="settings-streaming" role="tabpanel" aria-labelledby="settings-tab-streaming" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
     <section id="settings-account" role="tabpanel" aria-labelledby="settings-tab-account" hidden></section>
-    </form><p id="settings-message" role="status"></p>`, 
+    </form><section id="settings-changelog" aria-label="Changelog" hidden><div class="changelog-toolbar"><button id="changelog-back" type="button">Back to settings</button><div class="actions"><button id="changelog-refresh" type="button">Refresh</button><button id="changelog-github" type="button">View on GitHub</button></div></div><p class="changelog-intro">Recent commits on main. A download may not be ready for each change.</p><p id="changelog-status" role="status"></p><div id="changelog-list"></div><button id="changelog-more" type="button" hidden>Load more</button></section><p id="settings-message" role="status"></p>`,
   );
   const version = d.querySelector(".dialog-header .eyebrow")!;
   version.innerHTML = `<strong>Nen</strong> - ${esc(state.version)}`;
@@ -1213,6 +1214,125 @@ function settings() {
   const form = d.querySelector<HTMLFormElement>("#settings")!;
   const message = d.querySelector<HTMLElement>("#settings-message")!;
   bindSectionTabs(d);
+  const changelogView = d.querySelector<HTMLElement>("#settings-changelog")!;
+  const changelogList = d.querySelector<HTMLElement>("#changelog-list")!;
+  const changelogStatus = d.querySelector<HTMLElement>("#changelog-status")!;
+  const changelogRefresh = d.querySelector<HTMLButtonElement>("#changelog-refresh")!;
+  const changelogMore = d.querySelector<HTMLButtonElement>("#changelog-more")!;
+  const changelogOpen = d.querySelector<HTMLButtonElement>("#open-changelog")!;
+  let changelogEntries: ChangelogEntry[] = [];
+  let changelogPage = 0;
+  let changelogHasMore = false;
+  let changelogBuild = "";
+  let changelogLoading = false;
+  let changelogRequest = 0;
+  const renderChangelog = () => {
+    changelogList.replaceChildren();
+    if (!changelogEntries.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "No commits found.";
+      changelogList.append(empty);
+      return;
+    }
+    let lastDate = "";
+    let group: HTMLElement;
+    for (const entry of changelogEntries) {
+      const date = entry.date ? new Date(entry.date).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "Date unknown";
+      if (date !== lastDate) {
+        group = document.createElement("section");
+        group.className = "changelog-day";
+        const heading = document.createElement("h3");
+        heading.textContent = date;
+        group.append(heading);
+        changelogList.append(group);
+        lastDate = date;
+      }
+      const item = document.createElement("article");
+      item.className = "changelog-entry";
+      const title = document.createElement("p");
+      title.className = "changelog-title";
+      title.textContent = entry.title;
+      const meta = document.createElement("div");
+      meta.className = "changelog-meta";
+      const link = document.createElement("button");
+      link.type = "button";
+      link.textContent = entry.sha.slice(0, 7);
+      link.setAttribute("aria-label", `View commit ${entry.sha.slice(0, 7)} on GitHub`);
+      link.onclick = () => void api.openChangelogCommit(entry.sha).catch(error);
+      meta.append(link);
+      if (entry.merge || entry.sha === changelogBuild) {
+        const badge = document.createElement("span");
+        badge.textContent = entry.sha === changelogBuild ? "Your build" : "Merge";
+        meta.append(badge);
+      }
+      item.append(title, meta);
+      if (entry.body) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "More details";
+        const body = document.createElement("p");
+        body.textContent = entry.body;
+        details.append(summary, body);
+        item.append(details);
+      }
+      group!.append(item);
+    }
+  };
+  const loadChangelog = async (nextPage: number, refresh = false) => {
+    if (changelogLoading) return;
+    changelogLoading = true;
+    const request = ++changelogRequest;
+    changelogStatus.textContent = "Loading commits…";
+    changelogRefresh.disabled = true;
+    changelogMore.disabled = true;
+    try {
+      const result = await api.changelog(nextPage, refresh);
+      if (request !== changelogRequest || !d.open) return;
+      changelogEntries = nextPage === 1 ? result.entries : [...changelogEntries, ...result.entries.filter(entry => !changelogEntries.some(old => old.sha === entry.sha))];
+      changelogPage = nextPage;
+      changelogHasMore = result.hasMore;
+      changelogBuild = result.buildCommit;
+      renderChangelog();
+      changelogStatus.textContent = result.stale ? "Could not refresh. Showing saved commits." : "";
+      changelogRefresh.textContent = result.stale ? "Try again" : "Refresh";
+    } catch (e) {
+      if (request !== changelogRequest || !d.open) return;
+      changelogStatus.textContent = e instanceof Error ? e.message : "Could not load the changelog. Try again.";
+      changelogRefresh.textContent = "Try again";
+    } finally {
+      if (request === changelogRequest && d.open) {
+        changelogLoading = false;
+        changelogRefresh.disabled = false;
+        changelogMore.disabled = false;
+        changelogMore.hidden = !changelogHasMore;
+      }
+    }
+  };
+  changelogOpen.onclick = () => {
+    d.classList.add("changelog-view");
+    d.querySelector("#dialog-title")!.textContent = "Changelog";
+    changelogView.hidden = false;
+    form.hidden = true;
+    message.hidden = true;
+    d.querySelector<HTMLElement>(".settings-tabs")!.hidden = true;
+    changelogView.scrollTop = 0;
+    d.querySelector<HTMLButtonElement>("#changelog-back")!.focus();
+    void loadChangelog(1);
+  };
+  d.querySelector<HTMLButtonElement>("#changelog-back")!.onclick = () => {
+    changelogRequest++;
+    changelogLoading = false;
+    d.classList.remove("changelog-view");
+    d.querySelector("#dialog-title")!.textContent = "Settings";
+    changelogView.hidden = true;
+    form.hidden = false;
+    message.hidden = false;
+    d.querySelector<HTMLElement>(".settings-tabs")!.hidden = false;
+    changelogOpen.focus();
+  };
+  changelogRefresh.onclick = () => void loadChangelog(1, true);
+  changelogMore.onclick = () => void loadChangelog(changelogPage + 1);
+  d.querySelector<HTMLButtonElement>("#changelog-github")!.onclick = () => void api.openChangelogCommit().catch(error);
   const transfer = document.createElement("section");
   transfer.innerHTML = `<h3 class="local-data-heading">AniList</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
   d.querySelector("#settings-account")!.append(transfer);
@@ -1328,6 +1448,7 @@ function settings() {
     catch (e) { showUpdate({ busy: false, available: install, message: e instanceof Error ? e.message : "The update failed." }); }
   });
   d.onclose = () => {
+    changelogRequest++;
     unsubscribeUpdate();
     dismissToast();
     save();

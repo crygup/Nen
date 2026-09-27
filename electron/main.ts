@@ -1,6 +1,7 @@
 import { Together } from "./together";
 import { DiscordPresence, DISCORD_APP_ID } from "./discord";
 import { findUpdate, downloadUpdate, type Update } from "./updates";
+import { listChangelog } from "./changelog";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
@@ -1397,6 +1398,15 @@ else {
       handle("checkUpdates", checkUpdates);
       handle("installUpdate", installUpdate);
       handle("updateStatus", () => updateStatus);
+      handle("changelog", async (page, refresh) => ({
+        ...await listChangelog(page, refresh === true),
+        buildCommit: NEN_BUILD_COMMIT,
+      }));
+      handle("openChangelogCommit", (commit) => {
+        if (commit !== undefined && (typeof commit !== "string" || !/^[a-f0-9]{40}$/.test(commit)))
+          throw Error("Invalid commit.");
+        return shell.openExternal(`https://github.com/may-be-gay/Nen/${commit ? `commit/${commit}` : "commits/main/"}`);
+      });
       handle("settings", (value) => {
         state.settings = settings(value);
         discordPresence.update(state.settings.discordPresence === true, player?.status, together.state);
