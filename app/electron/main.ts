@@ -1400,6 +1400,16 @@ else {
         }
         if (action === "pause") return player.command(["cycle", "pause"]);
         if (!Number.isFinite(value)) throw Error("Invalid player value.");
+        if (["subtitleDelay", "subtitleSize", "subtitlePosition"].includes(action)) {
+          const limits = { subtitleDelay: [-30,30,"sub-delay"], subtitleSize: [50,250,"sub-scale"], subtitlePosition: [0,100,"sub-pos"] } as const;
+          const key = action as keyof typeof limits;
+          const [min,max,property] = limits[key];
+          if (!Number.isFinite(value) || value < min || value > max) throw Error("Invalid subtitle value.");
+          await player.command(["set_property",property,key === "subtitleSize" ? value / 100 : key === "subtitlePosition" ? 100-value : value]);
+          state.settings[key] = value;
+          save();
+          return;
+        }
         if (action === "speed") {
           if (value < 0.25 || value > 4) throw Error("Invalid playback speed.");
           await player.command(["set_property", "speed", value]);
@@ -1427,13 +1437,14 @@ else {
             throw Error("Track not found.");
           const active = player;
           const mediaId = active.status.mediaId;
-          const track = active.status.tracks.find(t => t.type === "audio" && t.id === value);
+          const track = active.status.tracks.find(t => t.type === (action === "audio" ? "audio" : "sub") && t.id === value);
           await active.command([
             "set_property",
             action === "audio" ? "aid" : "sid",
             value === 0 ? "no" : value,
           ]);
           const language = track && audioTrackLanguage(track);
+          if (action === "sub") Player.subtitleSelection = track ? { lang: track.lang, title: track.title } : null;
           if (action === "audio" && mediaId && language) {
             (state.seriesAudio ??= {})[String(mediaId)] = language;
             save();
@@ -1467,7 +1478,7 @@ else {
         return shell.openExternal(`https://github.com/may-be-gay/Nen/${commit ? `commit/${commit}` : "commits/main/"}`);
       });
       handle("settings", (value) => {
-        state.settings = settings(value);
+        state.settings = { ...state.settings, ...settings(value) };
         discordPresence.update(state.settings.discordPresence === true, player?.status, together.state);
         nativeTheme.themeSource = state.settings.theme;
         save();

@@ -1,0 +1,97 @@
+/* All app layout and controls come from src/style.css. These are browser-only differences. */
+/* Keep the image on the same layer when the hover zoom ends. */
+html .poster img,html .recent-card img,html .list-card .cover img {display:block;transition:transform 180ms ease;transform:translateZ(0) scale(1)}
+html .poster:hover img,html .recent-card:hover img,html .list-card:hover .cover img {transform:translateZ(0) scale(1.025)}
+#browser-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+.update-actions,label:has([name="discordPresence"]),label:has([name="autoUpdates"]),label:has([name="hideZeroSeeds"]),label:has([name="source"]),label:has([name="sourceMode"]),#settings-tab-changelog{display:none!important}
+#settings-account #clear-cache{display:none!important}
+
+
+/* Firefox uses different range pseudo-elements from Chromium. */
+.player-mode input[type="range"]::-moz-range-track {
+  height:4px;border-radius:2px;background:#ffffff50;
+}
+.player-mode #seek::-moz-range-track {
+  background:var(--segments,linear-gradient(transparent,transparent)),linear-gradient(to right,#c1d0b0 0 var(--played,0%),transparent var(--played,0%) 100%),var(--downloaded,linear-gradient(transparent,transparent)),#ffffff50;
+}
+.player-mode input[type="range"]::-moz-range-thumb {
+  width:12px;height:12px;background:#f4f7ef;border:0;border-radius:50%;
+}
+.player-mode #seek::-moz-range-thumb {background:#c1d0b0}
+.player-mode input[type="range"]::-moz-range-progress {background:transparent}
+#change-source {display:none!important}
+#browser-video::cue {
+  font-family:Arial,sans-serif;font-size:var(--subtitle-size,2vw);font-weight:500;font-style:normal;color:#fff;background:transparent;text-shadow:0 1px 3px #000,1px 0 2px #000,-1px 0 2px #000;
+}
+#browser-video::cue(i) {font-style:normal}
+
+
+.awaiting-play #buffering::before {display:none}
+
+.room-player{position:fixed;inset:0;width:100%;height:100%;border:0;z-index:1000;background:#000}
+
+html .sidebar {overflow:hidden;transition:width 180ms ease,padding-inline 180ms ease}
+html .workspace {transition:margin-left 180ms ease}
+html .sidebar button {height:44px;min-height:44px;flex-shrink:0;white-space:nowrap;overflow:hidden}
+html .sidebar button svg {flex-shrink:0}
+html .sidebar .nav-label {font-size:13px;width:auto;vertical-align:baseline;transition:opacity 120ms ease}
+html .sidebar .sidebar-toggle {display:none;width:44px;padding:12px;justify-content:center;margin-bottom:12px;min-height:44px}
+html.sidebar-collapsed .sidebar {width:64px;padding-inline:8px}
+html.sidebar-collapsed .workspace {margin-left:64px}
+html.sidebar-collapsed .sidebar button {position:relative;justify-content:center;padding-inline:0;gap:0}
+html.sidebar-collapsed .sidebar .sidebar-toggle {align-self:center}
+html.sidebar-collapsed .sidebar .nav-label {position:absolute;opacity:0;pointer-events:none}
+@media(prefers-reduced-motion:reduce){
+ html .sidebar,html .workspace,html .sidebar .nav-label {transition:none}
+}
+@media(max-width:700px){
+ html .sidebar .sidebar-toggle {display:flex}
+ html .sidebar {width:210px;padding:16px 10px;height:100dvh}
+ html:not(.sidebar-collapsed) .sidebar {box-shadow:12px 0 28px #0005;z-index:20}
+ html .workspace {margin-left:64px;padding-bottom:32px;min-width:0}
+ html .topbar {height:auto;padding:20px 14px;grid-template-columns:1fr auto;gap:14px}
+ html .topbar #search {grid-column:1 / -1;grid-row:2;width:100%;min-width:0}
+ html #page-title h1 {font-size:22px;white-space:normal}
+ html #main {padding:12px 14px 28px}
+ html .home-grid,html .grid {grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 12px}
+ html .section-heading {gap:10px;align-items:center;flex-wrap:wrap}
+ html .section-heading h2 {font-size:18px;margin:0}
+ html .section-heading .actions {gap:6px;margin-left:auto}
+ html .section-heading button {min-height:40px;padding:8px}
+ html .poster h3,html .recent-title {font-size:13px;line-height:1.35}
+ html .browse-filters {grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ html .browse-filters select {width:100%;min-width:0}
+ html input,html select {font-size:16px}
+ html .episode {padding:14px 6px;gap:10px}
+ html dialog {max-width:calc(100vw - 20px);padding:20px;max-height:90dvh}
+ html dialog[open]:has(#settings,#help-content) {width:calc(100vw - 20px);height:85dvh;max-height:85dvh;grid-template-columns:1fr;grid-template-rows:auto auto minmax(0,1fr) auto}
+ html .settings-tabs {grid-column:1;grid-row:2;flex-direction:row;overflow-x:auto;padding:8px;border-right:0;border-bottom:1px solid var(--line)}
+ html .settings-tabs button {flex-shrink:0;min-height:44px}
+ html #settings,html #help-content {grid-column:1;grid-row:3;padding:18px}
+ html .together-room {grid-template-columns:1fr}
+ html #app.with-together {display:flex;flex-direction:column}
+ html .with-together .player-stage {min-height:55dvh;flex:1}
+ html .watch-together {width:100%;max-height:45dvh;overflow:auto}
+ html .watch-header {padding:14px}
+ html .watch-footer {padding:12px}
+ html .watch-buttons {gap:5px}
+ html .watch-buttons .icon-button {width:32px;min-width:32px}
+ html .watch-buttons #volume {display:none}
+ html #track-panel {grid-template-columns:140px minmax(0,1fr);gap:12px;width:calc(100vw - 24px)}
+ html .subtitle-adjustments {padding-right:12px}
+ html .series {display:grid;grid-template-columns:100px minmax(0,1fr);gap:16px;align-items:start}
+ html .series-poster {display:block;grid-template-columns:100px minmax(0,1fr);gap:16px;align-items:end;grid-column:1;grid-row:1 / 5}
+ html .series > div:not(.series-poster) {display:contents}
+ html .series .eyebrow {grid-column:2;grid-row:1;margin:0;align-self:start}
+ html .series h1 {grid-column:2;grid-row:2;margin:0;align-self:start;font-size:21px;overflow-wrap:anywhere}
+ html .series .synopsis {grid-column:2;grid-row:3;margin:0;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+ html .series #synopsis-toggle {grid-column:2;grid-row:4;margin:0;text-align:left;font-size:12px}
+ html .series .facts,html .series .genres {grid-column:1 / -1;margin:0}
+ html .series-list-actions {display:flex;flex-wrap:nowrap;align-items:stretch;gap:8px;margin:10px 0 0}
+ html .series-list-actions #watchlist-toggle,html .series-list-actions #favorite-toggle {flex:0 0 44px;width:44px;height:44px;min-height:44px;padding:10px}
+ html .series-list-actions #watchlist-toggle {font-size:13px;white-space:normal}
+ html .series .facts {flex-wrap:wrap;gap:8px 14px}
+ html #synopsis-toggle {min-height:44px;padding:8px 0}
+ html .watchlist-label {display:none}
+ html .watchlist-icon {display:block}
+}

@@ -219,11 +219,10 @@ export async function catalog(
   perPage = 24,
 ): Promise<Catalog> {
   if (mode === "romance") {
-    // Keep this curated shelf to the 100 most popular Romance titles.
     const batches = await Promise.all([1, 2].map(p => catalog("search", "genre:Romance", p, showAdult, 50)));
     const names = new Set(["Heterosexual", "Boys' Love", "Yuri", "Love Triangle", "Cohabitation", "Unrequited Love"]);
     const rank = (m: Media) => Math.max(0, ...(m.tags ?? []).filter(t => names.has(t.name)).map(t => t.rank));
-    const titles = batches.flatMap(b => b.media).filter(m => rank(m) >= 90).sort((a, b) => rank(b) - rank(a));
+    const titles = batches.flatMap(b => b.media).filter(m => rank(m) >= 70).sort((a, b) => rank(b) - rank(a));
     return { media: titles.slice((page - 1) * perPage, page * perPage), hasNextPage: page * perPage < titles.length, lastPage: Math.max(1, Math.ceil(titles.length / perPage)) };
   }
   const f = parseSearch(mode === "search" ? search : "");

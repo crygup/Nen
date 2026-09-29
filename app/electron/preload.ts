@@ -1,8 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { API, Playback, UpdateStatus } from "../src/shared";
+import type { API } from "../src/shared";
 ipcRenderer.on("window-fullscreen", (_event, value: boolean) => {
   document.documentElement.classList.toggle("window-fullscreen", value === true);
 });
+function subscribe<T>(channel: string, callback: (value: T) => void) {
+  const listener = (_: unknown, value: T) => callback(value);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
+}
 const api: API = {
   togetherCopyCode: () => ipcRenderer.invoke("togetherCopyCode"),
   togetherState: () => ipcRenderer.invoke("togetherState"),
@@ -10,11 +15,7 @@ const api: API = {
   togetherSend: message => ipcRenderer.invoke("togetherSend", message),
   togetherLeave: () => ipcRenderer.invoke("togetherLeave"),
   togetherReload: () => ipcRenderer.invoke("togetherReload"),
-  onTogether: callback => {
-    const listener = (_: unknown, state: import("../src/shared").TogetherState) => callback(state);
-    ipcRenderer.on("together", listener);
-    return () => ipcRenderer.removeListener("together", listener);
-  },
+  onTogether: callback => subscribe("together", callback),
   favoriteSet: (...a) => ipcRenderer.invoke("favoriteSet", ...a),
   uninstall: () => ipcRenderer.invoke("uninstall"),
   watchAdd: (...a) => ipcRenderer.invoke("watchAdd", ...a),
@@ -27,22 +28,14 @@ const api: API = {
   anilistPreview: () => ipcRenderer.invoke("anilistPreview"),
   anilistApply: (...a) => ipcRenderer.invoke("anilistApply", ...a),
   anilistDisconnect: () => ipcRenderer.invoke("anilistDisconnect"),
-  onWatchState: callback => {
-    const listener = (_: unknown, state: import("../src/shared").State) => callback(state);
-    ipcRenderer.on("watch-state", listener);
-    return () => ipcRenderer.removeListener("watch-state", listener);
-  },
+  onWatchState: callback => subscribe("watch-state", callback),
   startupUpdate: () => ipcRenderer.invoke("startupUpdate"),
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
   changelog: (page, refresh) => ipcRenderer.invoke("changelog", page, refresh),
   openChangelogCommit: sha => ipcRenderer.invoke("openChangelogCommit", sha),
-  onUpdateStatus: callback => {
-    const listener = (_: unknown, status: UpdateStatus) => callback(status);
-    ipcRenderer.on("update-status", listener);
-    return () => ipcRenderer.removeListener("update-status", listener);
-  },
+  onUpdateStatus: callback => subscribe("update-status", callback),
   autoPlay: (...a) => ipcRenderer.invoke("autoPlay", ...a),
   startVideo: () => ipcRenderer.invoke("startVideo"),
   onVideo: (callback, error) => {
@@ -80,15 +73,7 @@ const api: API = {
   undo: () => ipcRenderer.invoke("undo"),
   clear: (...a) => ipcRenderer.invoke("clear", ...a),
   external: (...a) => ipcRenderer.invoke("external", ...a),
-  onBack: (callback) => {
-    const listener = (_: unknown, direction: "back" | "forward" = "back") => callback(direction);
-    ipcRenderer.on("navigate-back", listener);
-    return () => ipcRenderer.removeListener("navigate-back", listener);
-  },
-  onPlayback: (callback) => {
-    const listener = (_: unknown, p: Playback) => callback(p);
-    ipcRenderer.on("playback", listener);
-    return () => ipcRenderer.removeListener("playback", listener);
-  },
+  onBack: callback => subscribe("navigate-back", (direction: "back" | "forward" = "back") => callback(direction)),
+  onPlayback: callback => subscribe("playback", callback),
 };
 contextBridge.exposeInMainWorld("nen", api);

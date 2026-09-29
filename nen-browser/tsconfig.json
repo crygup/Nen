@@ -1,0 +1,12 @@
+{
+  "extends": "../app/tsconfig.json",
+  "include": [
+    "browser.ts"
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "typeRoots": [
+      "../app/node_modules/@types"
+    ]
+  }
+}

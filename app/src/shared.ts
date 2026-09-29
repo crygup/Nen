@@ -1,4 +1,18 @@
+export const escapeHtml = (s: unknown) =>
+  String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ]!,
+  );
 export type Theme = "system" | "light" | "dark";
+export type SubtitleSelection = { lang?: string; title?: string } | null;
+export function matchSubtitle<T extends { lang?: string; title?: string }>(tracks: T[], selection: Exclude<SubtitleSelection, null>): T | undefined {
+  const language = audioTrackLanguage(selection);
+  return tracks.find(t => t.title === selection.title && audioTrackLanguage(t) === language)
+    ?? tracks.find(t => !!language && audioTrackLanguage(t) === language);
+}
 export type SegmentType = "op" | "ed" | "mixed-op" | "mixed-ed" | "recap";
 export interface Media {
   isAdult?: boolean;
@@ -90,6 +104,9 @@ export interface EpisodePage {
   notice?: string;
 }
 export interface Settings {
+  subtitleDelay?: number;
+  subtitleSize?: number;
+  subtitlePosition?: number;
   discordPresence?: boolean;
   showAdult?: boolean;
   hideZeroSeeds?: boolean;
@@ -248,6 +265,7 @@ export interface TogetherState {
   error?: string;
 }
 export interface API {
+  browserHistory?: boolean;
   togetherState(): Promise<TogetherState>;
   togetherCopyCode(): Promise<void>;
   togetherConnect(code?: string): Promise<void>;
@@ -310,6 +328,9 @@ export interface API {
       | "pause"
       | "seek"
       | "seekRelative"
+      | "subtitleDelay"
+      | "subtitleSize"
+      | "subtitlePosition"
       | "sources"
       | "speed"
       | "audio"

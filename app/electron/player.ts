@@ -4,8 +4,10 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { audioTrackLanguage, type Playback, type Settings } from "../src/shared";
+import { audioTrackLanguage, matchSubtitle, type SubtitleSelection, type Playback, type Settings } from "../src/shared";
 export class Player {
+  static subtitleSelection?: SubtitleSelection;
+  private subtitleChosen = false;
   child?: ChildProcess;
   socket?: Socket;
   private request = 0;
@@ -46,6 +48,7 @@ export class Player {
   ) {
     this.preferredAudio = audioTrackLanguage({ lang: settings.audio.split(",")[0] });
     this.audioChosen = false;
+    this.subtitleChosen = false;
     const bundled = join(
       resourcePath,
       "mpv",
@@ -86,6 +89,9 @@ export class Player {
       `--start=${position}`,
       `--alang=${settings.audio}`,
       `--slang=${settings.subtitles}`,
+      `--sub-delay=${settings.subtitleDelay ?? 0}`,
+      `--sub-scale=${(settings.subtitleSize ?? 100) / 100}`,
+      `--sub-pos=${100 - (settings.subtitlePosition ?? 5)}`,
       ...(settings.subtitles === "no" ? ["--sid=no"] : []),
 
     ];
@@ -206,6 +212,13 @@ export class Player {
         this.status.chapters = data.data;
       if (data.name === "track-list" && Array.isArray(data.data)) {
         this.status.tracks = data.data;
+        if (!this.subtitleChosen && Player.subtitleSelection !== undefined) {
+          const track = Player.subtitleSelection && matchSubtitle(this.status.tracks.filter(t => t.type === "sub"), Player.subtitleSelection);
+          if (track || Player.subtitleSelection === null) {
+            this.subtitleChosen = true;
+            void this.command(["set_property", "sid", track ? track.id : "no"]).catch(() => {});
+          }
+        }
         if (!this.audioChosen && this.preferredAudio) {
           const track = this.status.tracks.find(t => t.type === "audio" && audioTrackLanguage(t) === this.preferredAudio);
           if (track) {

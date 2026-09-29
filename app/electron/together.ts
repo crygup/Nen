@@ -1,5 +1,7 @@
 import type { Playback, TogetherState } from "../src/shared";
 
+// The existing session protocol requires a source ID before playback can start.
+export const browserSourceHash = '0000000000000000000000000000000000000001';
 export class Together {
   state: TogetherState = { connected: false, members: [], messages: [] };
   private socket?: WebSocket;
@@ -14,7 +16,7 @@ export class Together {
   private lastPing = 0;
   private failure = "";
   constructor(private hooks: {
-    version: string;
+    version: string; sourceHash?: string;
     changed: (state: TogetherState) => void;
     cancel?: () => void;
     playback: () => Playback | undefined;
@@ -100,7 +102,7 @@ export class Together {
     if (key !== this.key && !this.loading) {
       this.key = key; this.loading = true; this.failure = ""; this.readySent = ""; this.revision = s.revision!;
       const generation = this.generation;
-      try { await this.hooks.command(["set_property", "pause", true]).catch(() => {}); await this.hooks.prepare(selection.mediaId, selection.episode, selection.hash || undefined); }
+      try { await this.hooks.command(["set_property", "pause", true]).catch(() => {}); await this.hooks.prepare(selection.mediaId, selection.episode, selection.hash === browserSourceHash ? undefined : selection.hash || undefined); }
       catch (error) { if (generation === this.generation && this.state.selection?.mediaId === selection.mediaId && this.state.selection?.episode === selection.episode) { this.failure = String((error as Error).message || "Could not load video. Retry loading.").slice(0, 200); this.send({ type: "ready", revision: s.revision, ready: false, error: this.failure }); } }
       finally { if (generation === this.generation) this.loading = false; }
       return;
@@ -111,8 +113,8 @@ export class Together {
       if (this.readySent !== "loading") { this.readySent = "loading"; this.send({ type: "ready", revision: s.revision, ready: false, error: this.failure }); }
       return;
     }
-    if (s.host && !selection.hash && p.ready && p.release)
-      this.send({ type: "source", revision: s.revision, hash: p.release.hash });
+    if (s.host && !selection.hash && p.ready && (p.release || this.hooks.sourceHash))
+      this.send({ type: "source", revision: s.revision, hash: p.release?.hash || this.hooks.sourceHash });
     const ready = !!p.ready && !p.error && !p.seeking && !p.buffering && p.duration > 0;
     const error = p.error ? p.error.slice(0, 200) : "";
     const readiness = s.revision + ":" + ready + ":" + error;

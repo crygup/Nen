@@ -3,6 +3,7 @@ import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
 import "./style.css";
 import {
+  escapeHtml as esc,
   recentSeasons,
   labelForEpisode,
   episodeAvailability,
@@ -40,14 +41,6 @@ document.addEventListener(
   true,
 );
 const root = document.querySelector<HTMLDivElement>("#app")!;
-const esc = (s: unknown) =>
-  String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
-  );
 const title = (m: Media) => m.title.english || m.title.romaji;
 const time = (n: number) =>
   `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
@@ -95,7 +88,12 @@ type BrowseVisit = {
 let visits: BrowseVisit[] = [];
 let forwardVisits: BrowseVisit[] = [];
 let goingBack = false;
-function setRoute(next: string) {
+function setRoute(next: string, mediaId?: number) {
+  if (api.browserHistory && !playerMode && !goingBack) {
+    history.replaceState({ nenVisit: { route, mediaId: current?.id, mode, query, page } }, "");
+    if (route !== next || next === "series")
+      history.pushState({ nenVisit: { route: next, mediaId, mode, query, page } }, "");
+  }
   if (!goingBack && (route !== next || next === "series")) {
     visits.push({ route, mediaId: current?.id, mode, query, page });
     forwardVisits = [];
@@ -104,9 +102,16 @@ function setRoute(next: string) {
 }
 async function browseBack(direction: "back" | "forward" = "back") {
   if (goingBack) return;
+  if (api.browserHistory) {
+    history.go(direction === "back" ? -1 : 1);
+    return;
+  }
   const previous = (direction === "back" ? visits : forwardVisits).pop();
   if (!previous) return;
   (direction === "back" ? forwardVisits : visits).push({ route, mediaId: current?.id, mode, query, page });
+  await restoreVisit(previous);
+}
+async function restoreVisit(previous: BrowseVisit) {
   goingBack = true;
   mode = previous.mode;
   query = previous.query;
@@ -668,7 +673,7 @@ async function discover(targetPage = 1) {
 async function openMedia(id: number) {
   if (route !== "series") seriesReturn = route;
   const token = ++request;
-  setRoute("series");
+  setRoute("series", id);
   activeNav("");
   document.querySelector("#main")!.innerHTML =
     '<p class="loading">Loading series…</p>';
@@ -741,7 +746,7 @@ async function loadEpisodes(token = request) {
 function renderSeries() {
   const m = current!;
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes ?? "?"} episodes</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p class="synopsis">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
+  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes != null ? `${m.episodes} episodes` : latestEpisode(m) > 0 ? `${latestEpisode(m)} episodes aired` : "Episode count not announced"}</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p id="series-synopsis" class="synopsis synopsis-collapsed">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><button id="synopsis-toggle" class="quiet" aria-expanded="false" aria-controls="series-synopsis" hidden>Show more</button><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
     [true, false].map(related => {
       const edges = (m.relations?.edges ?? []).filter(e => e.node.type === "ANIME" && e.node.format !== "MUSIC"
         && ["PREQUEL", "SEQUEL"].includes(e.relationType) === related)
@@ -766,18 +771,16 @@ function renderSeries() {
   });
   synopsisSize?.disconnect();
   const synopsis = main.querySelector<HTMLElement>(".synopsis")!;
-  let previousWidth = 0;
+  const expand = main.querySelector<HTMLButtonElement>("#synopsis-toggle")!;
+  expand.onclick = () => {
+    const expanded = expand.getAttribute("aria-expanded") !== "true";
+    expand.setAttribute("aria-expanded", String(expanded));
+    expand.textContent = expanded ? "Show less" : "Show more";
+    synopsis.classList.toggle("synopsis-collapsed", !expanded);
+  };
   synopsisSize = new ResizeObserver(() => {
-    if (synopsis.clientWidth === previousWidth) return;
-    previousWidth = synopsis.clientWidth;
-    let size = 13;
-    synopsis.style.fontSize = size + "px";
-    while (synopsis.scrollHeight > 210 && size > 11) {
-      size -= 0.5;
-      synopsis.style.fontSize = size + "px";
-    }
-  });
-  synopsisSize.observe(synopsis);
+    expand.hidden = expand.getAttribute("aria-expanded") !== "true" && synopsis.scrollHeight <= synopsis.clientHeight + 1;
+  });  synopsisSize.observe(synopsis);
   renderEpisodes();
 }
 function renderEpisodes() {
@@ -1152,7 +1155,12 @@ function updateSeriesActions() {
   if (!current) return;
   const list = document.querySelector<HTMLButtonElement>("#watchlist-toggle");
   const favorite = document.querySelector<HTMLButtonElement>("#favorite-toggle");
-  if (list) list.textContent = state.watch[String(current.id)]?.status === "PLANNING" ? "Remove from watchlist" : "Add to watchlist";
+  if (list) {
+    const selected = state.watch[String(current.id)]?.status === "PLANNING";
+    const label = selected ? "Remove from watchlist" : "Add to watchlist";
+    list.setAttribute("aria-pressed", String(selected));list.setAttribute("aria-label", label);list.title = label;
+    list.innerHTML = `<svg class="watchlist-icon" viewBox="0 0 24 24" fill="${selected ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="watchlist-label">${label}</span>`;
+  }
   if (favorite) {
     const selected = !!state.favorites[String(current.id)];
     favorite.setAttribute("aria-pressed", String(selected));
@@ -1595,6 +1603,10 @@ async function start() {
     else void run(() => browseBack(direction));
   };
   api.onBack(navigate);
+  if (api.browserHistory && !playerMode)
+    window.addEventListener("popstate", event => {
+      if (event.state?.nenVisit) void run(() => restoreVisit(event.state.nenVisit));
+    });
   for (const event of ["mousedown", "mouseup", "auxclick"])
     document.addEventListener(event, e => {
       const mouse = e as MouseEvent;
@@ -1697,7 +1709,8 @@ async function start() {
       } catch {}
       await openMedia(returnMedia);
       goingBack = false;
-    } else if (new URLSearchParams(location.search).has("together")) showTogether();
+    } else if (api.browserHistory && history.state?.nenVisit) await restoreVisit(history.state.nenVisit);
+    else if (new URLSearchParams(location.search).has("together")) showTogether();
     else await home();
     clearInterval(animation);
     splash.classList.add("finished");

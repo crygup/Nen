@@ -1,0 +1,18 @@
+{
+  "name": "nen-browser",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 5174 --strictPort",
+    "build": "vite build",
+    "build:server": "node build-server.mjs",
+    "check:security": "node security-check.mjs"
+  },
+  "dependencies": {
+    "hls.js": "^1.6.16"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "vite": "^6.4.0"
+  }
+}
