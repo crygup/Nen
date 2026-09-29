@@ -63,6 +63,8 @@ export function createTogetherServer() {
         if (m.type === "ping") { if (!Number.isSafeInteger(m.sent) || m.sent < 0) throw Error("Invalid ping."); send(s, { type: "pong", sent: m.sent, now: Date.now() }); return; }
         if (m.type === "leave") { leave(s); send(s, { type: "ended", message: "" }); return; }
         if (m.type === "create" || m.type === "join") {
+          // Keep this in step with togetherProtocol in the shared client.
+          if (m.protocol !== undefined && m.protocol !== 1) throw Error("This Watch together protocol is not supported. Update Nen or the session server.");
           if (m.version === undefined) m.version = "legacy";
           if (m.version !== "legacy" && (typeof m.version !== "string" || m.version.length > 64 || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(m.version))) throw Error("Invalid app version.");
         }
@@ -70,14 +72,16 @@ export function createTogetherServer() {
           if (s.room) throw Error("Leave your current session first.");
           if (rooms.size >= 100) throw Error("All sessions are busy. Try again later.");
           const code = randomBytes(18).toString("base64url");
-          const r = { code, version: m.version, members: new Map(), nextGuest: 1, selection: null, revision: 0, playbackRate: 1, allowPause: false, chatEnabled: true, paused: true, wantPlay: false, position: 0, at: Date.now(), chat: [], created: Date.now() };
+          const r = { code, protocol: m.protocol, version: m.version, members: new Map(), nextGuest: 1, selection: null, revision: 0, playbackRate: 1, allowPause: false, chatEnabled: true, paused: true, wantPlay: false, position: 0, at: Date.now(), chat: [], created: Date.now() };
           rooms.set(code, r); join(r, true); return;
         }
         if (m.type === "join") {
           if (s.room) throw Error("Leave your current session first.");
           const r = typeof m.code === "string" && rooms.get(m.code);
           if (!r) throw Error("Session not found. Check the code.");
-          if (m.version !== r.version) throw Error(r.version === "legacy" || m.version === "legacy" ? "This session uses a different build type. Everyone must use an unversioned build, or update to the same Nen version." : `This session uses Nen ${r.version}. Install the same version as the host to join.`);
+          if (m.protocol !== r.protocol) throw Error("This session requires a compatible Watch together protocol. Update Nen on both devices.");
+          // Old clients do not declare compatibility. Preserve their exact-version rule.
+          if (m.protocol === undefined && m.version !== r.version) throw Error("These older builds require the same Nen version. Update both devices to use compatible builds.");
           if (r.members.size >= 10) throw Error("This session is full (10 people).");
           join(r, false); return;
         }

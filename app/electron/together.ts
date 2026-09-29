@@ -1,5 +1,8 @@
 import type { Playback, TogetherState } from "../src/shared";
 
+// Increment only when a session message or playback rule breaks compatibility.
+export const togetherProtocol = 1;
+
 // The existing session protocol requires a source ID before playback can start.
 export const browserSourceHash = '0000000000000000000000000000000000000001';
 export class Together {
@@ -29,7 +32,7 @@ export class Together {
     this.state = { connected: false, members: [], messages: [] };
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => { socket.close(); reject(Error("The session server did not respond.")); }, 10000);
-      socket.onopen = () => { this.send({ type: code ? "join" : "create", version: this.hooks.version, ...(code ? { code } : {}) }); };
+      socket.onopen = () => { this.send({ type: code ? "join" : "create", version: this.hooks.version, protocol: togetherProtocol, ...(code ? { code } : {}) }); };
       socket.onerror = () => { clearTimeout(timeout); reject(Error("Could not connect to Watch together.")); };
       socket.onclose = () => {
         clearTimeout(timeout);

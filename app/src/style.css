@@ -200,18 +200,14 @@ small {
 }
 .workspace {
   margin-left: 224px;
-  padding-bottom: 230px;
 }
 .topbar {
   height: 86px;
   padding: 0 42px;
-  display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 20px;
 }
 .topbar form {
-  width: 430px;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -1185,7 +1181,6 @@ button {
 }
 .topbar #search {
   position: relative;
-  width: min(650px, 100%);
   display: flex;
   gap: 12px;
   align-items: center;

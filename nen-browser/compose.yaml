@@ -8,9 +8,12 @@ services:
         NEN_COMMIT: ${NEN_COMMIT:-}
     restart: unless-stopped
     environment:
+      NEN_DOWNLOAD_DIR: /app/downloads
       ANILIST_CLIENT_ID: "51898"
     ports:
       - "127.0.0.1:8091:8091"
+    volumes:
+      - downloads:/app/downloads
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -28,3 +31,6 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+volumes:
+  downloads:

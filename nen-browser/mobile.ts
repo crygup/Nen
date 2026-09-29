@@ -11,3 +11,16 @@ function sidebar(){
  compact.addEventListener('change',()=>{if(compact.matches)localStorage.setItem('nen-sidebar','collapsed');update();});
 }
 new MutationObserver(sidebar).observe(document.querySelector('#app')!,{childList:true});sidebar();
+
+function downloadButton() {
+ const actions=document.querySelector('.sidebar-bottom');
+ const home=document.querySelector('#page-title h1')?.textContent==='Home';
+ const windows=/Windows NT/.test(navigator.userAgent);
+ const existing=document.querySelector('#windows-download');
+ if(!home||!windows){existing?.remove();return;}
+ if(!actions||existing)return;
+ const button=document.createElement('button');button.id='windows-download';button.type='button';button.setAttribute('aria-label','Download');button.title='Download';
+ button.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg><span class="nav-label">Download</span>';
+ button.onclick=()=>{location.href='/win-download';};actions.prepend(button);
+}
+new MutationObserver(downloadButton).observe(document.querySelector('#app')!,{childList:true,subtree:true});downloadButton();

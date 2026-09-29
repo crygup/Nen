@@ -1,3 +1,4 @@
+import { downloadInstaller } from './download.js';
 import { prepareSignIn } from './auth.js';
 import { defineConfig } from "vite";
 import { handleApi } from "./api.js";
@@ -27,6 +28,7 @@ export default defineConfig({
       }
     },
     configureServer(server) {
+      server.middlewares.use((req,res,next)=>{if(req.url?.split('?')[0]==='/win-download')void downloadInstaller(req,res);else next();});
       server.middlewares.use('/nen-auth',async(req,res)=>{
         if(req.method!=='POST'||req.headers.origin!=='http://127.0.0.1:5174'){res.writeHead(403).end();return;}
         try{let body='';for await(const chunk of req){body+=chunk;if(body.length>1000)throw Error('Request too large.');}await prepareSignIn(JSON.parse(body).nonce);res.writeHead(204).end();}catch(e){res.writeHead(400,{'Content-Type':'text/plain'}).end(e.message);}
