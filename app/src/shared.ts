@@ -191,7 +191,9 @@ export interface SyncChange {
 }
 export interface SyncPreview { changes: SyncChange[]; first: boolean }
 export interface ImportPreview { count: number; episodes: number; newEntries: number; changedEntries: number; path: string }
+export interface ProfileSummary { id: string; name: string; created: number; anilistUser?: string }
 export interface State {
+  profiles?: { active: string; list: ProfileSummary[] };
   seriesAudio?: Record<string, string>;
   volume?: number;
   version?: string;
@@ -281,10 +283,14 @@ export interface API {
   watchExport(): Promise<string | null>;
   watchImportPreview(): Promise<ImportPreview | null>;
   watchImport(mode: "merge" | "replace"): Promise<State>;
-  anilistConnect(): Promise<void>;
+  anilistConnect(): Promise<{ sharedWith?: string } | void>;
   anilistPreview(): Promise<SyncPreview>;
   anilistApply(choices: SyncChange[]): Promise<State>;
   anilistDisconnect(): Promise<State>;
+  profileCreate(name: string, fromFile: boolean): Promise<State | null>;
+  profileSwitch(id: string): Promise<void>;
+  profileRename(id: string, name: string): Promise<State>;
+  profileDelete(id: string): Promise<State>;
   onWatchState(callback: (state: State) => void): () => void;
   startupUpdate(): Promise<UpdateStatus>;
   installUpdate(): Promise<UpdateStatus>;

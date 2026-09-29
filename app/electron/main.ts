@@ -38,6 +38,7 @@ import * as providers from "./providers";
 import { Player } from "./player";
 import { syncFavorites, setRemoteWatch, setRemoteFavorite, readRemote, preview as previewAniList, apply as applyAniList } from "./anilist";
 import { markEpisode, migrateProgress, newEntry, statuses, validateTransfer, mergeWatch, activeRun } from "./watch-data";
+import { migrateLegacy, newProfileId, profileDir, profileFile, profileId, profileName, readProfile, splitState, tokenFile, uniqueProfileName, writeJson, writeProfile } from "./profiles";
 import {
   positive,
   text,
@@ -71,6 +72,7 @@ import type {
   WatchStatus,
   SyncChange,
   SyncPreview,
+  ProfileSummary,
 } from "../src/shared";
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
@@ -95,8 +97,10 @@ let captureResize: ReturnType<typeof setTimeout> | undefined;
 let updateStatus: UpdateStatus = { busy: false, message: "" };
 let state: State;
 let statePath: string;
+let userRoot: string;
 let importFile: string | undefined;
 let tokenPath: string;
+let cancelSignIn: ((error: Error) => void) | undefined;
 let syncPreview: { remote: Awaited<ReturnType<typeof readRemote>>["entries"]; changes: SyncChange[] } | undefined;
 let syncTimer: ReturnType<typeof setTimeout> | undefined;
 let syncRunning = false;
@@ -130,11 +134,19 @@ function getToken(): string {
   if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
   return safeStorage.decryptString(readFileSync(tokenPath));
 }
-async function connectAniList(): Promise<void> {
+function e2eToken() {
+  if (!process.env.NEN_E2E_USER_DATA) return undefined;
+  if (process.env.NEN_E2E_ANILIST_TOKEN_FILE) return readFileSync(process.env.NEN_E2E_ANILIST_TOKEN_FILE, "utf8").trim();
+  return process.env.NEN_E2E_ANILIST_TOKEN;
+}
+async function connectAniList(): Promise<{ sharedWith?: string }> {
   if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
+  if (cancelSignIn) throw Error("AniList sign-in is already open.");
+  // Tie the sign-in to this profile so a switch cannot save the token into another one.
+  const profile = state.profiles!.active;
+  const target = tokenPath;
   const nonce = randomBytes(24).toString("hex");
-  const token = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_ANILIST_TOKEN
-    ? process.env.NEN_E2E_ANILIST_TOKEN : await new Promise<string>((resolve, reject) => {
+  const token = e2eToken() ?? await new Promise<string>((resolve, reject) => {
     let done = false;
     const server = createServer((req, res) => {
       if (req.url === "/callback" && req.method === "GET") {
@@ -161,10 +173,12 @@ async function connectAniList(): Promise<void> {
     const finish = (error?: Error, value?: string) => {
       if (done) return;
       done = true;
+      cancelSignIn = undefined;
       clearTimeout(timer);
       server.close();
       if (error) reject(error); else resolve(value!);
     };
+    cancelSignIn = error => finish(error);
     server.on("error", error => finish(error));
     server.listen(43187, "127.0.0.1", () => {
       const url = new URL("https://anilist.co/api/v2/oauth/authorize");
@@ -173,10 +187,13 @@ async function connectAniList(): Promise<void> {
     });
   });
   const remote = await readRemote(token);
-  writeFileSync(tokenPath, safeStorage.encryptString(token));
+  if (state.profiles!.active !== profile) throw Error("The profile changed during AniList sign-in. Connect again.");
+  writeFileSync(target, safeStorage.encryptString(token));
   state.anilist = { connected: true, user: remote.user, baseline: {} };
   syncPreview = undefined;
   save();
+  const other = state.profiles!.list.find(p => p.id !== profile && p.anilistUser === remote.user);
+  return { sharedWith: other?.name };
 }
 let lastSave = 0;
 let undoPosition: number | undefined;
@@ -260,8 +277,81 @@ async function installUpdate() {
   return updateStatus;
 }
 function save() {
-  writeFileSync(statePath + ".tmp", JSON.stringify(state));
-  renameSync(statePath + ".tmp", statePath);
+  const profiles = state.profiles!;
+  const summary = profiles.list.find(p => p.id === profiles.active);
+  if (summary) summary.anilistUser = state.anilist.connected ? state.anilist.user : undefined;
+  const { shared, profile } = splitState(state);
+  writeProfile(userRoot, profiles.active, profile);
+  writeJson(statePath, shared);
+}
+function activeProfile() {
+  return state.profiles!.list.find(p => p.id === state.profiles!.active)!;
+}
+function profileBackup(name: string) {
+  return profileFile(userRoot, state.profiles!.active) + name;
+}
+/** Reads and checks a profile before anything is changed. */
+function readProfileData(id: string) {
+  const stored = readProfile(userRoot, id);
+  try {
+    return { stored, settings: settings({ ...defaults.settings, ...stored.settings, autoUpdates: state.settings.autoUpdates } as State["settings"]) };
+  } catch {
+    throw Error("Profile settings could not be read. Back up the profiles folder before resetting it.");
+  }
+}
+/** Loads a profile's data into state. Device-wide fields and auto updates are kept. */
+function loadProfile(id: string, data = readProfileData(id)) {
+  const { stored } = data;
+  state.profiles!.active = id;
+  state.settings = data.settings;
+  state.seriesAudio = stored.seriesAudio;
+  state.progress = stored.progress ?? {};
+  state.watch = stored.watch ?? {};
+  state.favorites = stored.favorites ?? {};
+  state.favoriteChanges = stored.favoriteChanges ?? {};
+  state.anilist = { ...defaults.anilist, ...stored.anilist, connected: false };
+  tokenPath = tokenFile(userRoot, id);
+  const repaired = repairProgress(state.progress);
+  if (JSON.stringify(repaired) !== JSON.stringify(state.progress)) {
+    const backup = profileBackup(".before-episode-repair.json");
+    if (!existsSync(backup)) copyFileSync(profileFile(userRoot, id), backup);
+    state.progress = repaired;
+    save();
+  }
+  if (migrateProgress(state.watch, state.progress)) {
+    const backup = profileBackup(".before-watch-migration.json");
+    if (!existsSync(backup)) copyFileSync(profileFile(userRoot, id), backup);
+    save();
+  }
+  state.anilist.connected = existsSync(tokenPath);
+  if (state.anilist.connected) syncTimer = setTimeout(() => { syncTimer = undefined; void syncUncontested(); }, 3000);
+}
+function findProfile(id: unknown): ProfileSummary {
+  const found = state.profiles!.list.find(p => p.id === profileId(id));
+  if (!found) throw Error("Profile was not found.");
+  return found;
+}
+async function switchProfile(id: unknown) {
+  const target = findProfile(id);
+  if (target.id === state.profiles!.active) return;
+  if (syncRunning) throw Error("AniList sync is running. Try again shortly.");
+  if (busy || automaticRunning) throw Error("Wait for the current video to finish loading, then try again.");
+  const data = readProfileData(target.id);
+  cancelSignIn?.(Error("AniList sign-in was cancelled because the profile changed."));
+  if (together.state.connected) together.disconnect();
+  // stop() records playback progress into the current profile before it is replaced.
+  // Everything up to loadProfile() runs in this tick, so the reloaded page only sees the new profile.
+  const page = stop(true, false, { profileSwitched: "1" });
+  save();
+  clearTimeout(syncTimer);
+  syncTimer = undefined;
+  syncPreview = undefined;
+  importFile = undefined;
+  loadProfile(target.id, data);
+  save();
+  nativeTheme.themeSource = state.settings.theme;
+  discordPresence.update(state.settings.discordPresence === true, undefined, together.state);
+  await page;
 }
 function playbackSettings(mediaId: number): Settings {
   const audio = state.seriesAudio?.[String(mediaId)];
@@ -908,46 +998,42 @@ else {
   app
     .whenReady()
     .then(() => {
-      statePath = join(app.getPath("userData"), "state.json");
-      tokenPath = join(app.getPath("userData"), "anilist-token.bin");
-      mkdirSync(app.getPath("userData"), { recursive: true });
+      userRoot = app.getPath("userData");
+      statePath = join(userRoot, "state.json");
+      mkdirSync(userRoot, { recursive: true });
       state = structuredClone(defaults);
-      if (existsSync(statePath)) {
-        try {
-          const stored = JSON.parse(readFileSync(statePath, "utf8"));
+      try {
+        migrateLegacy(userRoot, statePath);
+        if (existsSync(statePath)) {
+          const { autoUpdates, profiles, ...stored } = JSON.parse(readFileSync(statePath, "utf8"));
+          if (!Array.isArray(profiles?.list) || !profiles.list.length) throw Error();
+          const list: ProfileSummary[] = profiles.list.map((p: ProfileSummary) => ({
+            id: profileId(p.id), name: String(p.name).slice(0, 40), created: Number(p.created) || 0,
+            anilistUser: typeof p.anilistUser === "string" ? p.anilistUser : undefined,
+          }));
           state = {
             ...defaults,
             ...stored,
-            settings: settings(stored.settings),
-            watch: stored.watch ?? {},
-            favorites: stored.favorites ?? {},
-            favoriteChanges: stored.favoriteChanges ?? {},
-            anilist: { ...defaults.anilist, ...stored.anilist, connected: false },
+            settings: { ...defaults.settings, autoUpdates: autoUpdates ?? true },
+            profiles: { active: list.some(p => p.id === profiles.active) ? profiles.active : list[0].id, list },
           };
-        } catch {
-          throw Error(
-            "Saved state could not be read. Back up state.json before resetting it.",
-          );
         }
+      } catch {
+        throw Error(
+          "Saved state could not be read. Back up state.json before resetting it.",
+        );
+      }
+      if (!state.profiles) {
+        const id = newProfileId([]);
+        state.profiles = { active: id, list: [{ id, name: "Default", created: Date.now() }] };
+        writeProfile(userRoot, id, {});
       }
       state.volume = typeof state.volume === "number" && Number.isFinite(state.volume)
         ? Math.max(0, Math.min(100, state.volume)) : 100;
       state.version = NEN_BUILD_VERSION;
-      providers.initCache(join(app.getPath("userData"), "provider-cache.json"));
-      const repaired = repairProgress(state.progress);
-      if (JSON.stringify(repaired) !== JSON.stringify(state.progress)) {
-        const backup = statePath + ".before-episode-repair.json";
-        if (!existsSync(backup)) writeFileSync(backup, readFileSync(statePath));
-        state.progress = repaired;
-        save();
-      }
-      if (migrateProgress(state.watch, state.progress)) {
-        const backup = statePath + ".before-watch-migration.json";
-        if (existsSync(statePath) && !existsSync(backup)) copyFileSync(statePath, backup);
-        save();
-      }
-      state.anilist.connected = existsSync(tokenPath);
-      if (state.anilist.connected) setTimeout(() => void syncUncontested(), 3000);
+      providers.initCache(join(userRoot, "provider-cache.json"));
+      loadProfile(state.profiles.active);
+      save();
       const dev = process.env.NEN_DEV_URL;
       const entry = pathToFileURL(join(__dirname, "../dist/index.html")).href;
       const allowed = dev ? new URL(dev).origin : entry;
@@ -1193,9 +1279,9 @@ else {
       handle("watchExport", async () => {
         const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_EXPORT_PATH
           ? process.env.NEN_E2E_EXPORT_PATH
-          : (await dialog.showSaveDialog(window, { defaultPath: "nen-watch-data.json", filters: [{ name: "JSON", extensions: ["json"] }] })).filePath;
+          : (await dialog.showSaveDialog(window, { defaultPath: `nen-watch-data-${activeProfile().name.replace(/[^\w-]+/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] })).filePath;
         if (!path) return null;
-        writeFileSync(path, JSON.stringify({ version: 1, exportedAt: Date.now(), entries: Object.values(state.watch) }, null, 2));
+        writeFileSync(path, JSON.stringify({ version: 1, exportedAt: Date.now(), profile: { name: activeProfile().name }, entries: Object.values(state.watch) }, null, 2));
         return path;
       });
       handle("watchImportPreview", async () => {
@@ -1212,9 +1298,8 @@ else {
       handle("watchImport", (mode) => {
         if (!importFile || !["merge", "replace"].includes(mode)) throw Error("Select a watch data file first.");
         const entries = validateTransfer(JSON.parse(readFileSync(importFile, "utf8")));
-        const backup = statePath + `.before-import-${Date.now()}.json`;
-        if (existsSync(statePath)) copyFileSync(statePath, backup);
-        else writeFileSync(backup, JSON.stringify(state));
+        const backup = profileBackup(`.before-import-${Date.now()}.json`);
+        copyFileSync(profileFile(userRoot, state.profiles!.active), backup);
         if (mode === "replace") state.watch = entries;
         else mergeWatch(state.watch, entries);
         importFile = undefined;
@@ -1257,6 +1342,47 @@ else {
           save();
           throw error;
         } finally { syncRunning = false; }
+      });
+      handle("profileCreate", async (name, fromFile) => {
+        if (typeof fromFile !== "boolean") throw Error("Invalid profile request.");
+        const list = state.profiles!.list;
+        let data = {};
+        let fileName: unknown;
+        if (fromFile) {
+          const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_IMPORT_PATH
+            ? process.env.NEN_E2E_IMPORT_PATH
+            : (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
+          if (!path) return null;
+          const raw = readFileSync(path);
+          if (raw.length > 50 * 1024 * 1024) throw Error("Watch data file is too large.");
+          const file = JSON.parse(raw.toString("utf8"));
+          data = { watch: validateTransfer(file) };
+          fileName = file.profile?.name;
+        }
+        const typed = typeof name === "string" ? name.trim() : "";
+        const suggested = typeof fileName === "string" && fileName.trim() ? fileName : fromFile ? "Imported" : "";
+        const finalName = profileName(typed || !suggested ? typed : uniqueProfileName(suggested, list), list);
+        const id = newProfileId(list);
+        writeProfile(userRoot, id, data);
+        list.push({ id, name: finalName, created: Date.now() });
+        save();
+        return state;
+      });
+      handle("profileSwitch", switchProfile);
+      handle("profileRename", (id, name) => {
+        const profile = findProfile(id);
+        profile.name = profileName(name, state.profiles!.list, profile.id);
+        save();
+        return state;
+      });
+      handle("profileDelete", (id) => {
+        const profile = findProfile(id);
+        if (profile.id === state.profiles!.active) throw Error("Switch to another profile before deleting this one.");
+        if (state.profiles!.list.length < 2) throw Error("Nen needs at least one profile.");
+        state.profiles!.list = state.profiles!.list.filter(p => p.id !== profile.id);
+        save();
+        rmSync(profileDir(userRoot, profile.id), { recursive: true, force: true });
+        return state;
       });
       handle("anilistDisconnect", () => {
         rmSync(tokenPath, { force: true });

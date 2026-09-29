@@ -119,6 +119,7 @@ const {room,api:roomApi}=browserRoom(()=>p,async(id,episode)=>{
  }else await startStream(id,episode);
 },()=>video);
 const account=connectAccount(()=>state,()=>save(true));
+const desktopOnly=async():Promise<never>=>{throw Error('Profiles are available in the desktop app.');};
 const api:API={
  state:async()=>snapshot(),
  settings:async value=>{state.settings={...value,sourceMode:'auto'};save();},
@@ -172,6 +173,7 @@ const api:API={
  togetherLeave:async()=>{room.disconnect();persistProgress();hls?.destroy();video?.pause();playerFrame?.remove();playerFrame=undefined;p.active=false;},
  startupUpdate:idle,checkUpdates:idle,installUpdate:idle,updateStatus:idle,onUpdateStatus:()=>()=>{},onBack:()=>()=>{},browserHistory:true,
  changelog:async()=>({entries:[],hasMore:false,stale:false,buildCommit:''}),openChangelogCommit:async()=>{},uninstall:async()=>{},
+ profileCreate:desktopOnly,profileSwitch:desktopOnly,profileRename:desktopOnly,profileDelete:desktopOnly,
  ...account,
  releases:async()=>({items:[],errors:['Use the browser stream source controls.']}),inspect:async()=>[],play:async(id,ep)=>api.autoPlay(id,ep),
 };

@@ -51,7 +51,9 @@ export async function handleApi(req,res,desktop=false){
           else if(url.pathname==='/desktop-data') {
             if(!desktop){res.statusCode=404;res.end(JSON.stringify({error:'Not available.'}));return;}
             if(!['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress)||req.headers.host!=='127.0.0.1:5174'||(req.headers.origin&&req.headers.origin!=='http://127.0.0.1:5174')){fail(403,'Desktop data import is only available on this PC.');return;}
-            const saved=JSON.parse(readFileSync(join(process.env.APPDATA,'Nen','state.json'),'utf8'));
+            const root=join(process.env.APPDATA,'Nen'), shared=JSON.parse(readFileSync(join(root,'state.json'),'utf8')), active=shared.profiles?.active;
+            if(shared.profiles&&!/^[a-f0-9]{16}$/.test(active))throw Error('Invalid profile.');
+            const saved=shared.profiles?JSON.parse(readFileSync(join(root,'profiles',active,'profile.json'),'utf8')):shared;
             result={watch:saved.watch||{},favorites:saved.favorites||{},settings:saved.settings||{},progress:Object.fromEntries(Object.entries(saved.progress||{}).map(([key,p])=>[key,{mediaId:p.mediaId,malId:p.malId,title:p.title,cover:p.cover,episode:p.episode,episodeTitle:p.episodeTitle,totalEpisodes:p.totalEpisodes,position:p.position,duration:p.duration,watched:p.watched,updated:p.updated}]))};
           } else {
             if(!Number.isSafeInteger(id)||id<=0){fail(400,'Invalid anime ID.');return;}

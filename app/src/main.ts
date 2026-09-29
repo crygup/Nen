@@ -1199,19 +1199,19 @@ async function editWatch(id: number) {
     });
   };
 }
-async function showSyncReview(firstConnect = false) {
+async function showSyncReview(firstConnect = false, notice = "") {
   const preview = await api.anilistPreview();
   const choices: SyncChange[] = preview.changes.map(row => ({ ...row }));
   const conflicts = choices.map((row, i) => ({ row, i })).filter(({ row }) => row.conflict);
   if (!conflicts.length) {
     state = await api.anilistApply(choices);
-    showToast(choices.length ? "AniList sync complete." : firstConnect ? "Connected account. No entries to sync." : "No new entries to sync.");
+    showToast(notice || (choices.length ? "AniList sync complete." : firstConnect ? "Connected account. No entries to sync." : "No new entries to sync."));
     if (route === "watchlist") await watchlist();
     if (route === "home") await home();
     if (route === "series") renderEpisodes();
     return;
   }
-  const d = dialog(`<h2 id="dialog-title">Review AniList sync</h2><p>${conflicts.length ? "Choose which values to keep." : "No conflicts. Your lists are ready to sync."}</p><div class="sync-changes">${conflicts.map(({ row, i }) => `<div class="sync-row"><span>${esc(row.title)} - ${row.field === "count" ? "Episode progress" : row.field === "status" ? "Watch status" : "Rewatches"}</span><small>Nen: ${esc(row.local)} &middot; AniList: ${esc(row.remote)}</small><div class="actions" role="group" aria-label="Choose values for ${esc(row.title)}"><button type="button" data-choice="${i}" data-side="local" aria-pressed="${row.choice === "local"}">Use Nen</button><button type="button" data-choice="${i}" data-side="remote" aria-pressed="${row.choice === "remote"}">Use AniList</button></div></div>`).join("")}</div>${conflicts.length ? '<div class="actions sync-select-all" role="group" aria-label="Select all"><span>Select all</span><button type="button" data-select-all="local">Nen</button><button type="button" data-select-all="remote">AniList</button></div>' : ""}<button id="apply-sync" class="primary">Apply sync</button>`);
+  const d = dialog(`<h2 id="dialog-title">Review AniList sync</h2>${notice ? `<p class="notice">${esc(notice)}</p>` : ""}<p>${conflicts.length ? "Choose which values to keep." : "No conflicts. Your lists are ready to sync."}</p><div class="sync-changes">${conflicts.map(({ row, i }) => `<div class="sync-row"><span>${esc(row.title)} - ${row.field === "count" ? "Episode progress" : row.field === "status" ? "Watch status" : "Rewatches"}</span><small>Nen: ${esc(row.local)} &middot; AniList: ${esc(row.remote)}</small><div class="actions" role="group" aria-label="Choose values for ${esc(row.title)}"><button type="button" data-choice="${i}" data-side="local" aria-pressed="${row.choice === "local"}">Use Nen</button><button type="button" data-choice="${i}" data-side="remote" aria-pressed="${row.choice === "remote"}">Use AniList</button></div></div>`).join("")}</div>${conflicts.length ? '<div class="actions sync-select-all" role="group" aria-label="Select all"><span>Select all</span><button type="button" data-select-all="local">Nen</button><button type="button" data-select-all="remote">AniList</button></div>' : ""}<button id="apply-sync" class="primary">Apply sync</button>`);
   const updateSelectAll = () => d.querySelectorAll<HTMLButtonElement>("[data-select-all]").forEach(button =>
     button.setAttribute("aria-pressed", String(conflicts.every(({ row }) => row.choice === button.dataset.selectAll))));
   updateSelectAll();
@@ -1273,6 +1273,77 @@ function help() {
   bindSectionTabs(d);
   d.querySelectorAll<HTMLButtonElement>("[data-support]").forEach(button => {
     button.onclick = () => void api.external(button.dataset.support as "discord" | "issues" | "email" | "donate").catch(error);
+  });
+}
+function activeProfileName() {
+  return state.profiles?.list.find(p => p.id === state.profiles!.active)?.name ?? "";
+}
+function profileSection(root: HTMLElement, d: HTMLDialogElement) {
+  const profiles = state.profiles!;
+  const rows = [...profiles.list].sort((a, b) => Number(b.id === profiles.active) - Number(a.id === profiles.active) || a.created - b.created);
+  root.innerHTML = `<h3 class="local-data-heading">Profiles</h3><ul class="profile-list">${rows.map(p => {
+    const active = p.id === profiles.active;
+    const details = [active ? "Current profile" : "", p.anilistUser ? `AniList: ${esc(p.anilistUser)}` : ""].filter(Boolean).join(" &middot; ");
+    return `<li class="profile-row${active ? " active" : ""}" data-profile="${esc(p.id)}"><div class="profile-info"><strong>${esc(p.name)}</strong>${details ? `<small>${details}</small>` : ""}</div><div class="actions">${active ? "" : `<button type="button" data-profile-action="switch" aria-label="Switch to ${esc(p.name)}">Switch</button>`}<button type="button" data-profile-action="rename" aria-label="Rename ${esc(p.name)}">Rename</button>${active ? "" : `<button type="button" data-profile-action="delete" aria-label="Delete ${esc(p.name)}">Delete</button>`}</div></li>`;
+  }).join("")}</ul><div class="profile-editor" hidden></div><div class="actions profile-actions"><button id="profile-new" type="button">New profile</button><button id="profile-import" type="button">New profile from file</button></div><hr>`;
+  const heading = d.querySelector<HTMLElement>("#anilist-heading");
+  if (heading) heading.textContent = `AniList for ${activeProfileName()}`;
+  const refresh = () => profileSection(root, d);
+  const editor = root.querySelector<HTMLElement>(".profile-editor")!;
+  const edit = (action: string, value: string, placeholder: string, submit: (name: string) => Promise<void>) => {
+    editor.hidden = false;
+    editor.innerHTML = `<label>Profile name<input id="profile-name" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label><div class="actions"><button id="profile-save" type="button" class="primary">${action}</button><button id="profile-cancel" type="button">Cancel</button></div>`;
+    const input = editor.querySelector<HTMLInputElement>("#profile-name")!;
+    const save = editor.querySelector<HTMLButtonElement>("#profile-save")!;
+    input.value = value;
+    input.placeholder = placeholder;
+    const done = () => void run(async () => {
+      save.disabled = true;
+      try { await submit(input.value); } finally { save.disabled = false; }
+    });
+    save.onclick = done;
+    editor.querySelector<HTMLButtonElement>("#profile-cancel")!.onclick = refresh;
+    input.onkeydown = event => {
+      if (event.key === "Enter") { event.preventDefault(); done(); }
+      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); refresh(); }
+    };
+    input.focus();
+    input.select();
+  };
+  root.querySelector<HTMLButtonElement>("#profile-new")!.onclick = () => edit("Create", "", "", async name => {
+    state = (await api.profileCreate(name, false))!;
+    refresh();
+    showToast(`Created profile ${name.trim()}.`, d);
+  });
+  root.querySelector<HTMLButtonElement>("#profile-import")!.onclick = () => edit("Choose file", "", "Use the name in the file", async name => {
+    const next = await api.profileCreate(name, true);
+    if (!next) return;
+    state = next;
+    refresh();
+    showToast(`Created profile ${state.profiles!.list.at(-1)!.name} from the file.`, d);
+  });
+  root.querySelectorAll<HTMLButtonElement>("[data-profile-action]").forEach(button => {
+    const id = button.closest<HTMLElement>("[data-profile]")!.dataset.profile!;
+    const profile = profiles.list.find(p => p.id === id)!;
+    button.onclick = () => void run(async () => {
+      const action = button.dataset.profileAction;
+      if (action === "rename") return edit("Save", profile.name, "", async name => {
+        state = await api.profileRename(id, name);
+        refresh();
+      });
+      if (action === "delete") {
+        if (!confirm(`Delete the ${profile.name} profile? Its lists, progress, settings, and AniList connection will be removed from this PC. Nothing is removed from AniList.`)) return;
+        state = await api.profileDelete(id);
+        refresh();
+        showToast(`Deleted profile ${profile.name}.`, d);
+        return;
+      }
+      const [room, playing] = await Promise.all([api.togetherState(), api.playback()]);
+      const leaving = [room.connected ? "leave Watch together" : "", playing.active ? "stop playback" : ""].filter(Boolean);
+      if (leaving.length && !confirm(`Switching profiles will ${leaving.join(" and ")}. Continue?`)) return;
+      root.querySelectorAll("button").forEach(item => item.disabled = true);
+      try { await api.profileSwitch(id); } finally { root.querySelectorAll("button").forEach(item => item.disabled = false); }
+    });
   });
 }
 function settings() {
@@ -1382,8 +1453,16 @@ function settings() {
     if (!changelogPage && !changelogLoading) void loadChangelog(1);
   });
   changelogMore.onclick = () => void loadChangelog(changelogPage + 1);
+  if (state.profiles) {
+    const profiles = document.createElement("section");
+    profiles.className = "profiles";
+    // Profile name fields are not settings, so keep their changes away from the settings form.
+    profiles.onchange = event => event.stopPropagation();
+    d.querySelector("#settings-account")!.append(profiles);
+    profileSection(profiles, d);
+  }
   const transfer = document.createElement("section");
-  transfer.innerHTML = `<h3 class="local-data-heading">AniList</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
+  transfer.innerHTML = `<h3 id="anilist-heading" class="local-data-heading">${state.profiles ? `AniList for ${esc(activeProfileName())}` : "AniList"}</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
   d.querySelector("#settings-account")!.append(transfer);
   const uninstall = document.createElement("button");
   uninstall.textContent = "Uninstall";
@@ -1413,7 +1492,12 @@ function settings() {
       if (route === "home") await home();
     });
   });
-  const connectAniList = () => void run(async () => { await api.anilistConnect(); state = await api.state(); d.close(); await showSyncReview(true); });
+  const connectAniList = () => void run(async () => {
+    const result = await api.anilistConnect();
+    state = await api.state();
+    d.close();
+    await showSyncReview(true, result?.sharedWith ? `Connected. This AniList account is also connected to the ${result.sharedWith} profile.` : "");
+  });
   transfer.querySelector<HTMLElement>("#anilist-connect")?.addEventListener("click", connectAniList);
   transfer.querySelector<HTMLElement>("#anilist-sync")?.addEventListener("click", () => void run(async () => { d.close(); await showSyncReview(); }));
   transfer.querySelector<HTMLButtonElement>("#anilist-disconnect")?.addEventListener("click", event => void run(async () => {
@@ -1712,6 +1796,7 @@ async function start() {
     } else if (api.browserHistory && history.state?.nenVisit) await restoreVisit(history.state.nenVisit);
     else if (new URLSearchParams(location.search).has("together")) showTogether();
     else await home();
+    if (new URLSearchParams(location.search).has("profileSwitched")) showToast(`Switched to ${activeProfileName()}.`);
     clearInterval(animation);
     splash.classList.add("finished");
     setTimeout(() => splash.remove(), 300);
