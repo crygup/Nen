@@ -12,7 +12,7 @@ if(window.parent!==window){
  window.nen={...parentApi,onPlayback:fn=>{const remove=parentApi.onPlayback(fn);window.addEventListener('pagehide',remove,{once:true});return remove;},onTogether:fn=>{const remove=parentApi.onTogether(fn);window.addEventListener('pagehide',remove,{once:true});return remove;}};
  await import('../app/src/main');
 }else{const key='nen-browser-state-v2';
-const defaults:State={version:browserVersion,settings:{theme:'dark',autoSkip:false,autoNext:false,audio:'',subtitles:'eng',source:'all',sourceMode:'auto',qualities:[1080,720,480,360]},progress:{},watch:{},favorites:{},favoriteChanges:{},anilist:{connected:false,baseline:{}},markers:{},mappings:{}};
+const defaults:State={version:browserVersion,settings:{theme:'dark',autoSkip:false,autoNext:false,audio:'',subtitles:'eng',subtitlePosition:15,source:'all',sourceMode:'auto',qualities:[1080,720,480,360]},progress:{},watch:{},favorites:{},favoriteChanges:{},anilist:{connected:false,baseline:{}},markers:{},mappings:{}};
 let state:State;
 let subtitleSelection: SubtitleSelection | undefined;
 try { const saved=sessionStorage.getItem('nen-subtitle-selection');if(saved!==null)subtitleSelection=JSON.parse(saved); } catch {}
@@ -49,7 +49,7 @@ function updateSubtitles(){
   if(!originalCues.has(cue))originalCues.set(cue,{start:cue.startTime,end:cue.endTime});
   const original=originalCues.get(cue)!;const delay=state.settings.subtitleDelay??0;
   cue.startTime=Math.max(0,original.start+delay);cue.endTime=Math.max(0.01,original.end+delay);
-  cue.snapToLines=false;cue.line=100-(state.settings.subtitlePosition??5);cue.lineAlign='end';
+  cue.snapToLines=false;cue.line=100-(state.settings.subtitlePosition??15);cue.lineAlign='end';
  }
 }
 async function autoplay(){ if(room.state.connected)return;
@@ -122,7 +122,7 @@ const account=connectAccount(()=>state,()=>save(true));
 const desktopOnly=async():Promise<never>=>{throw Error('Profiles are available in the desktop app.');};
 const api:API={
  state:async()=>snapshot(),
- settings:async value=>{state.settings={...value,sourceMode:'auto'};save();},
+ settings:async value=>{state.settings={...defaults.settings,...value,sourceMode:'auto'};save();},
  catalog:(mode,search,page,perPage)=>request('catalog',{mode,search,page,perPage:perPage||24,adult:!!state.settings.showAdult}),catalogOptions:()=>request('options'),media:id=>request('media',{id}),episodes:(id,page)=>request('episodes',{id,page}),labels:id=>request('labels',{id}),
  favoriteSet:async(id,favorite)=>{await account.remoteFavorite(id,favorite);if(favorite)state.favorites[String(id)]=newEntry(await request('media',{id}));else delete state.favorites[String(id)];save();return snapshot();},
  watchAdd:async id=>{const entry=state.watch[String(id)] ||= newEntry(await request('media',{id}));entry.status='PLANNING';entry.updated=entry.statusUpdated=Date.now();await account.remoteWatch(id,entry);save();return snapshot();},

@@ -414,7 +414,7 @@ export async function releases(
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const preferred = audio.split(",")[0].trim().toLowerCase();
   const language = audioLanguages.find(([code]) => code === preferred)?.[1];
-  const aliases = override ? [override] : [...sourceAliases(anime), anime.title.romaji, anime.title.english, ...anime.synonyms].filter((s): s is string => !!s);
+  const aliases = override ? [override] : [anime.title.romaji, anime.title.english, ...sourceAliases(anime), ...anime.synonyms].filter((s): s is string => !!s);
   // Shorter queries only widen discovery. Every result must still match a catalog alias.
   const queries = [...new Set(aliases.flatMap(alias => [alias, alias.includes(":") ? alias.split(":").slice(1).join(":").split(/\s[-–]\s/)[0] : alias]).map(normalize))].slice(0, 12);
   const errors: string[] = [];

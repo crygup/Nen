@@ -5,6 +5,7 @@ import type { ProfileSummary, Settings, State } from "../src/shared";
 
 export type ProfileSettings = Omit<Settings, "autoUpdates">;
 export interface ProfileData {
+  schemaVersion?: number;
   settings?: Partial<ProfileSettings>;
   seriesAudio?: State["seriesAudio"];
   progress?: State["progress"];
@@ -12,6 +13,13 @@ export interface ProfileData {
   favorites?: State["favorites"];
   favoriteChanges?: State["favoriteChanges"];
   anilist?: State["anilist"];
+}
+// Increase only when the saved-data format changes, and migrate older formats first.
+const schemaVersion = 1;
+function checkFormat(data: any) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw Error("Invalid saved data.");
+  if (data.schemaVersion !== undefined && data.schemaVersion !== schemaVersion)
+    throw Error("This saved data uses an unsupported format. Install a compatible Nen version. Your data has not been reset.");
 }
 export const legacyProfileId = "0000000000000000";
 
@@ -49,15 +57,21 @@ export function writeJson(path: string, value: unknown) {
 }
 export function writeProfile(root: string, id: string, data: ProfileData) {
   mkdirSync(profileDir(root, id), { recursive: true });
-  writeJson(profileFile(root, id), data);
+  const path = profileFile(root, id);
+  if (existsSync(path)) {
+    const stored = readProfile(root, id);
+    if (stored.schemaVersion === undefined && !existsSync(path + ".before-format-1.json"))
+      copyFileSync(path, path + ".before-format-1.json");
+  }
+  writeJson(path, { ...data, schemaVersion });
 }
 export function readProfile(root: string, id: string): ProfileData {
   try {
     const data = JSON.parse(readFileSync(profileFile(root, id), "utf8"));
-    if (!data || typeof data !== "object" || Array.isArray(data)) throw Error();
+    checkFormat(data);
     return data;
-  } catch {
-    throw Error("Profile data could not be read. Back up the profiles folder before resetting it.");
+  } catch (error) {
+    throw Error("Profile data could not be read. " + (error as Error).message);
   }
 }
 
@@ -65,7 +79,7 @@ export function readProfile(root: string, id: string): ProfileData {
 export function splitState(state: State) {
   const { settings: { autoUpdates, ...settings }, seriesAudio, progress, watch, favorites, favoriteChanges, anilist, ...shared } = state;
   return {
-    shared: { ...shared, autoUpdates },
+    shared: { ...shared, autoUpdates, schemaVersion },
     profile: { settings, seriesAudio, progress, watch, favorites, favoriteChanges, anilist } satisfies ProfileData,
   };
 }
@@ -77,8 +91,13 @@ export function splitState(state: State) {
 export function migrateLegacy(root: string, statePath: string) {
   if (!existsSync(statePath)) return;
   const stored = JSON.parse(readFileSync(statePath, "utf8"));
+  checkFormat(stored);
   const legacyToken = join(root, "anilist-token.bin");
   if (stored.profiles) {
+    if (!Array.isArray(stored.profiles.list) || !stored.profiles.list.length) throw Error("Invalid profile list.");
+    for (const profile of stored.profiles.list) readProfile(root, profile.id);
+    if (stored.schemaVersion === undefined && !existsSync(statePath + ".before-format-1.json"))
+      copyFileSync(statePath, statePath + ".before-format-1.json");
     // Only left behind when a migration stopped after state.json was rewritten; the profile already has a copy.
     rmSync(legacyToken, { force: true });
     return;
@@ -92,6 +111,6 @@ export function migrateLegacy(root: string, statePath: string) {
   if (connected) copyFileSync(legacyToken, tokenFile(root, id));
   const user = connected && typeof anilist?.user === "string" ? anilist.user : undefined;
   const name = uniqueProfileName(user ?? "Default", []);
-  writeJson(statePath, { ...shared, autoUpdates, profiles: { active: id, list: [{ id, name, created: Date.now(), anilistUser: user }] } });
+  writeJson(statePath, { ...shared, autoUpdates, schemaVersion, profiles: { active: id, list: [{ id, name, created: Date.now(), anilistUser: user }] } });
   rmSync(legacyToken, { force: true });
 }

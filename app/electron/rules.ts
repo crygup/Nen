@@ -62,7 +62,11 @@ export function parseRelease(
   | "confidence"
 > {
   const normalized = title.replaceAll("_", " ");
-  const range = normalized.match(
+  // A spaced dash separates the title (which can end in a season number) from episodes.
+  const separator = normalized.indexOf(" - ");
+  const episodeText = normalized.slice(separator < 0 ? 0 : separator + 3)
+    .replace(/\b(?:season\s*|part[.\s]*|cour[.\s]*|p)(\d{1,2})\b/gi, "");
+  const range = episodeText.match(
     /(?:\b|\s-\s)(\d{1,4})\s*[-~]\s*(\d{1,4})(?=\s|\]|\)|\.|$)/,
   );
   const seasonEpisode = normalized.match(
@@ -71,7 +75,7 @@ export function parseRelease(
   const single = normalized.match(
     /(?:\s-\s|\bE(?:P)?\s*)(\d{1,4})(?:v\d)?(?=\s|\]|\)|\.|$)/i,
   );
-  const bare = normalized.match(
+  const bare = episodeText.match(
     /(?:^|\s)(\d{1,4})(?:v\d)?(?=\s*\[|\s+Remaster\b|\.(?:mkv|mp4|avi)$)/i,
   );
   const start = seasonEpisode
@@ -155,7 +159,7 @@ export function repairProgress(
 }
 
 function normalizeSeason(title: string): string {
-  return title.replace(/\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|season\s*(\d{1,2})|s(\d{1,2}))\b/gi,
+  return title.replace(/\bS(\d{1,2})E(\d{1,4})\b/gi, "S$1 E$2").replace(/\b(?:part|cour|p)[.\s-]*(\d{1,2})\b/gi, "Part $1").replace(/\b(?:(\d{1,2})(?:st|nd|rd|th)\s+season|season\s*(\d{1,2})|s(\d{1,2}))\b/gi,
     (_, ordinal, season, short) => `S${Number(ordinal ?? season ?? short)}`);
 }
 export function seasonNumber(title: string): number | null {
@@ -195,6 +199,6 @@ export function matchesMedia(title: string, media: Media): boolean {
       if (name === prefix) return true;
       if (!name.startsWith(prefix + " ")) return false;
       const suffix = name.slice(prefix.length + 1);
-      return /^(?:\d|s\d|season \d|batch\b|complete\b|ovas?\b|specials\b|series\b|remaster\b|bd\b|bdrip\b|bluray\b|blu ray\b|dvd\b|dvdrip\b|web\b|dual audio\b|multi\b|hevc\b|x26[45]\b|tv\b)/i.test(suffix);
+      return /^(?:\d|e\d|s\d|season \d|batch\b|complete\b|ovas?\b|specials\b|series\b|remaster\b|bd\b|bdrip\b|bluray\b|blu ray\b|dvd\b|dvdrip\b|web\b|dual audio\b|multi\b|hevc\b|x26[45]\b|tv\b)/i.test(suffix);
     });
 }

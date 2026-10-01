@@ -1018,10 +1018,8 @@ else {
             profiles: { active: list.some(p => p.id === profiles.active) ? profiles.active : list[0].id, list },
           };
         }
-      } catch {
-        throw Error(
-          "Saved state could not be read. Back up state.json before resetting it.",
-        );
+      } catch (error) {
+        throw Error("Saved state could not be read. " + (error as Error).message);
       }
       if (!state.profiles) {
         const id = newProfileId([]);
