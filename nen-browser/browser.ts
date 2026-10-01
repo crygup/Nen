@@ -1,3 +1,4 @@
+import { toggleFullscreen } from './fullscreen';
 import { browserVersion } from './version';
 import { browserRoom } from './room';
 import { episodeAvailability, matchSubtitle, type SubtitleSelection } from '../app/src/shared';
@@ -161,7 +162,7 @@ const api:API={
    tracks.forEach((t,i)=>t.mode=i===value!-1?'showing':'disabled');
   }
   if(action==='audio'&&hls){hls.audioTrack=value!-1;const track=hls.audioTracks[value!-1];if(track){state.seriesAudio ||= {};state.seriesAudio[String(p.mediaId)]=track.lang||'';save();}}
-  if(action==='fullscreen'){if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}
+  if(action==='fullscreen')await toggleFullscreen(video);
   publish();
  },
  marker:async marker=>{state.markers[`${p.mediaId}:${p.episode}`]=[...p.markers.filter(m=>m.type!==marker.type),marker];p.markers=state.markers[`${p.mediaId}:${p.episode}`];save();publish();},
