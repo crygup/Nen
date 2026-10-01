@@ -462,7 +462,9 @@ export function releaseAudio(release: Pick<Release, "title">): { languages: stri
   const languages = audioLanguages.filter(([code, name]) => new RegExp("\\b(?:" + code + "|" + name + ")\\s*(?:dub(?:bed)?|audio)\\b|\\b(?:dub(?:bed)?|audio)\\s*[:=]?\\s*(?:" + code + "|" + name + ")\\b", "i").test(title)).map(([code]) => code);
   // Dual audio is only a language hint until the player reads the actual tracks.
   return languages.length ? { languages, inferred: false } : /\bdual\s*audio\b/i.test(title)
-    ? { languages: ["eng", "jpn"], inferred: true } : { languages: [], inferred: false };
+    ? { languages: ["eng", "jpn"], inferred: true }
+    : /\b(?:multi(?:ple)?\s*sub(?:title)?s?|subbed|raws)\b/i.test(title)
+      ? { languages: ["jpn"], inferred: true } : { languages: [], inferred: false };
 }
 export function audioRank(release: Release, preference: string): number {
   const preferred = preference.split(",")[0].trim().toLowerCase();

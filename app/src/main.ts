@@ -913,7 +913,7 @@ async function releasePicker(m: Media, ep: number) {
       });
       d.querySelector("#source-results")!.innerHTML = visible.length ? visible.map(({ release: r, index }) => {
         const audio = releaseAudio(r);
-        const label = audio.inferred ? "Dual audio (languages unverified)" : audio.languages.length ? audioLanguages.filter(([code]) => audio.languages.includes(code)).map(([,name]) => name).join(", ") + " audio (title)" : "Audio not specified";
+        const label = audio.languages.length ? audioLanguages.filter(([code]) => audio.languages.includes(code)).map(([,name]) => name).join(", ") + (audio.inferred ? " audio" : " audio (title)") : "Audio not specified";
         return '<button class="release" data-release="' + index + '"><span class="release-title">' + esc(r.title) + '</span><span class="release-meta"><b>' + r.source + '</b><span>' + esc(r.resolution) + '</span><span>' + esc(r.size) + '</span><span>' + r.seeds + ' seeds</span><span>' + label + '</span></span></button>';
       }).join("") : '<div class="empty"><h3>No matching sources</h3><p>Try All languages or change the source in Settings.</p></div>';
       d.querySelectorAll<HTMLButtonElement>("[data-release]").forEach(button => {

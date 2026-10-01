@@ -11,7 +11,7 @@ import type {
   EpisodePage,
 } from "../src/shared";
 import { episodeAvailability, latestEpisode, audioLanguages } from "../src/shared";
-import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases } from "./rules";
+import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases, partOffset } from "./rules";
 const cache = new Map<
   string,
   { expires: number; body: string; etag: string | null }
@@ -421,7 +421,7 @@ export async function releases(
   const items = new Map<string, Release>();
   const accept = (row: Release) => {
     if (!matchesMedia(row.title, anime)) return;
-    const shift = offset || (continuousOffset && row.episode !== null && row.episode > (anime.episodes ?? Infinity)
+    const shift = offset || (partOffset(anime) && !/\b(?:part|cour|p)[.\s-]*\d/i.test(row.title) ? partOffset(anime) : 0) || (continuousOffset && row.episode !== null && row.episode > (anime.episodes ?? Infinity)
       && row.episode <= continuousOffset + (anime.episodes ?? 0) ? continuousOffset : 0);
     const item = { ...row, sourceOffset: shift,
       episode: row.episode === null ? null : row.episode - shift,
@@ -435,7 +435,7 @@ export async function releases(
   await Promise.all(([ ["Nyaa", nyaa], ["Bangumi Moe", bangumi] ] as const)
     .filter(([name]) => source === "all" || name === source).map(async ([name, adapter]) => {
       try {
-        const titles = [...new Set([anime.title.english, anime.title.romaji].filter((title): title is string => !!title))];
+        const titles = [...new Set([anime.title.english, anime.title.romaji, ...(partOffset(anime) ? [anime.title.english, anime.title.romaji].map(title => title?.replace(/\s+Part[.\s]*2$/i, "")) : [])].filter((title): title is string => !!title))];
         const suffixes = language && preferred !== "jpn" ? [language + " audio", ...(preferred === "eng" ? ["dual audio"] : [language + " dub"])] : ["dual audio"];
         await Promise.all(titles.flatMap(title => suffixes.map(async suffix => {
           try { (await adapter(normalize(title) + " " + suffix, episode + offset, signal)).forEach(accept); }

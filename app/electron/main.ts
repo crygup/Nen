@@ -625,7 +625,8 @@ async function play(
           nextAiringEpisode: null,
         }
       : await providers.media(mediaId);
-    if (together.state.connected && matchingFile(files, selected, anime as any, episode)?.index !== file.index)
+    const matched = matchingFile(files, selected, anime as any, episode);
+    if (together.state.connected && matched?.index !== file.index)
       throw Error("This source has no clear file match for the session episode. Choose another source.");
     const fileEpisode = parseRelease(
       file.path.split(/[\\/]/).at(-1) ?? "",

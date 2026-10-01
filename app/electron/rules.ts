@@ -10,8 +10,16 @@ export function sourceOffset(media: Pick<Media, "title" | "relations">): number 
     && e.node.title.romaji.replace(stage, "").trim().toLowerCase() === base);
   return previous?.length === 1 ? previous[0].node.episodes ?? 0 : 0;
 }
+export function partOffset(media: Media): number {
+  if (!/\bPart[.\s]*2$/i.test(media.title.romaji)) return 0;
+  const base = normalizeSeason(media.title.romaji.replace(/\s+Part[.\s]*2$/i, "")).toLowerCase();
+  const prequels = media.relations?.edges.filter(e => e.relationType === "PREQUEL" && e.node.type === "ANIME"
+    && normalizeSeason(e.node.title.romaji).toLowerCase() === base) ?? [];
+  return prequels.length === 1 ? prequels[0].node.episodes ?? 0 : 0;
+}
 export function sourceAliases(media: Media): string[] {
-  return [...new Set([media.title.romaji, media.title.english, ...(media.synonyms ?? [])]
+  return [...new Set([media.title.romaji, media.title.english, ...(media.synonyms ?? []),
+    ...(partOffset(media) ? [media.title.romaji, media.title.english].filter(Boolean).map(name => name!.replace(/\s+Part[.\s]*2$/i, "")) : [])]
     .filter((name): name is string => !!name).map(name => {
       let alias = normalizeSeason(name).replace(/\s+Part\s+1(?:\s*&\s*2)?$/i, "");
       if (sourceOffset(media) || /\b1st\s+STAGE$/i.test(alias))
@@ -91,7 +99,7 @@ export function parseRelease(
   return {
     season: seasonEpisode ? Number(seasonEpisode[1]) : seasonNumber(normalized),
     resolution:
-      title.match(/\b(2160|1440|1080|720|480|360)p\b/i)?.[0] ?? "Unspecified",
+      title.match(/(?:\b|BD)((?:2160|1440|1080|720|480|360)p)\b/i)?.[1] ?? "Unspecified",
     group: title.match(/^\[([^\]]+)\]/)?.[1] ?? "Unknown group",
     language:
       title
@@ -176,12 +184,18 @@ export function matchesSeason(title: string, media: Media): boolean {
 export function matchingFile(files: TorrentFile[], release: Release, media: Media, episode: number): TorrentFile | undefined {
   if (!matchesMedia(release.title, media)) return;
   episode += release.sourceOffset ?? sourceOffset(media);
-  const matches = files.filter(f => {
+  const atEpisode = (number: number) => files.filter(f => {
     const parsed = parseRelease(f.path.split(/[\\/]/).at(-1) ?? "", episode);
-    return parsed.episode === episode && !parsed.batch && matchesSeason(f.path, media)
+    return parsed.episode === number && !parsed.batch && matchesSeason(f.path, media)
       && !/\b(sample|preview|trailer|ncop|nced)\b/i.test(f.path);
   });
+  const matches = atEpisode(episode);
   if (matches.length === 1) return matches[0];
+  if (!matches.length && !release.sourceOffset && /\bPart[.\s]*2$/i.test(media.title.romaji)) {
+    const offset = partOffset(media);
+    const continued = offset ? atEpisode(episode + offset) : [];
+    if (continued.length === 1) { release.sourceOffset = offset; return continued[0]; }
+  }
   if (files.length === 1 && release.confidence === "Episode match"
     && parseRelease(files[0].path, episode).episode === null
     && matchesSeason(files[0].path, media)) return files[0];
@@ -189,9 +203,11 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
 
 export function matchesMedia(title: string, media: Media): boolean {
   if (!matchesSeason(title, media)) return false;
+  const part = normalizeSeason(title).match(/\bPart (\d+)\b/i);
+  if (partOffset(media) && part && Number(part[1]) !== 2) return false;
   const normalize = (value: string) => normalizeSeason(value.normalize("NFKC").replace(/['’]/g, "")).toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-  const name = normalize(title.replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
+  const name = normalize(title.split("|")[0].replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
   return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media)]
     .filter((alias): alias is string => !!alias)
     .some(alias => {
