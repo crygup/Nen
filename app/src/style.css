@@ -1025,6 +1025,7 @@ html.player-mode body {
   border: 0;
 }
 .skip-popup {
+  z-index: 3;
   position: absolute;
   left: 34px;
   bottom: 160px;
@@ -1897,3 +1898,7 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 .profile-editor { display: grid; gap: 10px; margin-bottom: 12px; }
 .profile-editor[hidden] { display: none; }
 .profile-actions { margin-bottom: 16px; }
+
+@media (pointer: coarse) {
+  .skip-popup { bottom: max(90px, calc(160px - 10dvh)); }
+}

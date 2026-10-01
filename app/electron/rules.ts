@@ -17,8 +17,26 @@ export function partOffset(media: Media): number {
     && normalizeSeason(e.node.title.romaji).toLowerCase() === base) ?? [];
   return prequels.length === 1 ? prequels[0].node.episodes ?? 0 : 0;
 }
+// Final seasons can have a numbered catalog alias such as an acronym followed by a season.
+export function catalogSeason(media: Media): number | null {
+  const numbered = seasonNumber(media.title.english ?? "") ?? seasonNumber(media.title.romaji);
+  if (numbered !== null) return numbered;
+  if (!/\bfinal season\b/i.test(media.title.romaji)) return null;
+  const initials = [media.title.english, media.title.romaji].filter(Boolean).map(title =>
+    title!.replace(/[:\s]*(?:the\s+)?final season.*$/i, "").split(/\s+/).map(word => word[0]).join("").toLowerCase());
+  const numbers = [...new Set((media.synonyms ?? []).flatMap(alias => {
+    const match = /^([a-z]+)\s+(\d{1,2})$/i.exec(alias);
+    return match && initials.includes(match[1].toLowerCase()) ? [Number(match[2])] : [];
+  }))];
+  return numbers.length === 1 ? numbers[0] : null;
+}
+function seriesTitles(media: Media): string[] {
+  return [media.title.english, media.title.romaji].filter((title): title is string => !!title)
+    .map(title => normalizeSeason(title).replace(/[:\s]*(?:(?:the\s+)?final season|S\d+|Part \d+).*$/i, "").trim());
+}
 export function sourceAliases(media: Media): string[] {
   return [...new Set([media.title.romaji, media.title.english, ...(media.synonyms ?? []),
+    ...(catalogSeason(media) ? seriesTitles(media).flatMap(title => [title + " Season " + catalogSeason(media), title + " S" + catalogSeason(media)]) : []),
     ...(partOffset(media) ? [media.title.romaji, media.title.english].filter(Boolean).map(name => name!.replace(/\s+Part[.\s]*2$/i, "")) : [])]
     .filter((name): name is string => !!name).map(name => {
       let alias = normalizeSeason(name).replace(/\s+Part\s+1(?:\s*&\s*2)?$/i, "");
@@ -95,7 +113,7 @@ export function parseRelease(
         : null;
   const end = range ? Number(range[2]) : null;
   const batch = /\+\s*(?:OVAs?|specials)\b/i.test(title) || !!range || /\bbatch\b|\bcomplete\b/i.test(title)
-    || (start === null && seasonNumber(normalized) !== null);
+    || (start === null && (seasonNumber(normalized) !== null || /\b(?:final\s+season|part[.\s]*\d+)\b/i.test(normalized)));
   return {
     season: seasonEpisode ? Number(seasonEpisode[1]) : seasonNumber(normalized),
     resolution:
@@ -176,10 +194,20 @@ export function seasonNumber(title: string): number | null {
   return match ? Number(match[1]) : null;
 }
 export function matchesSeason(title: string, media: Media): boolean {
-  const season = parseRelease(title, 1).season;
-  const expected = seasonNumber(media.title.english ?? "")
-    ?? seasonNumber(media.title.romaji) ?? 1;
-  return season == null || season === expected || (media.synonyms ?? []).some(alias => seasonNumber(alias) === season);
+  const expected = catalogSeason(media) ?? 1;
+  const components = title.split(/[\\/]/);
+  let collection = false;
+  for (const component of components.reverse()) {
+    const range = component.match(/\bS(\d{1,2})\s*-\s*S?(\d{1,2})\b/i);
+    if (range) {
+      if (components.length === 1) return expected >= Number(range[1]) && expected <= Number(range[2]);
+      collection = true;
+      continue;
+    }
+    const season = parseRelease(component, 1).season;
+    if (season !== null) return season === expected || (media.synonyms ?? []).some(alias => seasonNumber(alias) === season);
+  }
+  return !collection;
 }
 export function matchingFile(files: TorrentFile[], release: Release, media: Media, episode: number): TorrentFile | undefined {
   if (!matchesMedia(release.title, media)) return;
@@ -196,6 +224,22 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
     const continued = offset ? atEpisode(episode + offset) : [];
     if (continued.length === 1) { release.sourceOffset = offset; return continued[0]; }
   }
+  if (!matches.length && catalogSeason(media) && media.episodes) {
+    const seasonFiles = files.filter(file => file.path.split(/[\\/]/).some(component =>
+      !/\bS\d+\s*-\s*S?\d+/i.test(component) && parseRelease(component, 1).season === catalogSeason(media))
+      && matchesSeason(file.path, media) && !/\b(?:sample|preview|trailer|ncop|nced|extras?|creditless|finale|final chapters|movies?|ovas?|oads?)\b/i.test(file.path.split(/[\\/]/).slice(1).join("/")))
+      .map(file => ({ file, number: parseRelease(file.path.split(/[\\/]/).at(-1) ?? "", episode).episode }))
+      .filter((item): item is { file: TorrentFile; number: number } => item.number !== null)
+      .sort((a, b) => a.number - b.number);
+    const count = media.episodes + partOffset(media);
+    if (seasonFiles.length === count && seasonFiles[0].number > 1
+      && seasonFiles.every((item, index) => item.number === seasonFiles[0].number + index)) {
+      const local = episode - (release.sourceOffset ?? sourceOffset(media));
+      const offset = seasonFiles[0].number - 1 + partOffset(media);
+      const match = seasonFiles.find(item => item.number === local + offset);
+      if (match) { release.sourceOffset = offset; return match.file; }
+    }
+  }
   if (files.length === 1 && release.confidence === "Episode match"
     && parseRelease(files[0].path, episode).episode === null
     && matchesSeason(files[0].path, media)) return files[0];
@@ -208,7 +252,7 @@ export function matchesMedia(title: string, media: Media): boolean {
   const normalize = (value: string) => normalizeSeason(value.normalize("NFKC").replace(/['’]/g, "")).toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const name = normalize(title.split("|")[0].replace(/^(?:\s*\[[^\]]*\])+\s*/, ""));
-  return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media)]
+  return [media.title.english, media.title.romaji, media.title.native, ...(media.synonyms ?? []), ...sourceAliases(media), ...(catalogSeason(media) && /\b(?:S\d|season\s*\d|complete|collection|batch)/i.test(title) ? seriesTitles(media) : [])]
     .filter((alias): alias is string => !!alias)
     .some(alias => {
       const prefix = normalize(alias);

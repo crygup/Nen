@@ -64,7 +64,12 @@ export async function handleApi(req,res,desktop=false){
               const mapping=await mapped(id);
               const ep=mapping.episodes.find(item=>Number(item.number)===episode);
               if(!ep) throw Error('This episode is not available from the stream provider.');
-              result=(await sourceJson(`/ep/${encodeURIComponent(ep.uid)}?origin=${encodeURIComponent(mapping.id)}`)).episode;
+              const details=(await sourceJson(`/ep/${encodeURIComponent(ep.uid)}?origin=${encodeURIComponent(mapping.id)}`));
+              if(Number(details.animeData?.mappings?.anilist)!==id) {
+                mappings.delete(id);
+                throw Error('The stream provider returned a different season.');
+              }
+              result=details.episode;
             } else throw Error('Unknown operation.');
           }
           res.end(JSON.stringify(result));

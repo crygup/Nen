@@ -134,11 +134,6 @@ function getToken(): string {
   if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
   return safeStorage.decryptString(readFileSync(tokenPath));
 }
-function e2eToken() {
-  if (!process.env.NEN_E2E_USER_DATA) return undefined;
-  if (process.env.NEN_E2E_ANILIST_TOKEN_FILE) return readFileSync(process.env.NEN_E2E_ANILIST_TOKEN_FILE, "utf8").trim();
-  return process.env.NEN_E2E_ANILIST_TOKEN;
-}
 async function connectAniList(): Promise<{ sharedWith?: string }> {
   if (!safeStorage.isEncryptionAvailable()) throw Error("Protected storage is unavailable.");
   if (cancelSignIn) throw Error("AniList sign-in is already open.");
@@ -146,7 +141,7 @@ async function connectAniList(): Promise<{ sharedWith?: string }> {
   const profile = state.profiles!.active;
   const target = tokenPath;
   const nonce = randomBytes(24).toString("hex");
-  const token = e2eToken() ?? await new Promise<string>((resolve, reject) => {
+  const token = await new Promise<string>((resolve, reject) => {
     let done = false;
     const server = createServer((req, res) => {
       if (req.url === "/callback" && req.method === "GET") {
@@ -802,7 +797,7 @@ async function play(
     record();
     publish();
   } catch (e) {
-    if (request === playbackRequest) stop(!automaticRunning);
+    if (request === playbackRequest) stop(false, !automaticRunning);
     throw e;
   } finally {
     busy = false;
@@ -986,10 +981,6 @@ function settings(value: Settings): Settings {
 }
 
 app.setName("Nen");
-if (process.env.NEN_E2E_USER_DATA) {
-  mkdirSync(process.env.NEN_E2E_USER_DATA, { recursive: true });
-  app.setPath("userData", process.env.NEN_E2E_USER_DATA);
-}
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on("second-instance", () => {
@@ -1065,7 +1056,7 @@ else {
           webSecurity: true,
         },
       });
-      if (app.isPackaged && !process.env.NEN_E2E_USER_DATA)
+      if (app.isPackaged)
         app.setAsDefaultProtocolClient(`discord-${DISCORD_APP_ID}`);
       window.webContents.once("did-finish-load", () => discordPresence.start());
       installZoom(window);
@@ -1276,17 +1267,13 @@ else {
         return state;
       });
       handle("watchExport", async () => {
-        const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_EXPORT_PATH
-          ? process.env.NEN_E2E_EXPORT_PATH
-          : (await dialog.showSaveDialog(window, { defaultPath: `nen-watch-data-${activeProfile().name.replace(/[^\w-]+/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] })).filePath;
+        const path = (await dialog.showSaveDialog(window, { defaultPath: `nen-watch-data-${activeProfile().name.replace(/[^\w-]+/g, "-")}.json`, filters: [{ name: "JSON", extensions: ["json"] }] })).filePath;
         if (!path) return null;
         writeFileSync(path, JSON.stringify({ version: 1, exportedAt: Date.now(), profile: { name: activeProfile().name }, entries: Object.values(state.watch) }, null, 2));
         return path;
       });
       handle("watchImportPreview", async () => {
-        const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_IMPORT_PATH
-          ? process.env.NEN_E2E_IMPORT_PATH
-          : (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
+        const path = (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
         if (!path) return null;
         const data = readFileSync(path);
         if (data.length > 50 * 1024 * 1024) throw Error("Watch data file is too large.");
@@ -1348,9 +1335,7 @@ else {
         let data = {};
         let fileName: unknown;
         if (fromFile) {
-          const path = process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_IMPORT_PATH
-            ? process.env.NEN_E2E_IMPORT_PATH
-            : (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
+          const path = (await dialog.showOpenDialog(window, { properties: ["openFile"], filters: [{ name: "JSON", extensions: ["json"] }] })).filePaths[0];
           if (!path) return null;
           const raw = readFileSync(path);
           if (raw.length > 50 * 1024 * 1024) throw Error("Watch data file is too large.");

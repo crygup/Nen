@@ -12,7 +12,7 @@ import {
   audioLanguages,
   releaseAudio,
 } from "./shared";
-import { matchingFile } from "../electron/rules";
+import { matchingFile, parseRelease } from "../electron/rules";
 import { mountPlayer } from "./watch";
 import type {
   Media,
@@ -866,7 +866,7 @@ function renderEpisodes() {
 
 function dialog(content: string) {
   const d = document.querySelector<HTMLDialogElement>("#dialog")!;
-  d.setAttribute("closedby", "any");
+  d.setAttribute("closedby", "closerequest");
   d.innerHTML = `<div class="dialog-header"><span class="eyebrow">Nen</span><button id="close-dialog" aria-label="Close dialog">${uiIcon("close")}</button></div>${content}`;
   d.onclose = null;
   if (!d.open) d.showModal();
@@ -1001,6 +1001,8 @@ async function chooseFile(
       await play(matched.index);
       return;
     }
+    if (files.length && files.every(file => parseRelease(file.path.split(/[\\/]/).at(-1) ?? "", ep).episode !== null))
+      throw Error("This source does not contain a clear match for the selected episode. Choose another source.");
     if ((await api.togetherState()).connected)
       throw Error("This source has no clear file match for the session episode. Choose another source.");
     d.querySelector("#files")!.innerHTML = files.length

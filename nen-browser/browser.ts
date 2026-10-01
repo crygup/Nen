@@ -1,5 +1,5 @@
 import { toggleFullscreen } from './fullscreen';
-import { browserVersion } from './version';
+declare const NEN_BROWSER_VERSION: string;
 import { browserRoom } from './room';
 import { episodeAvailability, matchSubtitle, type SubtitleSelection } from '../app/src/shared';
 import { connectAccount } from './account';
@@ -13,12 +13,12 @@ if(window.parent!==window){
  window.nen={...parentApi,onPlayback:fn=>{const remove=parentApi.onPlayback(fn);window.addEventListener('pagehide',remove,{once:true});return remove;},onTogether:fn=>{const remove=parentApi.onTogether(fn);window.addEventListener('pagehide',remove,{once:true});return remove;}};
  await import('../app/src/main');
 }else{const key='nen-browser-state-v2';
-const defaults:State={version:browserVersion,settings:{theme:'dark',autoSkip:false,autoNext:false,audio:'',subtitles:'eng',subtitlePosition:15,source:'all',sourceMode:'auto',qualities:[1080,720,480,360]},progress:{},watch:{},favorites:{},favoriteChanges:{},anilist:{connected:false,baseline:{}},markers:{},mappings:{}};
+const defaults:State={version:NEN_BROWSER_VERSION,settings:{theme:'dark',autoSkip:false,autoNext:false,audio:'',subtitles:'eng',subtitlePosition:15,source:'all',sourceMode:'auto',qualities:[1080,720,480,360]},progress:{},watch:{},favorites:{},favoriteChanges:{},anilist:{connected:false,baseline:{}},markers:{},mappings:{}};
 let state:State;
 let subtitleSelection: SubtitleSelection | undefined;
 try { const saved=sessionStorage.getItem('nen-subtitle-selection');if(saved!==null)subtitleSelection=JSON.parse(saved); } catch {}
 try {state={...structuredClone(defaults),...JSON.parse(localStorage.getItem(key)||'null')};} catch {state=structuredClone(defaults);}
-state.settings={...defaults.settings,...state.settings,sourceMode:'auto'};state.version=browserVersion;state.anilist.connected=false;
+state.settings={...defaults.settings,...state.settings,sourceMode:'auto'};state.version=NEN_BROWSER_VERSION;state.anilist.connected=false;
 const playbackListeners=new Set<(p:Playback)=>void>(), watchListeners=new Set<(s:State)=>void>();
 let p:Playback={active:false,position:0,duration:0,paused:true,tracks:[],speed:0,peers:0,progress:0,markers:[]};
 let video:HTMLVideoElement, hls:Hls|undefined, current:Media|undefined, controller:AbortController|undefined, lastSave=0, undoPosition=0, imported:Record<string,WatchEntry>|undefined;

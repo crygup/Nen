@@ -195,15 +195,16 @@ export function mountPlayer(actions: {
         el("app").classList.add("controls-hidden");
     }, 3000);
   };
-  document.addEventListener("pointermove", wake);
-  document.addEventListener("pointerdown", wake);
+  const touchPlayer = () => matchMedia("(pointer: coarse)").matches;
+  document.addEventListener("pointermove", event => { if (event.pointerType === "mouse") wake(); });
+  document.addEventListener("pointerdown", event => { if (!touchPlayer() || (event.target as Element).closest("button,input,select,.watch-panel")) wake(); });
   document.addEventListener("pointerdown", event => {
     if ((event.target as HTMLElement).closest(".watch-panel, #speed, #audio-tracks, #tracks, #player-more")) return;
     for (const panel of document.querySelectorAll<HTMLElement>(".watch-panel")) panel.hidden = true;
   });
   document.addEventListener("keydown", wake);
   document.addEventListener("focusin", wake);
-  document.addEventListener("pointerup", () => { dragging = false; wake(); });
+  document.addEventListener("pointerup", () => { dragging = false; if (!touchPlayer()) wake(); });
   document.addEventListener("pointercancel", () => { dragging = false; wake(); });
   el("stop").onclick = () => run(api.control("stop"));
   el("pause").onclick = () => run(api.control("pause"));
@@ -298,17 +299,43 @@ export function mountPlayer(actions: {
     if (e.key.toLowerCase() === "f") run(api.control("fullscreen"));
     if (e.key === "Escape") run(api.control("stop"));
   });
-  document.querySelector(".player-stage")!.addEventListener("click", (e) => {
-    if (
-      (e.target as HTMLElement).closest(
-        "button,input,select,textarea,.watch-panel,.watch-header,.watch-footer,.skip-popup",
-      )
-    )
+  const stage = document.querySelector<HTMLElement>(".player-stage")!;
+  const interactive = (event: Event) => (event.target as Element).closest(
+    "button,input,select,textarea,.watch-panel,.watch-header,.watch-footer,.skip-popup,dialog",
+  );
+  let tapTimer: ReturnType<typeof setTimeout> | undefined;
+  let tapSide = 0;
+  stage.style.touchAction = "manipulation";
+  stage.addEventListener("click", event => {
+    if (interactive(event)) {
+      clearTimeout(tapTimer);
+      tapTimer = undefined;
       return;
-    if ((e as MouseEvent).detail === 1) run(api.control("pause"));
+    }
+    if (!touchPlayer()) {
+      if (event.detail === 1) run(api.control("pause"));
+      return;
+    }
+    const bounds = stage.getBoundingClientRect();
+    const side = event.clientX < bounds.left + bounds.width / 2 ? -1 : 1;
+    if (tapTimer !== undefined) {
+      clearTimeout(tapTimer);
+      tapTimer = undefined;
+      if (side === tapSide) run(api.control("seekRelative", side * 5));
+      return;
+    }
+    tapSide = side;
+    tapTimer = setTimeout(() => {
+      tapTimer = undefined;
+      if (el("app").classList.contains("controls-hidden")) wake();
+      else {
+        clearTimeout(timer);
+        el("app").classList.add("controls-hidden");
+      }
+    }, 280);
   });
-  document.querySelector(".player-stage")!.addEventListener("dblclick", (e) => {
-    if ((e.target as HTMLElement).closest("button,input,select")) return;
+  stage.addEventListener("dblclick", event => {
+    if (touchPlayer() || interactive(event)) return;
     run(api.control("fullscreen"));
   });
   wake();
@@ -453,6 +480,6 @@ export function mountPlayer(actions: {
         : marker?.type === "recap"
           ? "Skip recap"
           : "Skip outro";
-    if (p.paused || p.error || p.loadingNotice || !p.ready || p.buffering) el("app").classList.remove("controls-hidden");
+    if ((!touchPlayer() && p.paused) || p.error || p.loadingNotice || !p.ready || p.buffering) el("app").classList.remove("controls-hidden");
   };
 }

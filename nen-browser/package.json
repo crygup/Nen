@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5174 --strictPort",
     "build": "vite build",
-    "build:server": "node build-server.mjs",
-    "check:security": "node security-check.mjs"
+    "build:server": "node build-server.mjs"
   },
   "dependencies": {
     "hls.js": "^1.6.16"

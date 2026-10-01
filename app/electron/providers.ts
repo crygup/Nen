@@ -344,7 +344,7 @@ export async function labels(id: number, mal: number | null): Promise<Labels> {
 }
 async function nyaa(query: string, episode: number, signal?: AbortSignal): Promise<Release[]> {
   const xml = await request(
-    `https://nyaa.si/?page=rss&c=1_2&f=0&q=${encodeURIComponent(query)}`, { signal },
+    `https://nyaa.si/?page=rss&c=1_0&f=0&s=seeders&o=desc&q=${encodeURIComponent(query)}`, { signal },
   );
   const root = new XMLParser({ processEntities: true }).parse(xml);
   const entries = root.rss?.channel?.item ?? [];
@@ -414,9 +414,13 @@ export async function releases(
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const preferred = audio.split(",")[0].trim().toLowerCase();
   const language = audioLanguages.find(([code]) => code === preferred)?.[1];
-  const aliases = override ? [override] : [anime.title.romaji, anime.title.english, ...sourceAliases(anime), ...anime.synonyms].filter((s): s is string => !!s);
-  // Shorter queries only widen discovery. Every result must still match a catalog alias.
-  const queries = [...new Set(aliases.flatMap(alias => [alias, alias.includes(":") ? alias.split(":").slice(1).join(":").split(/\s[-–]\s/)[0] : alias]).map(normalize))].slice(0, 12);
+  const titles = (override ? [override] : [anime.title.english, anime.title.romaji]).filter((title): title is string => !!title);
+  const broad = override ? [] : sourceAliases(anime).filter(alias => /\bS\d+\b/i.test(alias)).map(alias => alias.replace(/\s+S\d+.*$/i, ""));
+  const queries = [...new Set([
+    ...broad, ...titles,
+    ...titles.map(title => title + " " + String(episode + (continuousOffset || offset)).padStart(2, "0")),
+    ...titles.map(title => title + " " + (language && preferred !== "jpn" ? language + " audio" : "dual audio")),
+  ].map(normalize))].slice(0, 8);
   const errors: string[] = [];
   const items = new Map<string, Release>();
   const accept = (row: Release) => {
@@ -430,26 +434,13 @@ export async function releases(
     } as Release;
     items.set(item.hash, item);
   };
-  const usable = (r: Release) => r.seeds > 0 && (r.confidence === "Episode match" ||
-    (r.batch && (r.episode === null || (r.episode <= episode && (r.endEpisode ?? 0) >= episode))));
   await Promise.all(([ ["Nyaa", nyaa], ["Bangumi Moe", bangumi] ] as const)
     .filter(([name]) => source === "all" || name === source).map(async ([name, adapter]) => {
       try {
-        const titles = [...new Set([anime.title.english, anime.title.romaji, ...(partOffset(anime) ? [anime.title.english, anime.title.romaji].map(title => title?.replace(/\s+Part[.\s]*2$/i, "")) : [])].filter((title): title is string => !!title))];
-        const suffixes = language && preferred !== "jpn" ? [language + " audio", ...(preferred === "eng" ? ["dual audio"] : [language + " dub"])] : ["dual audio"];
-        await Promise.all(titles.flatMap(title => suffixes.map(async suffix => {
-          try { (await adapter(normalize(title) + " " + suffix, episode + offset, signal)).forEach(accept); }
-          catch (error) { if (!signal.aborted) errors.push(name + ": " + (error as Error).message); }
-        })));
+        // Check the broad, seeded batches first. Do not stop at the first weak source.
         for (const query of queries) {
           signal.throwIfAborted();
-          for (const number of [...new Set([episode + offset, ...(continuousOffset ? [episode + continuousOffset] : [])])]) {
-            (await adapter(query + " " + String(number).padStart(2, "0"), number, signal)).forEach(accept);
-            if ([...items.values()].some(r => r.source === name && usable(r))) break;
-          }
-          if ([...items.values()].some(r => r.source === name && usable(r))) break;
           (await adapter(query, episode + offset, signal)).forEach(accept);
-          if ([...items.values()].some(r => r.source === name && usable(r))) break;
         }
       } catch (error) { errors.push(name + ": " + (error as Error).message); }
     }));

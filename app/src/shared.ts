@@ -477,9 +477,6 @@ export function rankReleases(
   episode: number,
   settings: Settings,
 ): Release[] {
-  const quality = [...(settings.qualities ?? [1080, 720, 480, 360])].sort(
-    (a, b) => b - a,
-  );
   return releases
     .filter(
       (r) =>
@@ -489,20 +486,10 @@ export function rankReleases(
           r.episode === episode ||
           (r.batch && r.episode <= episode && (r.endEpisode ?? 0) >= episode)),
     )
-    .sort((a, b) => {
-      const rank = (r: Release) => {
-        const q = quality.indexOf(parseInt(r.resolution));
-        return q < 0 ? 999 : q;
-      };
-      return (
-        Number(Number.isNaN(parseInt(a.resolution))) - Number(Number.isNaN(parseInt(b.resolution))) ||
-        audioRank(a, settings.audio ?? "") - audioRank(b, settings.audio ?? "") ||
-        Number(a.confidence !== "Episode match") -
-          Number(b.confidence !== "Episode match") ||
-        rank(a) - rank(b) ||
-        b.seeds - a.seeds
-      );
-    });
+    .sort((a, b) =>
+      (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0) ||
+      b.seeds - a.seeds,
+    );
 }
 export function automaticRelease(
   releases: Release[],
