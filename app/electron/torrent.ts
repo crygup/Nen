@@ -97,9 +97,7 @@ port.on("message", async ({ data }) => {
           send({
             event: "stats",
             speed: torrent?.downloadSpeed ?? 0,
-            peers: torrent?.numPeers ?? 0,
-            progress: torrent?.progress ?? 0,
-            download: fileDownload(),
+            peers: torrent?.numPeers ?? 0,            download: fileDownload(),
           }),
         1000,
       );

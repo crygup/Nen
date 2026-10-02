@@ -32,9 +32,7 @@ export class Player {
     paused: false,
     tracks: [],
     speed: 0,
-    peers: 0,
-    progress: 0,
-    markers: [],
+    peers: 0,    markers: [],
   };
   async start(
     url: string,

@@ -1,5 +1,8 @@
 import { parseSearch } from "../src/filters";
 import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { join } from "node:path";
 import { XMLParser } from "fast-xml-parser";
 import type {
   Catalog,
@@ -11,7 +14,8 @@ import type {
   EpisodePage,
 } from "../src/shared";
 import { episodeAvailability, latestEpisode, audioLanguages } from "../src/shared";
-import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases, partOffset } from "./rules";
+import { hash, positive, parseRelease, validMarker, matchesMedia, sourceOffset, sourceAliases, sourceSearchTitle, partOffset } from "./rules";
+const runFile = promisify(execFile);
 const cache = new Map<
   string,
   { expires: number; body: string; etag: string | null }
@@ -96,7 +100,7 @@ async function request(
     const host = new URL(url).host;
     if ((blocked.get(host) ?? 0) > Date.now())
       throw Error(`${host} is rate limited. Try again later.`);
-    const response = await fetch(url, {
+    const options: RequestInit = {
       ...init,
       redirect: "error",
       headers: {
@@ -105,7 +109,17 @@ async function request(
         ...(old?.etag ? { "If-None-Match": old.etag } : {}),
       },
       signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(18000)]) : AbortSignal.timeout(18000),
-    });
+    };
+    // Node requests to Nyaa can time out on Windows while the OS client succeeds.
+    const response = process.platform === "win32" && host === "nyaa.si"
+      ? await runFile(join(process.env.SystemRoot || "C:/Windows", "System32", "curl.exe"),
+          ["-q", "--silent", "--show-error", "--max-time", "18", "--max-filesize", "5000000", "--proto", "=https", "--write-out", "\n%{http_code}", url],
+          { windowsHide: true, maxBuffer: 5000100, signal: options.signal! }).then(({ stdout }) => {
+            const split = stdout.lastIndexOf("\n");
+            const status = Number(stdout.slice(split + 1));
+            return new Response([204, 304].includes(status) ? null : stdout.slice(0, split), { status });
+          })
+      : await fetch(url, options);
     if (response.status === 304 && old) {
       old.expires = Date.now() + ttl;
       return old.body;
@@ -414,10 +428,11 @@ export async function releases(
   signal = signal ? AbortSignal.any([signal, deadline]) : deadline;
   const preferred = audio.split(",")[0].trim().toLowerCase();
   const language = audioLanguages.find(([code]) => code === preferred)?.[1];
-  const titles = (override ? [override] : [anime.title.english, anime.title.romaji]).filter((title): title is string => !!title);
+  const titles = (override ? [override] : [anime.title.english, anime.title.romaji]).filter((title): title is string => !!title)
+    .map(title => sourceSearchTitle(title, anime));
   const broad = override ? [] : sourceAliases(anime).filter(alias => /\bS\d+\b/i.test(alias)).map(alias => alias.replace(/\s+S\d+.*$/i, ""));
   const queries = [...new Set([
-    ...broad, ...titles,
+    ...(offset ? [sourceAliases(anime)[0].split(":").at(-1)!] : []), ...broad, ...titles,
     ...titles.map(title => title + " " + String(episode + (continuousOffset || offset)).padStart(2, "0")),
     ...titles.map(title => title + " " + (language && preferred !== "jpn" ? language + " audio" : "dual audio")),
   ].map(normalize))].slice(0, 8);
