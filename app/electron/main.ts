@@ -412,6 +412,7 @@ function publish() {
   if (publishTimer) return;
   publishTimer = setTimeout(() => {
     publishTimer = undefined;
+    if (player && selected) player.status.sourceName = selected.group && selected.group !== "Unknown group" ? selected.group : selected.source;
     discordPresence.update(state.settings.discordPresence === true, player?.status, together.state);
     for (const target of new Set([window, controls]))
       if (target && !target.isDestroyed())
@@ -424,9 +425,7 @@ function publish() {
             paused: false,
             tracks: [],
             speed: 0,
-            peers: 0,
-            progress: 0,
-            markers: [],
+            peers: 0,            markers: [],
           },
         );
   }, 100);
@@ -542,9 +541,7 @@ async function inspect(value: string, timeout = 60000) {
       if (data.event === "stats" && worker === activeWorker && player) {
         Object.assign(player.status, {
           speed: data.speed,
-          peers: data.peers,
-          progress: data.progress,
-          download: data.download,
+          peers: data.peers,          download: data.download,
         });
         publish();
       }
@@ -641,7 +638,7 @@ async function play(
     if (player)
       throw Error("Stop the current player before opening another file.");
     if (request !== playbackRequest) throw Error("Playback cancelled.");
-    if ((!resume && !matchesMedia(selected.title, anime as any)) || !matchesSeason(file.path, anime as any))
+    if ((!resume && !matchesMedia(selected.title, anime as any)) || (matched?.index !== file.index && !matchesSeason(file.path, anime as any)))
       throw Error("This source uses a different season. Choose another source.");
     if (
       !resume &&
@@ -833,7 +830,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
     }
     pendingPlayback = {
       active: true, position: startAt, duration: 0, paused: true,
-      speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
+      speed: 0, peers: 0, tracks: [], markers: [],
       mediaId, episode, loadingNotice: "Finding a source…",
     };
     await openPlayerView();
@@ -873,7 +870,7 @@ async function autoPlay(mediaId: number, episode: number, saved?: Progress, pref
       known.set(release.hash, release);
       pendingPlayback = {
         active: true, position: startAt, duration: 0, paused: false,
-        speed: 0, peers: 0, progress: 0, tracks: [], markers: [],
+        speed: 0, peers: 0, tracks: [], markers: [],
         mediaId, episode, title: anime.title.english || anime.title.romaji,
         loadingNotice: attempt ? "Connecting to another source…" : "Connecting to the source…",
       };
@@ -1410,9 +1407,7 @@ else {
             tracks: [],
             markers: [],
             speed: 0,
-            peers: 0,
-            progress: 0,
-          },
+            peers: 0,          },
       );
       handle("media", (id) => providers.media(positive(id)));
       handle("labels", async (id) => {

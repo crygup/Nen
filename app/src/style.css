@@ -1902,3 +1902,13 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 @media (pointer: coarse) {
   .skip-popup { bottom: max(90px, calc(160px - 10dvh)); }
 }
+
+#more-panel {width:min(460px,calc(100vw - 40px));display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;text-align:left;max-height:60dvh;overflow-y:auto}
+#more-panel[hidden] {display:none}
+.player-statistics {border-right:1px solid #ffffff30;padding-right:16px;min-width:0}
+.player-statistics dl {display:grid;gap:4px;margin:14px 0 0;font-size:12px}
+.player-statistics dt {color:var(--muted);margin-top:8px}
+.player-statistics dd {margin:0;overflow-wrap:anywhere}
+.player-skips {display:grid;align-content:start;gap:8px;min-width:0}
+.player-skips strong {margin-bottom:6px}
+.player-skips button:is(:hover, :focus-visible):not(:disabled) { background: var(--hover); }

@@ -237,8 +237,7 @@ export interface Playback {
   }[];
   error?: string;
   speed: number;
-  peers: number;
-  progress: number;
+  peers: number;  sourceName?: string;
   download?: {
     ranges: [number, number][];
   };
@@ -451,6 +450,19 @@ export function audioTrackLanguage(track: { lang?: string; title?: string }): st
   const language = audioLanguages.find(([id, name]) => id === code || name.toLowerCase() === code)
     ?? audioLanguages.find(([id, name]) => new RegExp("\\b(?:" + id + "|" + name + ")\\b", "i").test(track.title ?? ""));
   return language?.[0];
+}
+const subtitleLanguages = new Intl.DisplayNames(["en"], { type: "language", fallback: "none" });
+export function subtitleTrackName(track: { id: number; lang?: string; title?: string }): string {
+  const display = (code: string) => {
+    if (!/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(code) || /^(und|zxx|mul)$/i.test(code)) return undefined;
+    try { return subtitleLanguages.of(code.replaceAll("_", "-")); } catch { return undefined; }
+  };
+  const title = (track.title || "").replace(/\s+subs\b/gi, "").trim();
+  const language = display(track.lang?.trim() || "");
+  if (!title) return language || track.lang || "Track " + track.id;
+  if (/^(forced|sdh|dubtitle|simplified|traditional)$/i.test(title))
+    return language ? language + " (" + title + ")" : title;
+  return title.replace(/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*(?=$|\s|\()/i, code => display(code) || code);
 }
 export function audioTrackName(track: { id: number; lang?: string; title?: string }): string {
   const language = audioTrackLanguage(track);

@@ -20,7 +20,7 @@ try { const saved=sessionStorage.getItem('nen-subtitle-selection');if(saved!==nu
 try {state={...structuredClone(defaults),...JSON.parse(localStorage.getItem(key)||'null')};} catch {state=structuredClone(defaults);}
 state.settings={...defaults.settings,...state.settings,sourceMode:'auto'};state.version=NEN_BROWSER_VERSION;state.anilist.connected=false;
 const playbackListeners=new Set<(p:Playback)=>void>(), watchListeners=new Set<(s:State)=>void>();
-let p:Playback={active:false,position:0,duration:0,paused:true,tracks:[],speed:0,peers:0,progress:0,markers:[]};
+let p:Playback={active:false,position:0,duration:0,paused:true,tracks:[],speed:0,peers:0,markers:[]};
 let video:HTMLVideoElement, hls:Hls|undefined, current:Media|undefined, controller:AbortController|undefined, lastSave=0, undoPosition=0, imported:Record<string,WatchEntry>|undefined;
 const snapshot=()=>structuredClone(state);
 function save(notify=false){localStorage.setItem(key,JSON.stringify(state));if(notify)watchListeners.forEach(fn=>fn(snapshot()));}
@@ -67,7 +67,7 @@ function publish(){
 async function startStream(id:number,episode:number){
  controller?.abort();controller=new AbortController();const signal=controller.signal;
  persistProgress();if(!room.state.connected)history.replaceState(null,"",`/?player=1&id=${id}&episode=${episode}`);hls?.destroy();hls=undefined;video.pause();video.removeAttribute('src');video.replaceChildren();video.load();
- p={active:true,mediaId:id,episode,position:0,duration:0,paused:true,tracks:[],markers:[],speed:0,peers:0,progress:0,loadingNotice:'Finding a stream…'};publish();
+ p={active:true,sourceName:'AnimeParadise',mediaId:id,episode,position:0,duration:0,paused:true,tracks:[],markers:[],speed:0,peers:0,loadingNotice:'Finding a stream…'};publish();
  try{
  current=await request('media',{id});if(signal.aborted)return;
  p.title=current!.title.english||current!.title.romaji;p.cover=current!.coverImage.large;

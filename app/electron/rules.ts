@@ -34,14 +34,18 @@ function seriesTitles(media: Media): string[] {
   return [media.title.english, media.title.romaji].filter((title): title is string => !!title)
     .map(title => normalizeSeason(title).replace(/[:\s]*(?:(?:the\s+)?final season|S\d+|Part \d+).*$/i, "").trim());
 }
+export function sourceSearchTitle(title: string, media: Media): string {
+  if (sourceOffset(media) || /\b1st\s+STAGE$/i.test(title))
+    title = title.replace(/\s*-?\s*\d+(?:st|nd|rd|th)(?:\s*(?:&|-)\s*\d+(?:st|nd|rd|th))?\s+STAGE$/i, "");
+  return title;
+}
 export function sourceAliases(media: Media): string[] {
   return [...new Set([media.title.romaji, media.title.english, ...(media.synonyms ?? []),
     ...(catalogSeason(media) ? seriesTitles(media).flatMap(title => [title + " Season " + catalogSeason(media), title + " S" + catalogSeason(media)]) : []),
     ...(partOffset(media) ? [media.title.romaji, media.title.english].filter(Boolean).map(name => name!.replace(/\s+Part[.\s]*2$/i, "")) : [])]
     .filter((name): name is string => !!name).map(name => {
       let alias = normalizeSeason(name).replace(/\s+Part\s+1(?:\s*&\s*2)?$/i, "");
-      if (sourceOffset(media) || /\b1st\s+STAGE$/i.test(alias))
-        alias = alias.replace(/\s*-?\s*\d+(?:st|nd|rd|th)(?:\s*(?:&|-)\s*\d+(?:st|nd|rd|th))?\s+STAGE$/i, "");
+      alias = sourceSearchTitle(alias, media);
       return alias.trim();
     }))];
 }
@@ -214,7 +218,9 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
   episode += release.sourceOffset ?? sourceOffset(media);
   const atEpisode = (number: number) => files.filter(f => {
     const parsed = parseRelease(f.path.split(/[\\/]/).at(-1) ?? "", episode);
-    return parsed.episode === number && !parsed.batch && matchesSeason(f.path, media)
+    return parsed.episode === number && !parsed.batch && (matchesSeason(f.path, media)
+      || (files.length === 1 && catalogSeason(media) === null && hasCatalogTitle(release.title, media)
+        && parsed.season === parseRelease(release.title, episode).season))
       && !/\b(sample|preview|trailer|ncop|nced)\b/i.test(f.path);
   });
   const matches = atEpisode(episode);
@@ -245,7 +251,13 @@ export function matchingFile(files: TorrentFile[], release: Release, media: Medi
     && matchesSeason(files[0].path, media)) return files[0];
 }
 
+function hasCatalogTitle(title: string, media: Media): boolean {
+  const normalize = (value: string) => value.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const names = [media.title.english, media.title.romaji].filter(Boolean).map(name => normalize(name!));
+  return [...title.matchAll(/\(([^()]*)\)/g)].some(match => names.includes(normalize(match[1].split(",")[0])));
+}
 export function matchesMedia(title: string, media: Media): boolean {
+  if (catalogSeason(media) === null && hasCatalogTitle(title, media)) return true;
   if (!matchesSeason(title, media)) return false;
   const part = normalizeSeason(title).match(/\bPart (\d+)\b/i);
   if (partOffset(media) && part && Number(part[1]) !== 2) return false;
