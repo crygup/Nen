@@ -8,10 +8,16 @@ export const escapeHtml = (s: unknown) =>
   );
 export type Theme = "system" | "light" | "dark";
 export type SubtitleSelection = { lang?: string; title?: string } | null;
-export function matchSubtitle<T extends { lang?: string; title?: string }>(tracks: T[], selection: Exclude<SubtitleSelection, null>): T | undefined {
+export function matchSubtitle<T extends { lang?: string; title?: string }>(
+  tracks: T[],
+  selection: Exclude<SubtitleSelection, null>,
+): T | undefined {
   const language = audioTrackLanguage(selection);
-  return tracks.find(t => t.title === selection.title && audioTrackLanguage(t) === language)
-    ?? tracks.find(t => !!language && audioTrackLanguage(t) === language);
+  return (
+    tracks.find(
+      (t) => t.title === selection.title && audioTrackLanguage(t) === language,
+    ) ?? tracks.find((t) => !!language && audioTrackLanguage(t) === language)
+  );
 }
 export type SegmentType = "op" | "ed" | "mixed-op" | "mixed-ed" | "recap";
 export interface Media {
@@ -140,7 +146,8 @@ export interface Progress {
   updated: number;
   malEpisode: number;
 }
-export type WatchStatus = "CURRENT" | "REPEATING" | "COMPLETED" | "PAUSED" | "DROPPED" | "PLANNING";
+export type WatchStatus =
+  "CURRENT" | "REPEATING" | "COMPLETED" | "PAUSED" | "DROPPED" | "PLANNING";
 export interface WatchEpisode {
   watched: boolean;
   manual?: boolean;
@@ -172,7 +179,11 @@ export interface WatchEntry {
   countUpdated: number;
   repeatUpdated: number;
 }
-export interface SyncBase { status: WatchStatus; count: number; repeat: number }
+export interface SyncBase {
+  status: WatchStatus;
+  count: number;
+  repeat: number;
+}
 export interface AniListState {
   connected: boolean;
   user?: string;
@@ -189,9 +200,32 @@ export interface SyncChange {
   conflict: boolean;
   choice?: "local" | "remote";
 }
-export interface SyncPreview { changes: SyncChange[]; first: boolean }
-export interface ImportPreview { count: number; episodes: number; newEntries: number; changedEntries: number; path: string }
-export interface ProfileSummary { id: string; name: string; created: number; anilistUser?: string }
+export interface SyncPreview {
+  changes: SyncChange[];
+  first: boolean;
+  warning?: string;
+}
+export interface ListMergePreview {
+  anilistUser: string;
+  malUser: string;
+  toAniList: string[];
+  toMyAnimeList: string[];
+  skipped: string[];
+}
+export interface ImportPreview {
+  count: number;
+  episodes: number;
+  newEntries: number;
+  changedEntries: number;
+  path: string;
+}
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  created: number;
+  anilistUser?: string;
+  malUser?: string;
+}
 export interface State {
   profiles?: { active: string; list: ProfileSummary[] };
   seriesAudio?: Record<string, string>;
@@ -204,6 +238,7 @@ export interface State {
   favorites: Record<string, WatchEntry>;
   favoriteChanges: Record<string, boolean>;
   anilist: AniListState;
+  mal?: AniListState;
   markers: Record<string, Marker[]>;
   mappings: Record<string, number>;
 }
@@ -238,16 +273,33 @@ export interface Playback {
   }[];
   error?: string;
   speed: number;
-  peers: number;  sourceName?: string;
+  peers: number;
+  sourceName?: string;
   download?: {
     ranges: [number, number][];
   };
   markers: Marker[];
   skipNotice?: string;
 }
-export interface UpdateStatus { busy: boolean; message: string; percent?: number; available?: boolean; installing?: boolean }
-export interface ChangelogEntry { sha: string; title: string; date: string; merge: boolean }
-export interface ChangelogPage { entries: ChangelogEntry[]; hasMore: boolean; stale: boolean; buildCommit: string }
+export interface UpdateStatus {
+  busy: boolean;
+  message: string;
+  percent?: number;
+  available?: boolean;
+  installing?: boolean;
+}
+export interface ChangelogEntry {
+  sha: string;
+  title: string;
+  date: string;
+  merge: boolean;
+}
+export interface ChangelogPage {
+  entries: ChangelogEntry[];
+  hasMore: boolean;
+  stale: boolean;
+  buildCommit: string;
+}
 export interface TogetherState {
   connected: boolean;
   code?: string;
@@ -266,9 +318,21 @@ export interface TogetherState {
   at?: number;
   error?: string;
 }
-export interface LocalSource { id: string; name: string; path: string; available?: boolean }
-export interface LocalState { enabled: boolean; sources: LocalSource[] }
-export interface LocalFolder { path: string; parent: string | null; entries: { name: string; path: string; directory: boolean }[] }
+export interface LocalSource {
+  id: string;
+  name: string;
+  path: string;
+  available?: boolean;
+}
+export interface LocalState {
+  enabled: boolean;
+  sources: LocalSource[];
+}
+export interface LocalFolder {
+  path: string;
+  parent: string | null;
+  entries: { name: string; path: string; directory: boolean }[];
+}
 export interface API {
   downloads?: { save(): Promise<boolean>; copyMagnet(): Promise<void> };
   local?: {
@@ -293,11 +357,47 @@ export interface API {
   favoriteSet(id: number, favorite: boolean): Promise<State>;
   watchAdd(id: number): Promise<State>;
   watchDelete(id: number, sync?: boolean): Promise<State>;
-  watchEdit(id: number, patch: { status?: WatchStatus; count?: number; episode?: number; watched?: boolean; position?: number; duration?: number; startRewatch?: boolean }): Promise<State>;
+  watchEdit(
+    id: number,
+    patch: {
+      status?: WatchStatus;
+      count?: number;
+      episode?: number;
+      watched?: boolean;
+      position?: number;
+      duration?: number;
+      startRewatch?: boolean;
+    },
+  ): Promise<State>;
   watchExport(): Promise<string | null>;
   watchImportPreview(): Promise<ImportPreview | null>;
   watchImport(mode: "merge" | "replace"): Promise<State>;
+  mal?: {
+    refresh(): Promise<State>;
+    importFrom(
+      source: "anilist" | "mal",
+      progress?: (percent: number) => void,
+    ): Promise<{
+      addedAniList: number;
+      addedMyAnimeList: number;
+      updatedAniList: number;
+      updatedMyAnimeList: number;
+    }>;
+    connect(): Promise<void>;
+    disconnect(): Promise<State>;
+    preview(): Promise<SyncPreview>;
+    apply(choices: SyncChange[]): Promise<State>;
+    mergePreview(): Promise<ListMergePreview>;
+    mergeApply(): Promise<{
+      addedAniList: number;
+      addedMyAnimeList: number;
+      updatedAniList: number;
+      updatedMyAnimeList: number;
+    }>;
+    cancelMerge(): Promise<void>;
+  };
   anilistConnect(): Promise<{ sharedWith?: string } | void>;
+  anilistRefresh(): Promise<State>;
   anilistPreview(): Promise<SyncPreview>;
   anilistApply(choices: SyncChange[]): Promise<State>;
   anilistDisconnect(): Promise<State>;
@@ -368,7 +468,15 @@ export interface API {
   undo(): Promise<void>;
   clear(kind: "history" | "cache"): Promise<void>;
   external(
-    target: "anilist" | "filler" | "license" | "aniskip" | "discord" | "issues" | "email" | "donate",
+    target:
+      | "anilist"
+      | "filler"
+      | "license"
+      | "aniskip"
+      | "discord"
+      | "issues"
+      | "email"
+      | "donate",
     id?: number,
   ): Promise<void>;
   onBack(callback: (direction: "back" | "forward") => void): () => void;
@@ -385,11 +493,7 @@ export function canAutoSkip(
   position: number,
   enabled: boolean,
 ): boolean {
-  return (
-    enabled &&
-    position >= marker.start &&
-    position < marker.end
-  );
+  return enabled && position >= marker.start && position < marker.end;
 }
 export function labelForEpisode(
   labels: Labels | undefined,
@@ -457,47 +561,136 @@ export function latestEpisode(media: Media, now = Date.now() / 1000): number {
     next ? next.episode - (next.airingAt && next.airingAt <= now ? 0 : 1) : 0,
   );
 }
-export const audioLanguages = [["jpn", "Japanese"], ["eng", "English"], ["spa", "Spanish"], ["fra", "French"], ["deu", "German"], ["ita", "Italian"], ["por", "Portuguese"], ["zho", "Chinese"], ["kor", "Korean"], ["rus", "Russian"], ["ara", "Arabic"], ["hin", "Hindi"]] as const;
-const audioAliases: Record<string, string> = { ja: "jpn", en: "eng", es: "spa", fr: "fra", fre: "fra", de: "deu", ger: "deu", it: "ita", pt: "por", zh: "zho", chi: "zho", ko: "kor", ru: "rus", ar: "ara", hi: "hin" };
-export function audioTrackLanguage(track: { lang?: string; title?: string }): string | undefined {
+export const audioLanguages = [
+  ["jpn", "Japanese"],
+  ["eng", "English"],
+  ["spa", "Spanish"],
+  ["fra", "French"],
+  ["deu", "German"],
+  ["ita", "Italian"],
+  ["por", "Portuguese"],
+  ["zho", "Chinese"],
+  ["kor", "Korean"],
+  ["rus", "Russian"],
+  ["ara", "Arabic"],
+  ["hin", "Hindi"],
+] as const;
+const audioAliases: Record<string, string> = {
+  ja: "jpn",
+  en: "eng",
+  es: "spa",
+  fr: "fra",
+  fre: "fra",
+  de: "deu",
+  ger: "deu",
+  it: "ita",
+  pt: "por",
+  zh: "zho",
+  chi: "zho",
+  ko: "kor",
+  ru: "rus",
+  ar: "ara",
+  hi: "hin",
+};
+export function audioTrackLanguage(track: {
+  lang?: string;
+  title?: string;
+}): string | undefined {
   const raw = track.lang?.trim().toLowerCase().split(/[-_]/)[0] ?? "";
   const code = audioAliases[raw] ?? raw;
-  const language = audioLanguages.find(([id, name]) => id === code || name.toLowerCase() === code)
-    ?? audioLanguages.find(([id, name]) => new RegExp("\\b(?:" + id + "|" + name + ")\\b", "i").test(track.title ?? ""));
+  const language =
+    audioLanguages.find(
+      ([id, name]) => id === code || name.toLowerCase() === code,
+    ) ??
+    audioLanguages.find(([id, name]) =>
+      new RegExp("\\b(?:" + id + "|" + name + ")\\b", "i").test(
+        track.title ?? "",
+      ),
+    );
   return language?.[0];
 }
-const subtitleLanguages = new Intl.DisplayNames(["en"], { type: "language", fallback: "none" });
-export function subtitleTrackName(track: { id: number; lang?: string; title?: string }): string {
+const subtitleLanguages = new Intl.DisplayNames(["en"], {
+  type: "language",
+  fallback: "none",
+});
+export function subtitleTrackName(track: {
+  id: number;
+  lang?: string;
+  title?: string;
+}): string {
   const display = (code: string) => {
-    if (!/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(code) || /^(und|zxx|mul)$/i.test(code)) return undefined;
-    try { return subtitleLanguages.of(code.replaceAll("_", "-")); } catch { return undefined; }
+    if (
+      !/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*$/i.test(code) ||
+      /^(und|zxx|mul)$/i.test(code)
+    )
+      return undefined;
+    try {
+      return subtitleLanguages.of(code.replaceAll("_", "-"));
+    } catch {
+      return undefined;
+    }
   };
   const title = (track.title || "").replace(/\s+subs\b/gi, "").trim();
   const language = display(track.lang?.trim() || "");
   if (!title) return language || track.lang || "Track " + track.id;
   if (/^(forced|sdh|dubtitle|simplified|traditional)$/i.test(title))
     return language ? language + " (" + title + ")" : title;
-  return title.replace(/^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*(?=$|\s|\()/i, code => display(code) || code);
+  return title.replace(
+    /^[a-z]{2,3}(?:[-_][a-z0-9]{2,8})*(?=$|\s|\()/i,
+    (code) => display(code) || code,
+  );
 }
-export function audioTrackName(track: { id: number; lang?: string; title?: string }): string {
+export function audioTrackName(track: {
+  id: number;
+  lang?: string;
+  title?: string;
+}): string {
   const language = audioTrackLanguage(track);
-  return language === "jpn" ? "Japanese/Native" : audioLanguages.find(([id]) => id === language)?.[1] ?? `Track ${track.id}`;
+  return language === "jpn"
+    ? "Japanese/Native"
+    : (audioLanguages.find(([id]) => id === language)?.[1] ??
+        `Track ${track.id}`);
 }
 
-export function releaseAudio(release: Pick<Release, "title">): { languages: string[]; inferred: boolean } {
+export function releaseAudio(release: Pick<Release, "title">): {
+  languages: string[];
+  inferred: boolean;
+} {
   const title = release.title.replace(/[._-]/g, " ");
-  const languages = audioLanguages.filter(([code, name]) => new RegExp("\\b(?:" + code + "|" + name + ")\\s*(?:dub(?:bed)?|audio)\\b|\\b(?:dub(?:bed)?|audio)\\s*[:=]?\\s*(?:" + code + "|" + name + ")\\b", "i").test(title)).map(([code]) => code);
+  const languages = audioLanguages
+    .filter(([code, name]) =>
+      new RegExp(
+        "\\b(?:" +
+          code +
+          "|" +
+          name +
+          ")\\s*(?:dub(?:bed)?|audio)\\b|\\b(?:dub(?:bed)?|audio)\\s*[:=]?\\s*(?:" +
+          code +
+          "|" +
+          name +
+          ")\\b",
+        "i",
+      ).test(title),
+    )
+    .map(([code]) => code);
   // Dual audio is only a language hint until the player reads the actual tracks.
-  return languages.length ? { languages, inferred: false } : /\bdual\s*audio\b/i.test(title)
-    ? { languages: ["eng", "jpn"], inferred: true }
-    : /\b(?:multi(?:ple)?\s*sub(?:title)?s?|subbed|raws)\b/i.test(title)
-      ? { languages: ["jpn"], inferred: true } : { languages: [], inferred: false };
+  return languages.length
+    ? { languages, inferred: false }
+    : /\bdual\s*audio\b/i.test(title)
+      ? { languages: ["eng", "jpn"], inferred: true }
+      : /\b(?:multi(?:ple)?\s*sub(?:title)?s?|subbed|raws)\b/i.test(title)
+        ? { languages: ["jpn"], inferred: true }
+        : { languages: [], inferred: false };
 }
 export function audioRank(release: Release, preference: string): number {
   const preferred = preference.split(",")[0].trim().toLowerCase();
   if (!preferred) return 0;
   const audio = releaseAudio(release);
-  return audio.languages.includes(preferred) ? Number(audio.inferred) : audio.languages.length ? 3 : 2;
+  return audio.languages.includes(preferred)
+    ? Number(audio.inferred)
+    : audio.languages.length
+      ? 3
+      : 2;
 }
 export function rankReleases(
   releases: Release[],
@@ -513,9 +706,10 @@ export function rankReleases(
           r.episode === episode ||
           (r.batch && r.episode <= episode && (r.endEpisode ?? 0) >= episode)),
     )
-    .sort((a, b) =>
-      (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0) ||
-      b.seeds - a.seeds,
+    .sort(
+      (a, b) =>
+        (parseInt(b.resolution) || 0) - (parseInt(a.resolution) || 0) ||
+        b.seeds - a.seeds,
     );
 }
 export function automaticRelease(
@@ -534,7 +728,10 @@ export function automaticRelease(
     )
     .sort(
       (a, b) =>
-        audioRank(a, settings.audio ?? "") - audioRank(b, settings.audio ?? "") || parseInt(b.resolution) - parseInt(a.resolution) || b.seeds - a.seeds,
+        audioRank(a, settings.audio ?? "") -
+          audioRank(b, settings.audio ?? "") ||
+        parseInt(b.resolution) - parseInt(a.resolution) ||
+        b.seeds - a.seeds,
     )[0];
 }
 

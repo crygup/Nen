@@ -1,7 +1,10 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { API } from "../src/shared";
 ipcRenderer.on("window-fullscreen", (_event, value: boolean) => {
-  document.documentElement.classList.toggle("window-fullscreen", value === true);
+  document.documentElement.classList.toggle(
+    "window-fullscreen",
+    value === true,
+  );
 });
 function subscribe<T>(channel: string, callback: (value: T) => void) {
   const listener = (_: unknown, value: T) => callback(value);
@@ -9,12 +12,35 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 const api: API = {
-  downloads: { save: () => ipcRenderer.invoke("downloadVideo"), copyMagnet: () => ipcRenderer.invoke("copyMagnet") },
+  mal: {
+    refresh: () => ipcRenderer.invoke("malRefresh"),
+    importFrom: async (source, progress) => {
+      const unsubscribe = subscribe<number>("list-import-progress", (percent) =>
+        progress?.(percent),
+      );
+      try {
+        return await ipcRenderer.invoke("listImport", source);
+      } finally {
+        unsubscribe();
+      }
+    },
+    connect: () => ipcRenderer.invoke("malConnect"),
+    disconnect: () => ipcRenderer.invoke("malDisconnect"),
+    preview: () => ipcRenderer.invoke("malPreview"),
+    apply: (choices) => ipcRenderer.invoke("malApply", choices),
+    mergePreview: () => ipcRenderer.invoke("listMergePreview"),
+    mergeApply: () => ipcRenderer.invoke("listMergeApply"),
+    cancelMerge: () => ipcRenderer.invoke("listMergeCancel"),
+  },
+  downloads: {
+    save: () => ipcRenderer.invoke("downloadVideo"),
+    copyMagnet: () => ipcRenderer.invoke("copyMagnet"),
+  },
   local: {
     state: () => ipcRenderer.invoke("localState"),
-    enable: value => ipcRenderer.invoke("localEnable", value),
+    enable: (value) => ipcRenderer.invoke("localEnable", value),
     add: () => ipcRenderer.invoke("localAdd"),
-    remove: id => ipcRenderer.invoke("localRemove", id),
+    remove: (id) => ipcRenderer.invoke("localRemove", id),
     list: (id, path) => ipcRenderer.invoke("localList", id, path),
     play: (id, path) => ipcRenderer.invoke("localPlay", id, path),
     next: () => ipcRenderer.invoke("localNext"),
@@ -22,11 +48,11 @@ const api: API = {
   },
   togetherCopyCode: () => ipcRenderer.invoke("togetherCopyCode"),
   togetherState: () => ipcRenderer.invoke("togetherState"),
-  togetherConnect: code => ipcRenderer.invoke("togetherConnect", code),
-  togetherSend: message => ipcRenderer.invoke("togetherSend", message),
+  togetherConnect: (code) => ipcRenderer.invoke("togetherConnect", code),
+  togetherSend: (message) => ipcRenderer.invoke("togetherSend", message),
   togetherLeave: () => ipcRenderer.invoke("togetherLeave"),
   togetherReload: () => ipcRenderer.invoke("togetherReload"),
-  onTogether: callback => subscribe("together", callback),
+  onTogether: (callback) => subscribe("together", callback),
   favoriteSet: (...a) => ipcRenderer.invoke("favoriteSet", ...a),
   uninstall: () => ipcRenderer.invoke("uninstall"),
   watchAdd: (...a) => ipcRenderer.invoke("watchAdd", ...a),
@@ -36,6 +62,7 @@ const api: API = {
   watchImportPreview: () => ipcRenderer.invoke("watchImportPreview"),
   watchImport: (...a) => ipcRenderer.invoke("watchImport", ...a),
   anilistConnect: () => ipcRenderer.invoke("anilistConnect"),
+  anilistRefresh: () => ipcRenderer.invoke("anilistRefresh"),
   anilistPreview: () => ipcRenderer.invoke("anilistPreview"),
   anilistApply: (...a) => ipcRenderer.invoke("anilistApply", ...a),
   anilistDisconnect: () => ipcRenderer.invoke("anilistDisconnect"),
@@ -43,14 +70,14 @@ const api: API = {
   profileSwitch: (...a) => ipcRenderer.invoke("profileSwitch", ...a),
   profileRename: (...a) => ipcRenderer.invoke("profileRename", ...a),
   profileDelete: (...a) => ipcRenderer.invoke("profileDelete", ...a),
-  onWatchState: callback => subscribe("watch-state", callback),
+  onWatchState: (callback) => subscribe("watch-state", callback),
   startupUpdate: () => ipcRenderer.invoke("startupUpdate"),
   checkUpdates: () => ipcRenderer.invoke("checkUpdates"),
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
   changelog: (page, refresh) => ipcRenderer.invoke("changelog", page, refresh),
-  openChangelogCommit: sha => ipcRenderer.invoke("openChangelogCommit", sha),
-  onUpdateStatus: callback => subscribe("update-status", callback),
+  openChangelogCommit: (sha) => ipcRenderer.invoke("openChangelogCommit", sha),
+  onUpdateStatus: (callback) => subscribe("update-status", callback),
   autoPlay: (...a) => ipcRenderer.invoke("autoPlay", ...a),
   startVideo: () => ipcRenderer.invoke("startVideo"),
   onVideo: (callback, error) => {
@@ -88,7 +115,10 @@ const api: API = {
   undo: () => ipcRenderer.invoke("undo"),
   clear: (...a) => ipcRenderer.invoke("clear", ...a),
   external: (...a) => ipcRenderer.invoke("external", ...a),
-  onBack: callback => subscribe("navigate-back", (direction: "back" | "forward" = "back") => callback(direction)),
-  onPlayback: callback => subscribe("playback", callback),
+  onBack: (callback) =>
+    subscribe("navigate-back", (direction: "back" | "forward" = "back") =>
+      callback(direction),
+    ),
+  onPlayback: (callback) => subscribe("playback", callback),
 };
 contextBridge.exposeInMainWorld("nen", api);

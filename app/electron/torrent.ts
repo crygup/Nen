@@ -19,17 +19,25 @@ let client: WebTorrent.Instance | undefined,
   torrent: WebTorrent.Torrent | undefined,
   server: Server | undefined;
 let timer: NodeJS.Timeout | undefined;
-let saving = false, stopping = false;
-let selectedFile: { offset: number; length: number; first: number; last: number } | undefined;
+let saving = false,
+  stopping = false;
+let selectedFile:
+  { offset: number; length: number; first: number; last: number } | undefined;
 function fileDownload() {
-  const bitfield = (torrent as (WebTorrent.Torrent & { bitfield?: { get(index: number): boolean } }) | undefined)?.bitfield;
-  if (!torrent?.ready || !bitfield || !selectedFile || selectedFile.length <= 0) return undefined;
+  const bitfield = (
+    torrent as
+      | (WebTorrent.Torrent & { bitfield?: { get(index: number): boolean } })
+      | undefined
+  )?.bitfield;
+  if (!torrent?.ready || !bitfield || !selectedFile || selectedFile.length <= 0)
+    return undefined;
   const { offset, length, first, last } = selectedFile;
   const ranges: [number, number][] = [];
   for (let index = first; index <= last; index++) {
     if (!bitfield.get(index)) continue;
     const start = Math.max(offset, index * torrent.pieceLength) - offset;
-    const end = Math.min(offset + length, (index + 1) * torrent.pieceLength) - offset;
+    const end =
+      Math.min(offset + length, (index + 1) * torrent.pieceLength) - offset;
     if (end <= start) continue;
     const previous = ranges.at(-1);
     if (previous && previous[1] === start / length) previous[1] = end / length;
@@ -99,7 +107,8 @@ port.on("message", async ({ data }) => {
           send({
             event: "stats",
             speed: torrent?.downloadSpeed ?? 0,
-            peers: torrent?.numPeers ?? 0,            download: fileDownload(),
+            peers: torrent?.numPeers ?? 0,
+            download: fileDownload(),
           }),
         1000,
       );
@@ -128,15 +137,26 @@ port.on("message", async ({ data }) => {
       server = result.server;
       send({ event: "stream", url: result.url });
     } else if (data.action === "save") {
-      if (saving) { send({ event: "saved", error: "A download is already running for this source." }); return; }
+      if (saving) {
+        send({
+          event: "saved",
+          error: "A download is already running for this source.",
+        });
+        return;
+      }
       saving = true;
       try {
         const file = torrent?.files[data.index];
-        if (!file || typeof data.destination !== "string") throw Error("No episode file to download.");
+        if (!file || typeof data.destination !== "string")
+          throw Error("No episode file to download.");
         await saveVideoFile(file, data.destination);
         send({ event: "saved" });
-      } catch (error) { send({ event: "saved", error: (error as Error).message }); }
-      finally { saving = false; if (stopping) client?.destroy(() => process.exit(0)); }
+      } catch (error) {
+        send({ event: "saved", error: (error as Error).message });
+      } finally {
+        saving = false;
+        if (stopping) client?.destroy(() => process.exit(0));
+      }
     } else if (data.action === "stop") {
       stopping = true;
       selectedFile = undefined;

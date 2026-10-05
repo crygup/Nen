@@ -22,7 +22,8 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
   ipcMain.on("video-frame-ack", acknowledge);
   const start = (hardware: boolean) => {
     if (stopped || window.isDestroyed()) return;
-    pending = 0; needsKey = true;
+    pending = 0;
+    needsKey = true;
     let received = false,
       buffer = Buffer.alloc(0),
       errors = "";
@@ -175,9 +176,13 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
     ipcMain.removeListener("video-frame-ack", acknowledge);
     if (child && child.exitCode === null && child.signalCode === null) {
       const old = child;
-      const done = new Promise<void>(resolve => old.once("close", () => resolve()));
+      const done = new Promise<void>((resolve) =>
+        old.once("close", () => resolve()),
+      );
       closing.set(hwnd, done);
-      void done.then(() => { if (closing.get(hwnd) === done) closing.delete(hwnd); });
+      void done.then(() => {
+        if (closing.get(hwnd) === done) closing.delete(hwnd);
+      });
       old.kill();
     }
   };

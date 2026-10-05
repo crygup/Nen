@@ -1,12 +1,5 @@
 export const seasons = ["WINTER", "SPRING", "SUMMER", "FALL"];
-export const formats = [
-  "TV",
-  "TV_SHORT",
-  "MOVIE",
-  "SPECIAL",
-  "OVA",
-  "ONA",
-];
+export const formats = ["TV", "TV_SHORT", "MOVIE", "SPECIAL", "OVA", "ONA"];
 export const statuses = [
   "RELEASING",
   "FINISHED",

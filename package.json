@@ -9,6 +9,11 @@
     "package": "npm --prefix app run package --",
     "release": "npm --prefix app run release --",
     "dev:browser": "npm --prefix nen-browser run dev",
-    "build:browser": "npm --prefix nen-browser run build && npm --prefix nen-browser run build:server"
+    "build:browser": "npm --prefix nen-browser run build && npm --prefix nen-browser run build:server",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "devDependencies": {
+    "prettier": "3.9.9"
   }
 }

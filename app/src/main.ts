@@ -93,12 +93,37 @@ let forwardVisits: BrowseVisit[] = [];
 let goingBack = false;
 function setRoute(next: string, mediaId?: number) {
   if (api.browserHistory && !playerMode && !goingBack) {
-    history.replaceState({ nenVisit: { route, mediaId: current?.id, mode, query, page, local: { ...localLocation } } }, "");
+    history.replaceState(
+      {
+        nenVisit: {
+          route,
+          mediaId: current?.id,
+          mode,
+          query,
+          page,
+          local: { ...localLocation },
+        },
+      },
+      "",
+    );
     if (route !== next || next === "series" || (next === "local" && !goingBack))
-      history.pushState({ nenVisit: { route: next, mediaId, mode, query, page } }, "");
+      history.pushState(
+        { nenVisit: { route: next, mediaId, mode, query, page } },
+        "",
+      );
   }
-  if (!goingBack && (route !== next || next === "series" || (next === "local" && !goingBack))) {
-    visits.push({ route, mediaId: current?.id, mode, query, page, local: { ...localLocation } });
+  if (
+    !goingBack &&
+    (route !== next || next === "series" || (next === "local" && !goingBack))
+  ) {
+    visits.push({
+      route,
+      mediaId: current?.id,
+      mode,
+      query,
+      page,
+      local: { ...localLocation },
+    });
     forwardVisits = [];
   }
   route = next;
@@ -111,7 +136,14 @@ async function browseBack(direction: "back" | "forward" = "back") {
   }
   const previous = (direction === "back" ? visits : forwardVisits).pop();
   if (!previous) return;
-  (direction === "back" ? forwardVisits : visits).push({ route, mediaId: current?.id, mode, query, page, local: { ...localLocation } });
+  (direction === "back" ? forwardVisits : visits).push({
+    route,
+    mediaId: current?.id,
+    mode,
+    query,
+    page,
+    local: { ...localLocation },
+  });
   await restoreVisit(previous);
 }
 async function restoreVisit(previous: BrowseVisit) {
@@ -125,7 +157,8 @@ async function restoreVisit(previous: BrowseVisit) {
     else if (previous.route === "history") await watchlist();
     else if (previous.route === "watchlist") await watchlist();
     else if (previous.route === "together") showTogether();
-    else if (previous.route === "local") await localLibrary(previous.local?.id, previous.local?.path);
+    else if (previous.route === "local")
+      await localLibrary(previous.local?.id, previous.local?.path);
     else if (previous.route === "discover") await discover(page);
     else await home();
   } finally {
@@ -136,31 +169,26 @@ if (!playerMode)
   window.addEventListener("pagehide", () => {
     sessionStorage.setItem(
       "browse-return",
-      JSON.stringify({ mode, query, page, route, seriesReturn, visits, forwardVisits }),
+      JSON.stringify({
+        mode,
+        query,
+        page,
+        route,
+        seriesReturn,
+        visits,
+        forwardVisits,
+      }),
     );
   });
 function error(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
   const text = /No matching source was found|No streams found/.test(raw)
-    ? "No streams found." : raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
-  const open = document.querySelector<HTMLDialogElement>("dialog[open]");
-  if (open) {
-    let message = open.querySelector<HTMLElement>(".dialog-error");
-    if (!message) {
-      message = document.createElement("p");
-      message.className = "dialog-error notice";
-      message.setAttribute("role", "alert");
-      open.append(message);
-    }
-    message.textContent = text;
-    return;
-  }
-  if (playerMode) { playerNotice(text); return; }
-  const box = document.querySelector<HTMLElement>(
-    "#message",
-  )!;
-  box.textContent = text;
-  box.hidden = false;
+    ? "No streams found."
+    : raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+  showToast(
+    text,
+    document.querySelector<HTMLDialogElement>("dialog[open]") ?? document.body,
+  );
 }
 async function run(fn: () => Promise<unknown>) {
   try {
@@ -195,7 +223,8 @@ function movePageHeading() {
 }
 let synopsisSize: ResizeObserver | undefined;
 function activeNav(name: string) {
-  leaveTogetherView?.(); leaveTogetherView = undefined;
+  leaveTogetherView?.();
+  leaveTogetherView = undefined;
   synopsisSize?.disconnect();
   document.querySelector("#page-title")?.replaceChildren();
   document.querySelector("#page-actions")?.replaceChildren();
@@ -206,7 +235,7 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>'  , folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>', folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
@@ -221,7 +250,9 @@ function showTogether() {
   const main = document.querySelector<HTMLElement>("#main")!;
   main.innerHTML = '<div id="together-lobby"></div>';
   leaveTogetherView?.();
-  leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!);
+  leaveTogetherView = mountTogether(
+    main.querySelector<HTMLElement>("#together-lobby")!,
+  );
 }
 function shell() {
   root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button>${api.local ? `<button data-nav="local" hidden>${uiIcon("folder")} Local files</button>` : ""}</nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
@@ -454,41 +485,75 @@ function watchEditButton(id: number, name: string) {
   return `<button class="list-edit square-button" data-watch-edit="${id}" aria-label="Edit ${esc(name)}" title="Edit"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="m16 3 5 5M3 21l5-1L21 7a2 2 0 0 0-5-5L3 15z"/></svg></button>`;
 }
 function continueCards() {
-  const local = recentSeasons(state.progress, state.settings.showAdult).filter(([, p]) => state.watch[String(p.mediaId)]?.format !== "MUSIC");
+  const local = recentSeasons(state.progress, state.settings.showAdult).filter(
+    ([, p]) => state.watch[String(p.mediaId)]?.format !== "MUSIC",
+  );
   const ids = new Set(local.map(([, p]) => p.mediaId));
-  const imported = Object.values(state.watch).filter(e => e.format !== "MUSIC" && !ids.has(e.mediaId)
-    && (e.status === "CURRENT" || e.status === "REPEATING") && (state.settings.showAdult || !e.isAdult))
+  const imported = Object.values(state.watch)
+    .filter(
+      (e) =>
+        e.format !== "MUSIC" &&
+        !ids.has(e.mediaId) &&
+        (e.status === "CURRENT" || e.status === "REPEATING") &&
+        (state.settings.showAdult || !e.isAdult),
+    )
     .sort((a, b) => b.updated - a.updated);
   return [
-    ...local.map(([key, p]) => `<article class="list-card"><div class="recent-card" data-adult="${!!p.isAdult}" data-resume="${key}"><button class="recent-play" aria-label="Play ${esc(p.title)}"><div class="cover"><img src="${esc(p.cover)}" alt="" loading="lazy"></div></button><button class="recent-title" data-open-series="${p.mediaId}">${esc(p.title)}</button><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} &middot; ${time(p.position)} / ${time(p.duration)}</small></div>${watchEditButton(p.mediaId, p.title)}</article>`),
-    ...imported.map(e => {
-      const episode = Math.min(e.count + 1, e.totalEpisodes ?? Number.MAX_SAFE_INTEGER);
+    ...local.map(
+      ([key, p]) =>
+        `<article class="list-card"><div class="recent-card" data-adult="${!!p.isAdult}" data-resume="${key}"><button class="recent-play" aria-label="Play ${esc(p.title)}"><div class="cover"><img src="${esc(p.cover)}" alt="" loading="lazy"></div></button><button class="recent-title" data-open-series="${p.mediaId}">${esc(p.title)}</button><small>${esc(p.episodeTitle ?? `Episode ${p.episode}`)} &middot; ${time(p.position)} / ${time(p.duration)}</small></div>${watchEditButton(p.mediaId, p.title)}</article>`,
+    ),
+    ...imported.map((e) => {
+      const episode = Math.min(
+        e.count + 1,
+        e.totalEpisodes ?? Number.MAX_SAFE_INTEGER,
+      );
       return `<article class="list-card"><div class="recent-card" data-continue="${e.mediaId}" data-episode="${episode}"><button class="recent-play" aria-label="Play ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy"></div></button><button class="recent-title" data-open-series="${e.mediaId}">${esc(e.title)}</button><small>Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}</small></div>${watchEditButton(e.mediaId, e.title)}</article>`;
     }),
   ];
 }
 function bindContinue(root: ParentNode) {
-  root.querySelectorAll<HTMLButtonElement>("[data-open-series]").forEach(button => button.onclick = event => {
-    event.stopPropagation();
-    void openMedia(Number(button.dataset.openSeries));
-  });
-  root.querySelectorAll<HTMLElement>("[data-resume]").forEach(button => button.onclick = () => void run(() => resumeFromHistory(button.dataset.resume!)));
-  root.querySelectorAll<HTMLElement>("[data-continue]").forEach(button => button.onclick = () => void run(async () => {
-    const d = dialog('<h2 id="dialog-title">Continue watching</h2><p class="loading" role="status">Loading episode details…</p>');
-    const loading = d.querySelector<HTMLElement>(".loading")!;
-    let media: Media;
-    try {
-      media = await api.media(Number(button.dataset.continue));
-    } catch (e) {
-      loading.hidden = true;
-      if (d.open && loading.isConnected) throw e;
-      return;
-    }
-    if (!d.open || !loading.isConnected) return;
-    d.close();
-    await startEpisode(media, Number(button.dataset.episode));
-  }));
-  root.querySelectorAll<HTMLElement>("[data-watch-edit]").forEach(button => button.onclick = () => editWatch(Number(button.dataset.watchEdit)));
+  root.querySelectorAll<HTMLButtonElement>("[data-open-series]").forEach(
+    (button) =>
+      (button.onclick = (event) => {
+        event.stopPropagation();
+        void openMedia(Number(button.dataset.openSeries));
+      }),
+  );
+  root
+    .querySelectorAll<HTMLElement>("[data-resume]")
+    .forEach(
+      (button) =>
+        (button.onclick = () =>
+          void run(() => resumeFromHistory(button.dataset.resume!))),
+    );
+  root.querySelectorAll<HTMLElement>("[data-continue]").forEach(
+    (button) =>
+      (button.onclick = () =>
+        void run(async () => {
+          const d = dialog(
+            '<h2 id="dialog-title">Continue watching</h2><p class="loading" role="status">Loading episode details…</p>',
+          );
+          const loading = d.querySelector<HTMLElement>(".loading")!;
+          let media: Media;
+          try {
+            media = await api.media(Number(button.dataset.continue));
+          } catch (e) {
+            loading.hidden = true;
+            if (d.open && loading.isConnected) throw e;
+            return;
+          }
+          if (!d.open || !loading.isConnected) return;
+          d.close();
+          await startEpisode(media, Number(button.dataset.episode));
+        })),
+  );
+  root
+    .querySelectorAll<HTMLElement>("[data-watch-edit]")
+    .forEach(
+      (button) =>
+        (button.onclick = () => editWatch(Number(button.dataset.watchEdit))),
+    );
 }
 async function home() {
   setRoute("home");
@@ -534,14 +599,17 @@ async function home() {
           );
           if (!el.isConnected) return;
           const grid = el.querySelector<HTMLElement>(".shelf-items")!;
-          grid.innerHTML = data.media.slice(((shelfPage - 1) % 5) * 9, (((shelfPage - 1) % 5) + 1) * 9)
+          grid.innerHTML = data.media
+            .slice(((shelfPage - 1) % 5) * 9, (((shelfPage - 1) % 5) + 1) * 9)
             .filter((m) => state.settings.showAdult || !m.isAdult)
             .map(card)
             .join("");
           el.hidden = !grid.querySelector(".poster");
           bindMedia(grid);
           prev.disabled = shelfPage === 1;
-          next.disabled = !data.hasNextPage && (((shelfPage - 1) % 5) + 1) * 9 >= data.media.length;
+          next.disabled =
+            !data.hasNextPage &&
+            (((shelfPage - 1) % 5) + 1) * 9 >= data.media.length;
         } catch {
           const grid = el.querySelector(".shelf-items")!;
           el.hidden = !grid.querySelector(".poster");
@@ -609,7 +677,8 @@ async function discover(targetPage = 1) {
       '<div class="empty"><h2>No titles found</h2><p>Try another title.</p></div>';
     grid.setAttribute("aria-busy", "false");
     bindMedia(grid);
-    document.querySelector("#catalog-note")!.textContent = mode === "search" ? `Results for ${query}` : "";
+    document.querySelector("#catalog-note")!.textContent =
+      mode === "search" ? `Results for ${query}` : "";
     const last = Math.min(
       result.lastPage ?? (result.hasNextPage ? page + 1 : page),
       100,
@@ -656,19 +725,22 @@ async function openMedia(id: number) {
     episodeData = undefined;
     hideFiller = false;
     const latest = Object.values(state.progress)
-      .filter(p => p.mediaId === id && (p.position > 0 || p.watched))
+      .filter((p) => p.mediaId === id && (p.position > 0 || p.watched))
       .sort((a, b) => b.updated - a.updated)[0];
     showAllEpisodes = !!latest && latest.episode > 50;
     descendingEpisodes = false;
     episodesCollapsed = false;
     renderSeries();
-    if (latest) requestAnimationFrame(() => {
-      if (token !== request) return;
-      const row = document.querySelector<HTMLElement>(`[data-episode="${latest.episode}"]`);
-      const bounds = row?.getBoundingClientRect();
-      if (bounds && (bounds.bottom > innerHeight || bounds.top < 0))
-        row!.scrollIntoView({ block: "center" });
-    });
+    if (latest)
+      requestAnimationFrame(() => {
+        if (token !== request) return;
+        const row = document.querySelector<HTMLElement>(
+          `[data-episode="${latest.episode}"]`,
+        );
+        const bounds = row?.getBoundingClientRect();
+        if (bounds && (bounds.bottom > innerHeight || bounds.top < 0))
+          row!.scrollIntoView({ block: "center" });
+      });
     void api
       .labels(m.id)
       .then((labels) => {
@@ -716,29 +788,55 @@ async function loadEpisodes(token = request) {
 function renderSeries() {
   const m = current!;
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes != null ? `${m.episodes} episodes` : latestEpisode(m) > 0 ? `${latestEpisode(m)} episodes aired` : "Episode count not announced"}</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p id="series-synopsis" class="synopsis synopsis-collapsed">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><button id="synopsis-toggle" class="quiet" aria-expanded="false" aria-controls="series-synopsis" hidden>Show more</button><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${
-    [true, false].map(related => {
-      const edges = (m.relations?.edges ?? []).filter(e => e.node.type === "ANIME" && e.node.format !== "MUSIC"
-        && ["PREQUEL", "SEQUEL"].includes(e.relationType) === related)
-        .sort((a, b) => Number(a.relationType === "SEQUEL") - Number(b.relationType === "SEQUEL"));
-      return edges.length ? `<section class="related"><h2>${related ? "Related Titles" : "Other titles"}</h2><div class="related-list">${edges.map(e => `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.english || e.node.title.romaji)}</span></button>`).join("")}</div></section>` : "";
-    }).join("")
-  }`;
+  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes != null ? `${m.episodes} episodes` : latestEpisode(m) > 0 ? `${latestEpisode(m)} episodes aired` : "Episode count not announced"}</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p id="series-synopsis" class="synopsis synopsis-collapsed">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><button id="synopsis-toggle" class="quiet" aria-expanded="false" aria-controls="series-synopsis" hidden>Show more</button><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${[
+    true,
+    false,
+  ]
+    .map((related) => {
+      const edges = (m.relations?.edges ?? [])
+        .filter(
+          (e) =>
+            e.node.type === "ANIME" &&
+            e.node.format !== "MUSIC" &&
+            ["PREQUEL", "SEQUEL"].includes(e.relationType) === related,
+        )
+        .sort(
+          (a, b) =>
+            Number(a.relationType === "SEQUEL") -
+            Number(b.relationType === "SEQUEL"),
+        );
+      return edges.length
+        ? `<section class="related"><h2>${related ? "Related Titles" : "Other titles"}</h2><div class="related-list">${edges.map((e) => `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.english || e.node.title.romaji)}</span></button>`).join("")}</div></section>`
+        : "";
+    })
+    .join("")}`;
   document.querySelector<HTMLElement>("#back")!.onclick = () =>
     void browseBack();
   bindMedia(main);
   updateSeriesActions();
-  const listButton = main.querySelector<HTMLButtonElement>("#watchlist-toggle")!;
-  const favoriteButton = main.querySelector<HTMLButtonElement>("#favorite-toggle")!;
-  for (const button of [listButton, favoriteButton]) button.onclick = () => void run(async () => {
-    listButton.disabled = favoriteButton.disabled = true;
-    try {
-      state = button === favoriteButton
-        ? await api.favoriteSet(m.id, !state.favorites[String(m.id)])
-        : state.watch[String(m.id)]?.status === "PLANNING" ? await api.watchDelete(m.id, true) : await api.watchAdd(m.id);
-      if (current?.id === m.id) { updateSeriesActions(); renderEpisodes(); }
-    } finally { listButton.disabled = favoriteButton.disabled = false; }
-  });
+  const listButton =
+    main.querySelector<HTMLButtonElement>("#watchlist-toggle")!;
+  const favoriteButton =
+    main.querySelector<HTMLButtonElement>("#favorite-toggle")!;
+  for (const button of [listButton, favoriteButton])
+    button.onclick = () =>
+      void run(async () => {
+        listButton.disabled = favoriteButton.disabled = true;
+        try {
+          state =
+            button === favoriteButton
+              ? await api.favoriteSet(m.id, !state.favorites[String(m.id)])
+              : state.watch[String(m.id)]?.status === "PLANNING"
+                ? await api.watchDelete(m.id, true)
+                : await api.watchAdd(m.id);
+          if (current?.id === m.id) {
+            updateSeriesActions();
+            renderEpisodes();
+          }
+        } finally {
+          listButton.disabled = favoriteButton.disabled = false;
+        }
+      });
   synopsisSize?.disconnect();
   const synopsis = main.querySelector<HTMLElement>(".synopsis")!;
   const expand = main.querySelector<HTMLButtonElement>("#synopsis-toggle")!;
@@ -749,8 +847,11 @@ function renderSeries() {
     synopsis.classList.toggle("synopsis-collapsed", !expanded);
   };
   synopsisSize = new ResizeObserver(() => {
-    expand.hidden = expand.getAttribute("aria-expanded") !== "true" && synopsis.scrollHeight <= synopsis.clientHeight + 1;
-  });  synopsisSize.observe(synopsis);
+    expand.hidden =
+      expand.getAttribute("aria-expanded") !== "true" &&
+      synopsis.scrollHeight <= synopsis.clientHeight + 1;
+  });
+  synopsisSize.observe(synopsis);
   renderEpisodes();
 }
 function renderEpisodes() {
@@ -779,9 +880,13 @@ function renderEpisodes() {
   ).filter((e) => !hideFiller || e.status !== "filler");
   el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button><button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button>${labelData?.items.some((e) => e.status === "filler") ? `<label class="check"><input id="hide-filler" type="checkbox" ${hideFiller ? "checked" : ""}> Hide filler</label>` : ""}</div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
     .map((e) => {
-      const watched = state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ?? state.progress[`${m.id}:${e.n}`];
+      const watched =
+        state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ??
+        state.progress[`${m.id}:${e.n}`];
       const future = e.released === false;
-      const finished = e.n <= (state.watch[String(m.id)]?.count ?? 0) || watched?.watched === true;
+      const finished =
+        e.n <= (state.watch[String(m.id)]?.count ?? 0) ||
+        watched?.watched === true;
       const date = e.airingAt
         ? new Date(e.airingAt * 1000).toLocaleDateString(undefined, {
             month: "short",
@@ -804,7 +909,10 @@ function renderEpisodes() {
   toggle.onclick = () => {
     episodesCollapsed = !episodesCollapsed;
     toggle.setAttribute("aria-expanded", String(!episodesCollapsed));
-    toggle.setAttribute("aria-label", episodesCollapsed ? "Expand episodes" : "Collapse episodes");
+    toggle.setAttribute(
+      "aria-label",
+      episodesCollapsed ? "Expand episodes" : "Collapse episodes",
+    );
     const content = el.querySelector<HTMLElement>("#episode-content")!;
     content.classList.toggle("collapsed", episodesCollapsed);
     content.inert = episodesCollapsed;
@@ -872,23 +980,64 @@ async function releasePicker(m: Media, ep: number) {
     const result = await api.releases(m.id, ep);
     if (token !== pickerRequest || !d.open) return;
     const rows = rankReleases(result.items, ep, state.settings);
-    d.querySelector("#releases")!.innerHTML = '<label>Audio language<select id="source-language"><option value="">All languages</option>'
-      + audioLanguages.map(([code, name]) => '<option value="' + code + '">' + name + '</option>').join("")
-      + '<option value="unknown">Not specified</option></select></label><div id="source-results"></div>';
+    d.querySelector("#releases")!.innerHTML =
+      '<label>Audio language<select id="source-language"><option value="">All languages</option>' +
+      audioLanguages
+        .map(
+          ([code, name]) =>
+            '<option value="' + code + '">' + name + "</option>",
+        )
+        .join("") +
+      '<option value="unknown">Not specified</option></select></label><div id="source-results"></div>';
     const filter = d.querySelector<HTMLSelectElement>("#source-language")!;
     const render = () => {
-      const visible = rows.map((release, index) => ({ release, index })).filter(({ release }) => {
-        const audio = releaseAudio(release);
-        return !filter.value || (filter.value === "unknown" ? !audio.languages.length : audio.languages.includes(filter.value));
-      });
-      d.querySelector("#source-results")!.innerHTML = visible.length ? visible.map(({ release: r, index }) => {
-        const audio = releaseAudio(r);
-        const label = audio.languages.length ? audioLanguages.filter(([code]) => audio.languages.includes(code)).map(([,name]) => name).join(", ") + (audio.inferred ? " audio" : " audio (title)") : "Audio not specified";
-        return '<button class="release" data-release="' + index + '"><span class="release-title">' + esc(r.title) + '</span><span class="release-meta"><b>' + r.source + '</b><span>' + esc(r.resolution) + '</span><span>' + esc(r.size) + '</span><span>' + r.seeds + ' seeds</span><span>' + label + '</span></span></button>';
-      }).join("") : '<div class="empty"><h3>No matching sources</h3><p>Try All languages or change the source in Settings.</p></div>';
-      d.querySelectorAll<HTMLButtonElement>("[data-release]").forEach(button => {
-        button.onclick = () => void chooseFile(m, ep, rows[Number(button.dataset.release)]);
-      });
+      const visible = rows
+        .map((release, index) => ({ release, index }))
+        .filter(({ release }) => {
+          const audio = releaseAudio(release);
+          return (
+            !filter.value ||
+            (filter.value === "unknown"
+              ? !audio.languages.length
+              : audio.languages.includes(filter.value))
+          );
+        });
+      d.querySelector("#source-results")!.innerHTML = visible.length
+        ? visible
+            .map(({ release: r, index }) => {
+              const audio = releaseAudio(r);
+              const label = audio.languages.length
+                ? audioLanguages
+                    .filter(([code]) => audio.languages.includes(code))
+                    .map(([, name]) => name)
+                    .join(", ") + (audio.inferred ? " audio" : " audio (title)")
+                : "Audio not specified";
+              return (
+                '<button class="release" data-release="' +
+                index +
+                '"><span class="release-title">' +
+                esc(r.title) +
+                '</span><span class="release-meta"><b>' +
+                r.source +
+                "</b><span>" +
+                esc(r.resolution) +
+                "</span><span>" +
+                esc(r.size) +
+                "</span><span>" +
+                r.seeds +
+                " seeds</span><span>" +
+                label +
+                "</span></span></button>"
+              );
+            })
+            .join("")
+        : '<div class="empty"><h3>No matching sources</h3><p>Try All languages or change the source in Settings.</p></div>';
+      d.querySelectorAll<HTMLButtonElement>("[data-release]").forEach(
+        (button) => {
+          button.onclick = () =>
+            void chooseFile(m, ep, rows[Number(button.dataset.release)]);
+        },
+      );
     };
     filter.onchange = render;
     render();
@@ -900,19 +1049,30 @@ async function releasePicker(m: Media, ep: number) {
 }
 async function chooseRewatch(id: number): Promise<boolean> {
   if (state.watch[String(id)]?.status !== "COMPLETED") return true;
-  const choice = await new Promise<string>(resolve => {
-    const d = dialog(`<h2 id="dialog-title">Start a full rewatch?</h2><p>Start a new watch record, or play only this episode.</p><div class="actions"><button class="primary" data-rewatch="full">Start full rewatch</button><button data-rewatch="episode">Play this episode</button></div>`);
+  const choice = await new Promise<string>((resolve) => {
+    const d = dialog(
+      `<h2 id="dialog-title">Start a full rewatch?</h2><p>Start a new watch record, or play only this episode.</p><div class="actions"><button class="primary" data-rewatch="full">Start full rewatch</button><button data-rewatch="episode">Play this episode</button></div>`,
+    );
     d.returnValue = "";
-    d.onclose = () => { d.onclose = null; resolve(d.returnValue); };
-    d.querySelectorAll<HTMLButtonElement>("[data-rewatch]").forEach(button => button.onclick = () => d.close(button.dataset.rewatch));
+    d.onclose = () => {
+      d.onclose = null;
+      resolve(d.returnValue);
+    };
+    d.querySelectorAll<HTMLButtonElement>("[data-rewatch]").forEach(
+      (button) => (button.onclick = () => d.close(button.dataset.rewatch)),
+    );
   });
-  if (choice === "full") state = await api.watchEdit(id, { startRewatch: true });
+  if (choice === "full")
+    state = await api.watchEdit(id, { startRewatch: true });
   return choice === "full" || choice === "episode";
 }
 async function startEpisode(m: Media, ep: number) {
-  if ((await api.togetherState()).connected) { await api.autoPlay(m.id, ep); return; }
+  if ((await api.togetherState()).connected) {
+    await api.autoPlay(m.id, ep);
+    return;
+  }
   if (episodeAvailability(m, ep).released === false) return;
-  if (!await chooseRewatch(m.id)) return;
+  if (!(await chooseRewatch(m.id))) return;
   if (state.settings.sourceMode === "manual") {
     await releasePicker(m, ep);
     return;
@@ -935,7 +1095,9 @@ async function startEpisode(m: Media, ep: number) {
     `<h2 id="dialog-title">${esc(title(m))}</h2><p id="finding-source" role="status">Finding a source for episode ${ep}…</p>`,
   );
   try {
-    d.onclose = () => { void api.control("stop").catch(() => {}); };
+    d.onclose = () => {
+      void api.control("stop").catch(() => {});
+    };
     await api.autoPlay(m.id, ep);
     d.onclose = null;
     if (d.open && token === pickerRequest) d.close();
@@ -945,11 +1107,7 @@ async function startEpisode(m: Media, ep: number) {
     error(e);
   }
 }
-async function chooseFile(
-  m: Media,
-  ep: number,
-  release: Release,
-) {
+async function chooseFile(m: Media, ep: number, release: Release) {
   const d = dialog(
     `<h2 id="dialog-title">Choose episode file</h2><p>${esc(release.title)}</p><div id="files"><p class="loading">Connecting…</p></div>`,
   );
@@ -971,10 +1129,21 @@ async function chooseFile(
       await play(matched.index);
       return;
     }
-    if (files.length && files.every(file => parseRelease(file.path.split(/[\\/]/).at(-1) ?? "", ep).episode !== null))
-      throw Error("This source does not contain a clear match for the selected episode. Choose another source.");
+    if (
+      files.length &&
+      files.every(
+        (file) =>
+          parseRelease(file.path.split(/[\\/]/).at(-1) ?? "", ep).episode !==
+          null,
+      )
+    )
+      throw Error(
+        "This source does not contain a clear match for the selected episode. Choose another source.",
+      );
     if ((await api.togetherState()).connected)
-      throw Error("This source has no clear file match for the session episode. Choose another source.");
+      throw Error(
+        "This source has no clear file match for the session episode. Choose another source.",
+      );
     d.querySelector("#files")!.innerHTML = files.length
       ? `<form id="file-form"><label>File for episode ${ep}<select id="file" required><option value="">Choose a file</option>${files.map((f) => `<option value="${f.index}">${esc(f.path)}</option>`).join("")}</select></label><button class="primary">Play</button></form>`
       : "<p>No video files were found.</p>";
@@ -1002,10 +1171,18 @@ async function chooseFile(
 async function resumeFromHistory(key: string) {
   const saved = state.progress[key];
   if (!saved) return;
-  if (!await chooseRewatch(saved.mediaId)) return;
-  const d = dialog('<h2 id="dialog-title">' + esc(saved.title) + '</h2><p class="loading" role="status">Opening ' + esc(saved.episodeTitle ?? 'episode ' + saved.episode) + '…</p>');
+  if (!(await chooseRewatch(saved.mediaId))) return;
+  const d = dialog(
+    '<h2 id="dialog-title">' +
+      esc(saved.title) +
+      '</h2><p class="loading" role="status">Opening ' +
+      esc(saved.episodeTitle ?? "episode " + saved.episode) +
+      "…</p>",
+  );
   const loading = d.querySelector<HTMLElement>(".loading")!;
-  d.onclose = () => { void api.control("stop").catch(() => {}); };
+  d.onclose = () => {
+    void api.control("stop").catch(() => {});
+  };
   try {
     await api.resume(key);
     if (loading.isConnected) {
@@ -1017,48 +1194,130 @@ async function resumeFromHistory(key: string) {
     if (d.open && loading.isConnected) throw e;
   }
 }
-const watchStatuses: [WatchStatus, string][] = [["CURRENT", "Watching"], ["REPEATING", "Rewatching"], ["COMPLETED", "Completed"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["PLANNING", "Planning"]];
+const watchStatuses: [WatchStatus, string][] = [
+  ["CURRENT", "Watching"],
+  ["REPEATING", "Rewatching"],
+  ["COMPLETED", "Completed"],
+  ["PAUSED", "Paused"],
+  ["DROPPED", "Dropped"],
+  ["PLANNING", "Planning"],
+];
 async function watchlist() {
   setRoute("watchlist");
   activeNav("watchlist");
   state = await api.state();
-  const entries = Object.values(state.watch).filter(e => e.format !== "MUSIC" && (state.settings.showAdult || !e.isAdult)).sort((a, b) => b.updated - a.updated);
+  const entries = Object.values(state.watch)
+    .filter(
+      (e) => e.format !== "MUSIC" && (state.settings.showAdult || !e.isAdult),
+    )
+    .sort((a, b) => b.updated - a.updated);
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${([["CURRENT", "Continue watching"], ["PLANNING", "Planning"], ["PAUSED", "Paused"], ["DROPPED", "Dropped"], ["FAVORITES", "Favorites"], ["COMPLETED", "Completed"]] as const).map(([status, label]) => { const name = status === "CURRENT" ? "Continue watching" : label; return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${(status === "CURRENT" ? continueCards() : (status === "FAVORITES" ? Object.values(state.favorites).filter(e => e.format !== "MUSIC" && (state.settings.showAdult || !e.isAdult)).map(e => state.watch[String(e.mediaId)] ?? e) : entries.filter(e => e.status === status)).map(e => {
-    const saved = Object.values(state.progress).filter(p => p.mediaId === e.mediaId).sort((a, b) => b.updated - a.updated)[0];
-    const latest = Object.entries(e.runs.at(-1)?.episodes ?? {}).sort((a, b) => b[1].updated - a[1].updated)[0];
-    const episode = latest && latest[1].updated > e.countUpdated ? Number(latest[0]) : e.count;
-    const info = episode > 0 ? `Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}${saved?.episode === episode && saved.episodeTitle && saved.episodeTitle !== `Episode ${episode}` ? ` \u00b7 ${saved.episodeTitle}` : ""}` : (e.totalEpisodes ? `${e.totalEpisodes} episodes` : "Not started");
-    return `<article class="list-card"><button class="poster" data-media="${e.mediaId}" aria-label="Open ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy" decoding="async"></div><h3>${esc(e.title)}</h3><p>${esc(info)}</p></button>${state.watch[String(e.mediaId)] ? watchEditButton(e.mediaId, e.title) : ""}</article>`;
-  })).join("") || '<p class="muted">No anime here.</p>'}</div></section>`; }).join("")}`;
+  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${(
+    [
+      ["CURRENT", "Continue watching"],
+      ["PLANNING", "Planning"],
+      ["PAUSED", "Paused"],
+      ["DROPPED", "Dropped"],
+      ["FAVORITES", "Favorites"],
+      ["COMPLETED", "Completed"],
+    ] as const
+  )
+    .map(([status, label]) => {
+      const name = status === "CURRENT" ? "Continue watching" : label;
+      return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${
+        (status === "CURRENT"
+          ? continueCards()
+          : (status === "FAVORITES"
+              ? Object.values(state.favorites)
+                  .filter(
+                    (e) =>
+                      e.format !== "MUSIC" &&
+                      (state.settings.showAdult || !e.isAdult),
+                  )
+                  .map((e) => state.watch[String(e.mediaId)] ?? e)
+              : entries.filter((e) => e.status === status)
+            ).map((e) => {
+              const saved = Object.values(state.progress)
+                .filter((p) => p.mediaId === e.mediaId)
+                .sort((a, b) => b.updated - a.updated)[0];
+              const latest = Object.entries(e.runs.at(-1)?.episodes ?? {}).sort(
+                (a, b) => b[1].updated - a[1].updated,
+              )[0];
+              const episode =
+                latest && latest[1].updated > e.countUpdated
+                  ? Number(latest[0])
+                  : e.count;
+              const info =
+                episode > 0
+                  ? `Episode ${episode}${e.totalEpisodes ? ` / ${e.totalEpisodes}` : ""}${saved?.episode === episode && saved.episodeTitle && saved.episodeTitle !== `Episode ${episode}` ? ` \u00b7 ${saved.episodeTitle}` : ""}`
+                  : e.totalEpisodes
+                    ? `${e.totalEpisodes} episodes`
+                    : "Not started";
+              return `<article class="list-card"><button class="poster" data-media="${e.mediaId}" aria-label="Open ${esc(e.title)}"><div class="cover"><img src="${esc(e.cover)}" alt="" loading="lazy" decoding="async"></div><h3>${esc(e.title)}</h3><p>${esc(info)}</p></button>${state.watch[String(e.mediaId)] ? watchEditButton(e.mediaId, e.title) : ""}</article>`;
+            })
+        ).join("") || '<p class="muted">No anime here.</p>'
+      }</div></section>`;
+    })
+    .join("")}`;
   movePageHeading();
   bindMedia(main);
   bindContinue(main);
-  main.querySelectorAll<HTMLElement>(".home-section").forEach(section => {
+  main.querySelectorAll<HTMLElement>(".home-section").forEach((section) => {
     const cards = [...section.querySelectorAll<HTMLElement>(".list-card")];
-    let page = 0, all = false;
+    let page = 0,
+      all = false;
     const update = () => {
-      cards.forEach((card, i) => card.hidden = !all && Math.floor(i / 9) !== page);
-      section.querySelectorAll<HTMLButtonElement>("[data-list-step]").forEach(button => {
-        button.disabled = all || (Number(button.dataset.listStep) < 0 ? page === 0 : (page + 1) * 9 >= cards.length);
-      });
-      const button = section.querySelector<HTMLButtonElement>("[data-list-all]")!;
+      cards.forEach(
+        (card, i) => (card.hidden = !all && Math.floor(i / 9) !== page),
+      );
+      section
+        .querySelectorAll<HTMLButtonElement>("[data-list-step]")
+        .forEach((button) => {
+          button.disabled =
+            all ||
+            (Number(button.dataset.listStep) < 0
+              ? page === 0
+              : (page + 1) * 9 >= cards.length);
+        });
+      const button =
+        section.querySelector<HTMLButtonElement>("[data-list-all]")!;
       button.hidden = cards.length <= 9;
       button.textContent = all ? "Show less" : "View all";
     };
-    section.querySelectorAll<HTMLButtonElement>("[data-list-step]").forEach(button => button.onclick = () => { page += Number(button.dataset.listStep); update(); });
-    section.querySelector<HTMLButtonElement>("[data-list-all]")!.onclick = () => { all = !all; update(); };
+    section.querySelectorAll<HTMLButtonElement>("[data-list-step]").forEach(
+      (button) =>
+        (button.onclick = () => {
+          page += Number(button.dataset.listStep);
+          update();
+        }),
+    );
+    section.querySelector<HTMLButtonElement>("[data-list-all]")!.onclick =
+      () => {
+        all = !all;
+        update();
+      };
     update();
   });
 }
 
 let contextRequest = 0;
-document.addEventListener("contextmenu", event => {
+document.addEventListener("contextmenu", (event) => {
   const target = event.target as HTMLElement;
   const episodeRow = target.closest<HTMLElement>("#episodes [data-episode]");
-  const card = target.closest<HTMLElement>("[data-media], [data-open-series], [data-continue], [data-resume], [data-watch-edit], .series-poster");
-  const id = episodeRow ? current?.id : card?.classList.contains("series-poster") ? current?.id
-    : Number(card?.dataset.media || card?.dataset.openSeries || card?.dataset.continue || card?.dataset.watchEdit || card?.dataset.resume?.split(":")[0]);
+  const card = target.closest<HTMLElement>(
+    "[data-media], [data-open-series], [data-continue], [data-resume], [data-watch-edit], .series-poster",
+  );
+  const id = episodeRow
+    ? current?.id
+    : card?.classList.contains("series-poster")
+      ? current?.id
+      : Number(
+          card?.dataset.media ||
+            card?.dataset.openSeries ||
+            card?.dataset.continue ||
+            card?.dataset.watchEdit ||
+            card?.dataset.resume?.split(":")[0],
+        );
   if (!id || episodeRow?.hasAttribute("disabled")) return;
   event.preventDefault();
   const request = ++contextRequest;
@@ -1070,69 +1329,144 @@ document.addEventListener("contextmenu", event => {
     const actions: [string, () => Promise<unknown>][] = [];
     if (episodeRow) {
       const episode = Number(episodeRow.dataset.episode);
-      const progress = entry?.runs.at(-1)?.episodes[String(episode)] ?? state.progress[`${id}:${episode}`];
+      const progress =
+        entry?.runs.at(-1)?.episodes[String(episode)] ??
+        state.progress[`${id}:${episode}`];
       if (!(episode <= (entry?.count ?? 0) || progress?.watched))
-        actions.push(["Mark as completed", () => api.watchEdit(id, { episode, watched: true }).then(value => { state = value; })]);
+        actions.push([
+          "Mark as completed",
+          () =>
+            api.watchEdit(id, { episode, watched: true }).then((value) => {
+              state = value;
+            }),
+        ]);
       if ((progress?.position ?? 0) > 0)
-        actions.push(["Reset watch time", () => api.watchEdit(id, { episode, position: 0 }).then(value => { state = value; })]);
+        actions.push([
+          "Reset watch time",
+          () =>
+            api.watchEdit(id, { episode, position: 0 }).then((value) => {
+              state = value;
+            }),
+        ]);
     } else {
-      actions.push([state.favorites[String(id)] ? "Unfavorite" : "Favorite", () => api.favoriteSet(id, !state.favorites[String(id)]).then(value => { state = value; })]);
-      if (entry?.status !== "COMPLETED" && !(media.episodes && (entry?.count ?? 0) >= media.episodes))
-        actions.push(["Mark as completed", () => api.watchEdit(id, { status: "COMPLETED", count: media.episodes ?? entry?.count ?? 0 }).then(value => { state = value; })]);
+      actions.push([
+        state.favorites[String(id)] ? "Unfavorite" : "Favorite",
+        () =>
+          api.favoriteSet(id, !state.favorites[String(id)]).then((value) => {
+            state = value;
+          }),
+      ]);
+      if (
+        entry?.status !== "COMPLETED" &&
+        !(media.episodes && (entry?.count ?? 0) >= media.episodes)
+      )
+        actions.push([
+          "Mark as completed",
+          () =>
+            api
+              .watchEdit(id, {
+                status: "COMPLETED",
+                count: media.episodes ?? entry?.count ?? 0,
+              })
+              .then((value) => {
+                state = value;
+              }),
+        ]);
       if (entry?.status !== "PLANNING")
-        actions.push([entry ? "Move to watch list" : "Add to watch list", () => api.watchAdd(id).then(value => { state = value; })]);
+        actions.push([
+          entry ? "Move to watch list" : "Add to watch list",
+          () =>
+            api.watchAdd(id).then((value) => {
+              state = value;
+            }),
+        ]);
       actions.push(["Edit", () => editWatch(id)]);
-      if (!state.settings.hideOpenAniList) actions.push(["Open on AniList", () => api.external("anilist", id)]);
+      if (!state.settings.hideOpenAniList)
+        actions.push(["Open on AniList", () => api.external("anilist", id)]);
     }
     if (!actions.length) return;
-    showContextMenu(event, "anime-context-menu", episodeRow ? "Episode actions" : "Anime actions", actions.map(([label, action]) => [label, async () => {
-      await action();
-      if (route === "series") { updateSeriesActions(); renderEpisodes(); }
-      else if (route === "watchlist") await watchlist();
-      else if (route === "home") await home();
-    }]));
+    showContextMenu(
+      event,
+      "anime-context-menu",
+      episodeRow ? "Episode actions" : "Anime actions",
+      actions.map(([label, action]) => [
+        label,
+        async () => {
+          await action();
+          if (route === "series") {
+            updateSeriesActions();
+            renderEpisodes();
+          } else if (route === "watchlist") await watchlist();
+          else if (route === "home") await home();
+        },
+      ]),
+    );
   });
 });
 
 function updateSeriesActions() {
   if (!current) return;
   const list = document.querySelector<HTMLButtonElement>("#watchlist-toggle");
-  const favorite = document.querySelector<HTMLButtonElement>("#favorite-toggle");
+  const favorite =
+    document.querySelector<HTMLButtonElement>("#favorite-toggle");
   if (list) {
     const selected = state.watch[String(current.id)]?.status === "PLANNING";
     const label = selected ? "Remove from watchlist" : "Add to watchlist";
-    list.setAttribute("aria-pressed", String(selected));list.setAttribute("aria-label", label);list.title = label;
+    list.setAttribute("aria-pressed", String(selected));
+    list.setAttribute("aria-label", label);
+    list.title = label;
     list.innerHTML = `<svg class="watchlist-icon" viewBox="0 0 24 24" fill="${selected ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="watchlist-label">${label}</span>`;
   }
   if (favorite) {
     const selected = !!state.favorites[String(current.id)];
     favorite.setAttribute("aria-pressed", String(selected));
-    favorite.setAttribute("aria-label", selected ? "Remove from favorites" : "Add to favorites");
+    favorite.setAttribute(
+      "aria-label",
+      selected ? "Remove from favorites" : "Add to favorites",
+    );
     favorite.title = selected ? "Remove from favorites" : "Add to favorites";
   }
 }
 async function editWatch(id: number) {
   const media = state.watch[String(id)] ? undefined : await api.media(id);
-  const entry = state.watch[String(id)] ?? { title: title(media!), status: "PLANNING" as WatchStatus, count: 0, totalEpisodes: media!.episodes };
-  const d = dialog(`<h2 id="dialog-title">${esc(entry.title)}</h2><form id="watch-form"><label>Watch status<select name="status">${watchStatuses.map(([value, name]) => `<option value="${value}" ${entry.status === value ? "selected" : ""}>${name}</option>`).join("")}</select></label><label>Episode progress<input name="count" type="number" min="0" step="1" ${entry.totalEpisodes != null ? `max="${entry.totalEpisodes}"` : ""} value="${entry.count}" required></label></form><hr><button id="delete-watch">Delete entry</button>`);
-  d.querySelector<HTMLButtonElement>("#delete-watch")!.onclick = () => void run(async () => {
-    state = await api.watchDelete(id);
-    d.onclose = null;
-    d.close();
-    if (route === "home") await home();
-    else if (route === "watchlist") await watchlist();
-    else if (route === "series") renderEpisodes();
-    showToast("Entry deleted from Nen.");
-  });
+  const entry = state.watch[String(id)] ?? {
+    title: title(media!),
+    status: "PLANNING" as WatchStatus,
+    count: 0,
+    totalEpisodes: media!.episodes,
+  };
+  const d = dialog(
+    `<h2 id="dialog-title">${esc(entry.title)}</h2><form id="watch-form"><label>Watch status<select name="status">${watchStatuses.map(([value, name]) => `<option value="${value}" ${entry.status === value ? "selected" : ""}>${name}</option>`).join("")}</select></label><label>Episode progress<input name="count" type="number" min="0" step="1" ${entry.totalEpisodes != null ? `max="${entry.totalEpisodes}"` : ""} value="${entry.count}" required></label></form><hr><button id="delete-watch">Delete entry</button>`,
+  );
+  d.querySelector<HTMLButtonElement>("#delete-watch")!.onclick = () =>
+    void run(async () => {
+      state = await api.watchDelete(id);
+      d.onclose = null;
+      d.close();
+      if (route === "home") await home();
+      else if (route === "watchlist") await watchlist();
+      else if (route === "series") renderEpisodes();
+      showToast("Entry deleted from Nen.");
+    });
   const form = d.querySelector<HTMLFormElement>("#watch-form")!;
-  form.onsubmit = e => { e.preventDefault(); d.close(); };
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    d.close();
+  };
   d.onclose = () => {
     d.onclose = null;
     const data = new FormData(form);
     const status = String(data.get("status")) as WatchStatus;
     const value = Number(data.get("count"));
     const count = Number.isFinite(value)
-      ? Math.max(0, Math.min(entry.totalEpisodes ?? Number.MAX_SAFE_INTEGER, Math.floor(value))) : entry.count;
+      ? Math.max(
+          0,
+          Math.min(
+            entry.totalEpisodes ?? Number.MAX_SAFE_INTEGER,
+            Math.floor(value),
+          ),
+        )
+      : entry.count;
     if (status === entry.status && count === entry.count) return;
     void run(async () => {
       state = await api.watchEdit(id, { status, count });
@@ -1142,42 +1476,89 @@ async function editWatch(id: number) {
     });
   };
 }
-async function showSyncReview(firstConnect = false, notice = "") {
-  const preview = await api.anilistPreview();
-  const choices: SyncChange[] = preview.changes.map(row => ({ ...row }));
-  const conflicts = choices.map((row, i) => ({ row, i })).filter(({ row }) => row.conflict);
+async function showSyncReview(
+  firstConnect = false,
+  notice = "",
+  service: "anilist" | "mal" = "anilist",
+) {
+  const name = service === "mal" ? "MyAnimeList" : "AniList";
+  const sync =
+    service === "mal"
+      ? api.mal!
+      : { preview: api.anilistPreview, apply: api.anilistApply };
+  const preview = await sync.preview();
+  notice = [notice, preview.warning].filter(Boolean).join(" ");
+  const choices: SyncChange[] = preview.changes.map((row) => ({ ...row }));
+  const conflicts = choices
+    .map((row, i) => ({ row, i }))
+    .filter(({ row }) => row.conflict);
   if (!conflicts.length) {
-    state = await api.anilistApply(choices);
-    showToast(notice || (choices.length ? "AniList sync complete." : firstConnect ? "Connected account. No entries to sync." : "No new entries to sync."));
+    state = await sync.apply(choices);
+    showToast(
+      notice ||
+        (choices.length
+          ? `${name} sync complete.`
+          : firstConnect
+            ? "Connected account. No entries to sync."
+            : "No new entries to sync."),
+    );
     if (route === "watchlist") await watchlist();
     if (route === "home") await home();
     if (route === "series") renderEpisodes();
     return;
   }
-  const d = dialog(`<h2 id="dialog-title">Review AniList sync</h2>${notice ? `<p class="notice">${esc(notice)}</p>` : ""}<p>${conflicts.length ? "Choose which values to keep." : "No conflicts. Your lists are ready to sync."}</p><div class="sync-changes">${conflicts.map(({ row, i }) => `<div class="sync-row"><span>${esc(row.title)} - ${row.field === "count" ? "Episode progress" : row.field === "status" ? "Watch status" : "Rewatches"}</span><small>Nen: ${esc(row.local)} &middot; AniList: ${esc(row.remote)}</small><div class="actions" role="group" aria-label="Choose values for ${esc(row.title)}"><button type="button" data-choice="${i}" data-side="local" aria-pressed="${row.choice === "local"}">Use Nen</button><button type="button" data-choice="${i}" data-side="remote" aria-pressed="${row.choice === "remote"}">Use AniList</button></div></div>`).join("")}</div>${conflicts.length ? '<div class="actions sync-select-all" role="group" aria-label="Select all"><span>Select all</span><button type="button" data-select-all="local">Nen</button><button type="button" data-select-all="remote">AniList</button></div>' : ""}<button id="apply-sync" class="primary">Apply sync</button>`);
-  const updateSelectAll = () => d.querySelectorAll<HTMLButtonElement>("[data-select-all]").forEach(button =>
-    button.setAttribute("aria-pressed", String(conflicts.every(({ row }) => row.choice === button.dataset.selectAll))));
+  const d = dialog(
+    `<h2 id="dialog-title">Review ${name} sync</h2>${notice ? `<p class="notice">${esc(notice)}</p>` : ""}<p>${conflicts.length ? "Choose which values to keep." : "No conflicts. Your lists are ready to sync."}</p><div class="sync-changes">${conflicts.map(({ row, i }) => `<div class="sync-row"><span>${esc(row.title)} - ${row.field === "count" ? "Episode progress" : row.field === "status" ? "Watch status" : "Rewatches"}</span><small>Nen: ${esc(row.local)} &middot; ${name}: ${esc(row.remote)}</small><div class="actions" role="group" aria-label="Choose values for ${esc(row.title)}"><button type="button" data-choice="${i}" data-side="local" aria-pressed="${row.choice === "local"}">Use Nen</button><button type="button" data-choice="${i}" data-side="remote" aria-pressed="${row.choice === "remote"}">Use ${name}</button></div></div>`).join("")}</div>${conflicts.length ? '<div class="actions sync-select-all" role="group" aria-label="Select all"><span>Select all</span><button type="button" data-select-all="local">Nen</button><button type="button" data-select-all="remote">' + name + "</button></div>" : ""}<button id="apply-sync" class="primary">Apply sync</button>`,
+  );
+  const updateSelectAll = () =>
+    d
+      .querySelectorAll<HTMLButtonElement>("[data-select-all]")
+      .forEach((button) =>
+        button.setAttribute(
+          "aria-pressed",
+          String(
+            conflicts.every(
+              ({ row }) => row.choice === button.dataset.selectAll,
+            ),
+          ),
+        ),
+      );
   updateSelectAll();
-  d.querySelectorAll<HTMLButtonElement>("[data-choice]").forEach(button => {
+  d.querySelectorAll<HTMLButtonElement>("[data-choice]").forEach((button) => {
     button.onclick = () => {
-      choices[Number(button.dataset.choice)].choice = button.dataset.side as "local" | "remote";
-      d.querySelectorAll<HTMLButtonElement>(`[data-choice="${button.dataset.choice}"]`).forEach(option =>
-        option.setAttribute("aria-pressed", String(option === button)));
+      choices[Number(button.dataset.choice)].choice = button.dataset.side as
+        "local" | "remote";
+      d.querySelectorAll<HTMLButtonElement>(
+        `[data-choice="${button.dataset.choice}"]`,
+      ).forEach((option) =>
+        option.setAttribute("aria-pressed", String(option === button)),
+      );
       updateSelectAll();
     };
   });
-  d.querySelectorAll<HTMLButtonElement>("[data-select-all]").forEach(button => {
-    button.onclick = () => d.querySelectorAll<HTMLButtonElement>(`[data-choice][data-side="${button.dataset.selectAll}"]`).forEach(option => option.click());
-  });
-  d.querySelector<HTMLElement>("#apply-sync")!.onclick = () => void run(async () => {
-    if (choices.some(row => !row.choice)) { showToast("Choose a side for each change.", d); return; }
-    state = await api.anilistApply(choices);
-    d.close();
-    showToast("AniList sync complete.");
-    if (route === "watchlist") await watchlist();
-    if (route === "home") await home();
-    if (route === "series") renderEpisodes();
-  });
+  d.querySelectorAll<HTMLButtonElement>("[data-select-all]").forEach(
+    (button) => {
+      button.onclick = () =>
+        d
+          .querySelectorAll<HTMLButtonElement>(
+            `[data-choice][data-side="${button.dataset.selectAll}"]`,
+          )
+          .forEach((option) => option.click());
+    },
+  );
+  d.querySelector<HTMLElement>("#apply-sync")!.onclick = () =>
+    void run(async () => {
+      if (choices.some((row) => !row.choice)) {
+        showToast("Choose a side for each change.", d);
+        return;
+      }
+      state = await sync.apply(choices);
+      d.close();
+      showToast(`${name} sync complete.`);
+      if (route === "watchlist") await watchlist();
+      if (route === "home") await home();
+      if (route === "series") renderEpisodes();
+    });
 }
 function bindSectionTabs(d: HTMLDialogElement) {
   const tabs = [...d.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
@@ -1187,14 +1568,23 @@ function bindSectionTabs(d: HTMLDialogElement) {
         const selected = item === tab;
         item.setAttribute("aria-selected", String(selected));
         item.tabIndex = selected ? 0 : -1;
-        d.querySelector<HTMLElement>("#" + item.getAttribute("aria-controls"))!.hidden = !selected;
+        d.querySelector<HTMLElement>(
+          "#" + item.getAttribute("aria-controls"),
+        )!.hidden = !selected;
       }
     };
-    tab.onkeydown = event => {
+    tab.onkeydown = (event) => {
       const index = tabs.indexOf(tab);
-      const next = event.key === "ArrowDown" ? (index + 1) % tabs.length
-        : event.key === "ArrowUp" ? (index + tabs.length - 1) % tabs.length
-        : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
+      const next =
+        event.key === "ArrowDown"
+          ? (index + 1) % tabs.length
+          : event.key === "ArrowUp"
+            ? (index + tabs.length - 1) % tabs.length
+            : event.key === "Home"
+              ? 0
+              : event.key === "End"
+                ? tabs.length - 1
+                : -1;
       if (next < 0) return;
       event.preventDefault();
       tabs[next].click();
@@ -1203,93 +1593,195 @@ function bindSectionTabs(d: HTMLDialogElement) {
   }
 }
 function help() {
-  const sections = [["support", "message", "Support"], ["faq", "help", "FAQ"], ["donations", "heart", "Support us"]];
-  const d = dialog('<h2 id="dialog-title">Help &amp; support</h2><div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Help">'
-    + sections.map(([id, icon, name], i) => '<button type="button" role="tab" id="help-tab-' + id + '" aria-controls="help-' + id + '" aria-selected="' + (i === 0) + '" tabindex="' + (i === 0 ? 0 : -1) + '">' + uiIcon(icon) + '<span>' + name + '</span></button>').join("")
-    + '</div><div id="help-content"><section id="help-support" role="tabpanel" aria-labelledby="help-tab-support"><h3>Contact us</h3><p>Report a problem or ask for help. Include your Nen build, the anime and episode, and steps to repeat the problem.</p><div class="actions"><button data-support="discord">Discord server</button><button data-support="issues">GitHub issues</button><button data-support="email">Email support</button></div></section>'
-    + '<section id="help-faq" role="tabpanel" aria-labelledby="help-tab-faq" hidden><h4>Why are no streams found?</h4><p>Available sources may have no active seeders or no matching episode.</p><h4>Do I need an AniList account?</h4><p>No. Nen can keep your lists and progress locally.</p><h4>When does an episode count as watched?</h4><p>After you watch more than 85% of an episode, or when you go to the next episode.</p><h4>How do I update Nen?</h4><p>Open Settings, then check for updates. You can also enable auto updates to install new builds on launch.</p></section>'
-    + '<section id="help-donations" role="tabpanel" aria-labelledby="help-tab-donations" hidden><p>You can support Nen on Ko-fi.</p><button data-support="donate">Donate on Ko-fi</button></section></div>');
+  const sections = [
+    ["support", "message", "Support"],
+    ["faq", "help", "FAQ"],
+    ["donations", "heart", "Support us"],
+  ];
+  const d = dialog(
+    '<h2 id="dialog-title">Help &amp; support</h2><div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Help">' +
+      sections
+        .map(
+          ([id, icon, name], i) =>
+            '<button type="button" role="tab" id="help-tab-' +
+            id +
+            '" aria-controls="help-' +
+            id +
+            '" aria-selected="' +
+            (i === 0) +
+            '" tabindex="' +
+            (i === 0 ? 0 : -1) +
+            '">' +
+            uiIcon(icon) +
+            "<span>" +
+            name +
+            "</span></button>",
+        )
+        .join("") +
+      '</div><div id="help-content"><section id="help-support" role="tabpanel" aria-labelledby="help-tab-support"><h3>Contact us</h3><p>Report a problem or ask for help. Include your Nen build, the anime and episode, and steps to repeat the problem.</p><div class="actions"><button data-support="discord">Discord server</button><button data-support="issues">GitHub issues</button><button data-support="email">Email support</button></div></section>' +
+      '<section id="help-faq" role="tabpanel" aria-labelledby="help-tab-faq" hidden><h4>Why are no streams found?</h4><p>Available sources may have no active seeders or no matching episode.</p><h4>Do I need an AniList account?</h4><p>No. Nen can keep your lists and progress locally.</p><h4>When does an episode count as watched?</h4><p>After you watch more than 85% of an episode, or when you go to the next episode.</p><h4>How do I update Nen?</h4><p>Open Settings, then check for updates. You can also enable auto updates to install new builds on launch.</p></section>' +
+      '<section id="help-donations" role="tabpanel" aria-labelledby="help-tab-donations" hidden><p>You can support Nen on Ko-fi.</p><button data-support="donate">Donate on Ko-fi</button></section></div>',
+  );
   const version = d.querySelector(".dialog-header .eyebrow")!;
   version.textContent = "Nen · " + state.version;
   version.classList.add("settings-version");
   d.append(version);
   bindSectionTabs(d);
-  d.querySelectorAll<HTMLButtonElement>("[data-support]").forEach(button => {
-    button.onclick = () => void api.external(button.dataset.support as "discord" | "issues" | "email" | "donate").catch(error);
+  d.querySelectorAll<HTMLButtonElement>("[data-support]").forEach((button) => {
+    button.onclick = () =>
+      void api
+        .external(
+          button.dataset.support as "discord" | "issues" | "email" | "donate",
+        )
+        .catch(error);
   });
 }
 function activeProfileName() {
-  return state.profiles?.list.find(p => p.id === state.profiles!.active)?.name ?? "";
+  return (
+    state.profiles?.list.find((p) => p.id === state.profiles!.active)?.name ??
+    ""
+  );
 }
 function profileSection(root: HTMLElement, d: HTMLDialogElement) {
   const profiles = state.profiles!;
-  const rows = [...profiles.list].sort((a, b) => Number(b.id === profiles.active) - Number(a.id === profiles.active) || a.created - b.created);
-  root.innerHTML = `<h3 class="local-data-heading">Profiles</h3><ul class="profile-list">${rows.map(p => {
-    const active = p.id === profiles.active;
-    const details = [active ? "Current profile" : "", p.anilistUser ? `AniList: ${esc(p.anilistUser)}` : ""].filter(Boolean).join(" &middot; ");
-    return `<li class="profile-row${active ? " active" : ""}" data-profile="${esc(p.id)}"><div class="profile-info"><strong>${esc(p.name)}</strong>${details ? `<small>${details}</small>` : ""}</div><div class="actions">${active ? "" : `<button type="button" data-profile-action="switch" aria-label="Switch to ${esc(p.name)}">Switch</button>`}<button type="button" data-profile-action="rename" aria-label="Rename ${esc(p.name)}">Rename</button>${active ? "" : `<button type="button" data-profile-action="delete" aria-label="Delete ${esc(p.name)}">Delete</button>`}</div></li>`;
-  }).join("")}</ul><div class="profile-editor" hidden></div><div class="actions profile-actions"><button id="profile-new" type="button">New profile</button><button id="profile-import" type="button">New profile from file</button></div><hr>`;
+  const rows = [...profiles.list].sort(
+    (a, b) =>
+      Number(b.id === profiles.active) - Number(a.id === profiles.active) ||
+      a.created - b.created,
+  );
+  root.innerHTML = `<h3 class="local-data-heading">Profiles</h3><ul class="profile-list">${rows
+    .map((p) => {
+      const active = p.id === profiles.active;
+      const details = [
+        active ? "Current profile" : "",
+        p.anilistUser ? `AniList: ${esc(p.anilistUser)}` : "",
+        p.malUser ? `MyAnimeList: ${esc(p.malUser)}` : "",
+      ]
+        .filter(Boolean)
+        .join(" &middot; ");
+      return `<li class="profile-row${active ? " active" : ""}" data-profile="${esc(p.id)}"><div class="profile-info"><strong>${esc(p.name)}</strong>${details ? `<small>${details}</small>` : ""}</div><div class="actions">${active ? "" : `<button type="button" data-profile-action="switch" aria-label="Switch to ${esc(p.name)}">Switch</button>`}<button type="button" data-profile-action="rename" aria-label="Rename ${esc(p.name)}">Rename</button>${active ? "" : `<button type="button" data-profile-action="delete" aria-label="Delete ${esc(p.name)}">Delete</button>`}</div></li>`;
+    })
+    .join(
+      "",
+    )}</ul><div class="profile-editor" hidden></div><div class="actions profile-actions"><button id="profile-new" type="button">New profile</button><button id="profile-import" type="button">New profile from file</button></div><hr>`;
   const heading = d.querySelector<HTMLElement>("#anilist-heading");
   if (heading) heading.textContent = `AniList for ${activeProfileName()}`;
   const refresh = () => profileSection(root, d);
   const editor = root.querySelector<HTMLElement>(".profile-editor")!;
-  const edit = (action: string, value: string, placeholder: string, submit: (name: string) => Promise<void>) => {
+  const edit = (
+    action: string,
+    value: string,
+    placeholder: string,
+    submit: (name: string) => Promise<void>,
+  ) => {
     editor.hidden = false;
     editor.innerHTML = `<label>Profile name<input id="profile-name" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label><div class="actions"><button id="profile-save" type="button" class="primary">${action}</button><button id="profile-cancel" type="button">Cancel</button></div>`;
     const input = editor.querySelector<HTMLInputElement>("#profile-name")!;
     const save = editor.querySelector<HTMLButtonElement>("#profile-save")!;
     input.value = value;
     input.placeholder = placeholder;
-    const done = () => void run(async () => {
-      save.disabled = true;
-      try { await submit(input.value); } finally { save.disabled = false; }
-    });
+    const done = () =>
+      void run(async () => {
+        save.disabled = true;
+        try {
+          await submit(input.value);
+        } finally {
+          save.disabled = false;
+        }
+      });
     save.onclick = done;
-    editor.querySelector<HTMLButtonElement>("#profile-cancel")!.onclick = refresh;
-    input.onkeydown = event => {
-      if (event.key === "Enter") { event.preventDefault(); done(); }
-      else if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); refresh(); }
+    editor.querySelector<HTMLButtonElement>("#profile-cancel")!.onclick =
+      refresh;
+    input.onkeydown = (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        done();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        refresh();
+      }
     };
     input.focus();
     input.select();
   };
-  root.querySelector<HTMLButtonElement>("#profile-new")!.onclick = () => edit("Create", "", "", async name => {
-    state = (await api.profileCreate(name, false))!;
-    refresh();
-    showToast(`Created profile ${name.trim()}.`, d);
-  });
-  root.querySelector<HTMLButtonElement>("#profile-import")!.onclick = () => edit("Choose file", "", "Use the name in the file", async name => {
-    const next = await api.profileCreate(name, true);
-    if (!next) return;
-    state = next;
-    refresh();
-    showToast(`Created profile ${state.profiles!.list.at(-1)!.name} from the file.`, d);
-  });
-  root.querySelectorAll<HTMLButtonElement>("[data-profile-action]").forEach(button => {
-    const id = button.closest<HTMLElement>("[data-profile]")!.dataset.profile!;
-    const profile = profiles.list.find(p => p.id === id)!;
-    button.onclick = () => void run(async () => {
-      const action = button.dataset.profileAction;
-      if (action === "rename") return edit("Save", profile.name, "", async name => {
-        state = await api.profileRename(id, name);
-        refresh();
-      });
-      if (action === "delete") {
-        if (!confirm(`Delete the ${profile.name} profile? Its lists, progress, settings, and AniList connection will be removed from this PC. Nothing is removed from AniList.`)) return;
-        state = await api.profileDelete(id);
-        refresh();
-        showToast(`Deleted profile ${profile.name}.`, d);
-        return;
-      }
-      const [room, playing] = await Promise.all([api.togetherState(), api.playback()]);
-      const leaving = [room.connected ? "leave Watch together" : "", playing.active ? "stop playback" : ""].filter(Boolean);
-      if (leaving.length && !confirm(`Switching profiles will ${leaving.join(" and ")}. Continue?`)) return;
-      root.querySelectorAll("button").forEach(item => item.disabled = true);
-      try { await api.profileSwitch(id); } finally { root.querySelectorAll("button").forEach(item => item.disabled = false); }
+  root.querySelector<HTMLButtonElement>("#profile-new")!.onclick = () =>
+    edit("Create", "", "", async (name) => {
+      state = (await api.profileCreate(name, false))!;
+      refresh();
+      showToast(`Created profile ${name.trim()}.`, d);
     });
-  });
+  root.querySelector<HTMLButtonElement>("#profile-import")!.onclick = () =>
+    edit("Choose file", "", "Use the name in the file", async (name) => {
+      const next = await api.profileCreate(name, true);
+      if (!next) return;
+      state = next;
+      refresh();
+      showToast(
+        `Created profile ${state.profiles!.list.at(-1)!.name} from the file.`,
+        d,
+      );
+    });
+  root
+    .querySelectorAll<HTMLButtonElement>("[data-profile-action]")
+    .forEach((button) => {
+      const id =
+        button.closest<HTMLElement>("[data-profile]")!.dataset.profile!;
+      const profile = profiles.list.find((p) => p.id === id)!;
+      button.onclick = () =>
+        void run(async () => {
+          const action = button.dataset.profileAction;
+          if (action === "rename")
+            return edit("Save", profile.name, "", async (name) => {
+              state = await api.profileRename(id, name);
+              refresh();
+            });
+          if (action === "delete") {
+            if (
+              !confirm(
+                `Delete the ${profile.name} profile? Its lists, progress, settings, and account connections will be removed from this PC. Nothing is removed from AniList or MyAnimeList.`,
+              )
+            )
+              return;
+            state = await api.profileDelete(id);
+            refresh();
+            showToast(`Deleted profile ${profile.name}.`, d);
+            return;
+          }
+          const [room, playing] = await Promise.all([
+            api.togetherState(),
+            api.playback(),
+          ]);
+          const leaving = [
+            room.connected ? "leave Watch together" : "",
+            playing.active ? "stop playback" : "",
+          ].filter(Boolean);
+          if (
+            leaving.length &&
+            !confirm(
+              `Switching profiles will ${leaving.join(" and ")}. Continue?`,
+            )
+          )
+            return;
+          root
+            .querySelectorAll("button")
+            .forEach((item) => (item.disabled = true));
+          try {
+            await api.profileSwitch(id);
+          } finally {
+            root
+              .querySelectorAll("button")
+              .forEach((item) => (item.disabled = false));
+          }
+        });
+    });
 }
-function showContextMenu(event: MouseEvent, id: string, label: string, actions: [string, () => Promise<unknown>][]) {
+function showContextMenu(
+  event: MouseEvent,
+  id: string,
+  label: string,
+  actions: [string, () => Promise<unknown>][],
+) {
   document.querySelector("#" + id)?.remove();
   const menu = document.createElement("div");
   menu.id = id;
@@ -1307,23 +1799,40 @@ function showContextMenu(event: MouseEvent, id: string, label: string, actions: 
     };
     menu.append(button);
   }
-  menu.onkeydown = e => {
+  menu.onkeydown = (e) => {
     const buttons = [...menu.querySelectorAll("button")];
     const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
       e.preventDefault();
-      buttons[e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+      buttons[
+        e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? buttons.length - 1
+            : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+              buttons.length
+      ].focus();
     }
   };
-  menu.addEventListener("toggle", () => { if (!menu.matches(":popover-open")) menu.remove(); });
-  ((event.target as HTMLElement).closest("dialog") ?? document.body).append(menu);
+  menu.addEventListener("toggle", () => {
+    if (!menu.matches(":popover-open")) menu.remove();
+  });
+  ((event.target as HTMLElement).closest("dialog") ?? document.body).append(
+    menu,
+  );
   menu.showPopover();
-  menu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4)) + "px";
-  menu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4)) + "px";
+  menu.style.left =
+    Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4)) +
+    "px";
+  menu.style.top =
+    Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4)) +
+    "px";
   menu.querySelector("button")?.focus();
 }
 function localRefreshMenu(event: MouseEvent, refresh: () => Promise<void>) {
-  showContextMenu(event, "local-context-menu", "Local file actions", [["Refresh", refresh]]);
+  showContextMenu(event, "local-context-menu", "Local file actions", [
+    ["Refresh", refresh],
+  ]);
 }
 async function localNav() {
   const value = await api.local!.state();
@@ -1333,9 +1842,14 @@ async function localNav() {
 }
 async function localSettings(section: HTMLElement) {
   const value = await localNav();
-  section.innerHTML = '<label class="check"><input id="local-enabled" type="checkbox" ' + (value.enabled ? 'checked' : '') + '> Enable local files</label><button type="button" id="local-add">Add source</button><hr><div id="local-sources"></div>';
-  section.onchange = event => event.stopPropagation();
-  section.querySelector<HTMLInputElement>("#local-enabled")!.onchange = event => {
+  section.innerHTML =
+    '<label class="check"><input id="local-enabled" type="checkbox" ' +
+    (value.enabled ? "checked" : "") +
+    '> Enable local files</label><button type="button" id="local-add">Add source</button><hr><div id="local-sources"></div>';
+  section.onchange = (event) => event.stopPropagation();
+  section.querySelector<HTMLInputElement>("#local-enabled")!.onchange = (
+    event,
+  ) => {
     event.stopPropagation();
     void run(async () => {
       await api.local!.enable((event.target as HTMLInputElement).checked);
@@ -1347,17 +1861,41 @@ async function localSettings(section: HTMLElement) {
   for (const source of value.sources) {
     const row = document.createElement("div");
     row.className = "local-source";
-    row.innerHTML = '<strong>' + esc(source.name) + '</strong><small>' + esc(source.path) + '</small>' + (!source.available ? '<p>Folder unavailable. Connect the drive, then refresh.</p>' : '') + '<div class="actions"><button type="button" data-refresh>Refresh</button><button type="button" data-remove>Remove</button></div>';
-    row.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () => void run(() => localSettings(section));
-    row.querySelector<HTMLButtonElement>("[data-remove]")!.onclick = () => void run(async () => { await api.local!.remove(source.id); await localSettings(section); if (route === "local") await localLibrary(); });
-    row.oncontextmenu = event => { event.preventDefault(); localRefreshMenu(event, () => localSettings(section)); };
+    row.innerHTML =
+      "<strong>" +
+      esc(source.name) +
+      "</strong><small>" +
+      esc(source.path) +
+      "</small>" +
+      (!source.available
+        ? "<p>Folder unavailable. Connect the drive, then refresh.</p>"
+        : "") +
+      '<div class="actions"><button type="button" data-refresh>Refresh</button><button type="button" data-remove>Remove</button></div>';
+    row.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () =>
+      void run(() => localSettings(section));
+    row.querySelector<HTMLButtonElement>("[data-remove]")!.onclick = () =>
+      void run(async () => {
+        await api.local!.remove(source.id);
+        await localSettings(section);
+        if (route === "local") await localLibrary();
+      });
+    row.oncontextmenu = (event) => {
+      event.preventDefault();
+      localRefreshMenu(event, () => localSettings(section));
+    };
     sources.append(row);
   }
-  section.querySelector<HTMLButtonElement>("#local-add")!.onclick = () => void run(async () => { await api.local!.add(); await localSettings(section); if (route === "local") await localLibrary(); });
+  section.querySelector<HTMLButtonElement>("#local-add")!.onclick = () =>
+    void run(async () => {
+      await api.local!.add();
+      await localSettings(section);
+      if (route === "local") await localLibrary();
+    });
 }
 async function localLibrary(id = "", path = "") {
   if (!api.local) return;
-  setRoute("local"); activeNav("local");
+  setRoute("local");
+  activeNav("local");
   localLocation = { id, path };
   const token = ++request;
   const main = document.querySelector<HTMLElement>("#main")!;
@@ -1366,12 +1904,21 @@ async function localLibrary(id = "", path = "") {
   try {
     const value = await localNav();
     if (route !== "local" || token !== request) return;
-    if (!value.enabled) { main.innerHTML = '<p>Enable Local files in Settings to browse your folders.</p>'; return; }
-    const source = value.sources.find(s => s.id === id);
-    main.innerHTML = (source ? '<button id="local-up" class="back">' + uiIcon("left") + ' Back</button>' : '') + '<h2 id="local-heading"></h2><div class="local-entries"></div>';
+    if (!value.enabled) {
+      main.innerHTML =
+        "<p>Enable Local files in Settings to browse your folders.</p>";
+      return;
+    }
+    const source = value.sources.find((s) => s.id === id);
+    main.innerHTML =
+      (source
+        ? '<button id="local-up" class="back">' +
+          uiIcon("left") +
+          " Back</button>"
+        : "") + '<h2 id="local-heading"></h2><div class="local-entries"></div>';
     const up = main.querySelector<HTMLButtonElement>("#local-up");
     if (up) up.onclick = () => void run(() => localLibrary());
-    main.oncontextmenu = event => {
+    main.oncontextmenu = (event) => {
       if (route !== "local") return;
       event.preventDefault();
       localRefreshMenu(event, () => localLibrary(id, path));
@@ -1379,36 +1926,62 @@ async function localLibrary(id = "", path = "") {
     const list = main.querySelector<HTMLElement>(".local-entries")!;
     if (!source) {
       main.querySelector("#local-heading")!.textContent = "Sources";
-      if (!value.sources.length) list.innerHTML = '<p>Add a source folder in Settings to begin.</p>';
+      if (!value.sources.length)
+        list.innerHTML = "<p>Add a source folder in Settings to begin.</p>";
       for (const item of value.sources) {
         const button = document.createElement("button");
-        button.textContent = item.name + (item.available ? "" : " (unavailable)");
+        button.textContent =
+          item.name + (item.available ? "" : " (unavailable)");
         button.setAttribute("aria-disabled", String(!item.available));
-        button.onclick = () => { if (item.available) void run(() => localLibrary(item.id)); };
+        button.onclick = () => {
+          if (item.available) void run(() => localLibrary(item.id));
+        };
         list.append(button);
       }
       return;
     }
-    main.querySelector("#local-heading")!.textContent = source.name + (path ? " / " + path : "");
-    if (!source.available) { list.innerHTML = '<p>Folder unavailable. Connect the drive, then select Refresh.</p>'; return; }
+    main.querySelector("#local-heading")!.textContent =
+      source.name + (path ? " / " + path : "");
+    if (!source.available) {
+      list.innerHTML =
+        "<p>Folder unavailable. Connect the drive, then select Refresh.</p>";
+      return;
+    }
     const folder = await api.local.list(id, path);
     if (route !== "local" || token !== request) return;
-    up!.onclick = () => void run(() => folder.parent === null ? localLibrary() : localLibrary(id, folder.parent));
-    if (!folder.entries.length) list.innerHTML = '<p>No video files or folders found.</p>';
+    up!.onclick = () =>
+      void run(() =>
+        folder.parent === null
+          ? localLibrary()
+          : localLibrary(id, folder.parent),
+      );
+    if (!folder.entries.length)
+      list.innerHTML = "<p>No video files or folders found.</p>";
     for (const entry of folder.entries) {
       const button = document.createElement("button");
       button.textContent = (entry.directory ? "Folder: " : "") + entry.name;
-      button.onclick = () => void run(async () => {
-        if (entry.directory) await localLibrary(id, entry.path);
-        else { button.disabled = true; try { await api.local!.play(id, entry.path); } finally { button.disabled = false; } }
-      });
+      button.onclick = () =>
+        void run(async () => {
+          if (entry.directory) await localLibrary(id, entry.path);
+          else {
+            button.disabled = true;
+            try {
+              await api.local!.play(id, entry.path);
+            } finally {
+              button.disabled = false;
+            }
+          }
+        });
       list.append(button);
     }
   } catch (error) {
     if (route === "local" && token === request) {
       main.replaceChildren();
-      const message = document.createElement("p"); message.textContent = "Could not open the folder: " + String(error);
-      const back = document.createElement("button"); back.textContent = "Back to sources"; back.onclick = () => void run(() => localLibrary());
+      const message = document.createElement("p");
+      message.textContent = "Could not open the folder: " + String(error);
+      const back = document.createElement("button");
+      back.textContent = "Back to sources";
+      back.onclick = () => void run(() => localLibrary());
       main.append(message, back);
     }
   }
@@ -1439,7 +2012,9 @@ function settings() {
   const changelogList = d.querySelector<HTMLElement>("#changelog-list")!;
   const changelogStatus = d.querySelector<HTMLElement>("#changelog-status")!;
   const changelogMore = d.querySelector<HTMLButtonElement>("#changelog-more")!;
-  const changelogTab = d.querySelector<HTMLButtonElement>("#settings-tab-changelog")!;
+  const changelogTab = d.querySelector<HTMLButtonElement>(
+    "#settings-tab-changelog",
+  )!;
   let changelogEntries: ChangelogEntry[] = [];
   let changelogPage = 0;
   let changelogHasMore = false;
@@ -1448,7 +2023,7 @@ function settings() {
   let changelogRequest = 0;
   const renderChangelog = () => {
     changelogList.replaceChildren();
-    const visibleEntries = changelogEntries.filter(entry => !entry.merge);
+    const visibleEntries = changelogEntries.filter((entry) => !entry.merge);
     if (!visibleEntries.length) {
       const empty = document.createElement("p");
       empty.textContent = "No commits found.";
@@ -1458,7 +2033,13 @@ function settings() {
     let lastDate = "";
     let group: HTMLElement;
     for (const entry of visibleEntries) {
-      const date = entry.date ? new Date(entry.date).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "Date unknown";
+      const date = entry.date
+        ? new Date(entry.date).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          })
+        : "Date unknown";
       if (date !== lastDate) {
         group = document.createElement("section");
         group.className = "changelog-day";
@@ -1478,7 +2059,10 @@ function settings() {
       const link = document.createElement("button");
       link.type = "button";
       link.textContent = `(${entry.sha.slice(0, 7)})`;
-      link.setAttribute("aria-label", `View commit ${entry.sha.slice(0, 7)} on GitHub`);
+      link.setAttribute(
+        "aria-label",
+        `View commit ${entry.sha.slice(0, 7)} on GitHub`,
+      );
       link.onclick = () => void api.openChangelogCommit(entry.sha).catch(error);
       meta.append(link);
       if (entry.sha === changelogBuild) {
@@ -1500,15 +2084,29 @@ function settings() {
     try {
       const result = await api.changelog(nextPage, refresh);
       if (request !== changelogRequest || !d.open) return;
-      changelogEntries = nextPage === 1 ? result.entries : [...changelogEntries, ...result.entries.filter(entry => !changelogEntries.some(old => old.sha === entry.sha))];
+      changelogEntries =
+        nextPage === 1
+          ? result.entries
+          : [
+              ...changelogEntries,
+              ...result.entries.filter(
+                (entry) =>
+                  !changelogEntries.some((old) => old.sha === entry.sha),
+              ),
+            ];
       changelogPage = nextPage;
       changelogHasMore = result.hasMore;
       changelogBuild = result.buildCommit;
       renderChangelog();
-      changelogStatus.textContent = result.stale ? "Could not refresh. Showing saved commits." : "";
+      changelogStatus.textContent = result.stale
+        ? "Could not refresh. Showing saved commits."
+        : "";
     } catch (e) {
       if (request !== changelogRequest || !d.open) return;
-      changelogStatus.textContent = e instanceof Error ? e.message : "Could not load the changelog. Try again.";
+      changelogStatus.textContent =
+        e instanceof Error
+          ? e.message
+          : "Could not load the changelog. Try again.";
     } finally {
       if (request === changelogRequest && d.open) {
         changelogLoading = false;
@@ -1525,13 +2123,161 @@ function settings() {
     const profiles = document.createElement("section");
     profiles.className = "profiles";
     // Profile name fields are not settings, so keep their changes away from the settings form.
-    profiles.onchange = event => event.stopPropagation();
+    profiles.onchange = (event) => event.stopPropagation();
     d.querySelector("#settings-account")!.append(profiles);
     profileSection(profiles, d);
   }
   const transfer = document.createElement("section");
-  transfer.innerHTML = `<h3 id="anilist-heading" class="local-data-heading">${state.profiles ? `AniList for ${esc(activeProfileName())}` : "AniList"}</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `Connected as ${esc(state.anilist.user)}. ${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""} ${esc(state.anilist.error ?? "")}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Sync now</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
+  transfer.innerHTML = `<h3 id="anilist-heading" class="local-data-heading">${state.profiles ? `AniList for ${esc(activeProfileName())}` : "AniList"}</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Refresh</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
   d.querySelector("#settings-account")!.append(transfer);
+  const accountSettings = () => {
+    settings();
+    document.querySelector<HTMLButtonElement>("#settings-tab-account")!.click();
+  };
+  const accountAction = async (
+    action: () => Promise<unknown>,
+    message: string,
+  ) => {
+    const buttons = [
+      ...d.querySelectorAll<HTMLButtonElement>("#settings-account button"),
+    ];
+    buttons.forEach((button) => (button.disabled = true));
+    try {
+      await action();
+      state = await api.state();
+      if (d.open) accountSettings();
+      showToast(message);
+      if (route === "watchlist") await watchlist();
+      else if (route === "home") await home();
+    } catch (e) {
+      error(e);
+    } finally {
+      buttons.forEach((button) => (button.disabled = false));
+    }
+  };
+  if (api.mal) {
+    const section = document.createElement("section");
+    section.innerHTML =
+      '<hr><h3 class="local-data-heading">MyAnimeList' +
+      (state.mal?.connected && state.mal.user
+        ? " for " + esc(state.mal.user)
+        : "") +
+      "</h3><p>" +
+      (state.mal?.connected
+        ? state.mal.lastSync
+          ? "Last sync: " + new Date(state.mal.lastSync).toLocaleString() + "."
+          : "No sync yet."
+        : "") +
+      '</p><div class="actions">' +
+      (state.mal?.connected
+        ? '<button type="button" id="mal-sync">Refresh</button><button type="button" id="mal-disconnect">Disconnect</button>'
+        : '<button type="button" id="mal-connect">Connect MyAnimeList</button>') +
+      "</div>";
+    transfer.querySelector("hr")!.before(section);
+    section.querySelector<HTMLButtonElement>("#mal-connect")?.addEventListener(
+      "click",
+      () =>
+        void accountAction(async () => {
+          await api.mal!.connect();
+          await api.mal!.refresh();
+        }, "MyAnimeList connected."),
+    );
+    section
+      .querySelector<HTMLButtonElement>("#mal-sync")
+      ?.addEventListener(
+        "click",
+        () =>
+          void accountAction(
+            () => api.mal!.refresh(),
+            "MyAnimeList refreshed.",
+          ),
+      );
+    section
+      .querySelector<HTMLButtonElement>("#mal-disconnect")
+      ?.addEventListener(
+        "click",
+        () =>
+          void accountAction(
+            () => api.mal!.disconnect(),
+            "MyAnimeList disconnected.",
+          ),
+      );
+    if (state.mal?.connected && state.anilist.connected) {
+      for (const source of ["anilist", "mal"] as const) {
+        const from = source === "anilist" ? "AniList" : "MyAnimeList";
+        const to = source === "anilist" ? "MyAnimeList" : "AniList";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "Import from " + from;
+        transfer
+          .querySelector(
+            source === "anilist" ? "#mal-disconnect" : "#anilist-disconnect",
+          )!
+          .after(button);
+        button.onclick = () => {
+          const confirm = dialog(
+            '<h2 id="dialog-title">Import from ' +
+              from +
+              "</h2><p>This will import all of your " +
+              from +
+              " history to " +
+              to +
+              ', continue?</p><p>Missing anime will be added. Existing entries will be updated where data is missing or progress is behind. Higher episode and rewatch counts will be kept. Existing scores and notes will be kept.</p><div class="actions"><button type="button" id="confirm-account-import">Continue</button><button type="button" id="cancel-account-import">Cancel</button></div>',
+          );
+          confirm.querySelector<HTMLButtonElement>(
+            "#cancel-account-import",
+          )!.onclick = accountSettings;
+          confirm.querySelector<HTMLButtonElement>(
+            "#confirm-account-import",
+          )!.onclick = async () => {
+            const start = confirm.querySelector<HTMLButtonElement>(
+              "#confirm-account-import",
+            )!;
+            start.disabled = true;
+            const close = confirm.querySelector<HTMLButtonElement>(
+              "#cancel-account-import",
+            )!;
+            close.textContent = "Close";
+            close.onclick = () => confirm.close();
+            let notice = showToast(
+              "Importing 0%. It is safe to close this page. Keep Nen open.",
+              confirm,
+              true,
+            );
+            confirm.onclose = () => {
+              if (!confirm.open && notice.element.isConnected) {
+                document.body.append(notice.element);
+                notice.element.showPopover();
+              }
+            };
+            try {
+              const result = await api.mal!.importFrom(source, (percent) => {
+                const message =
+                  "Importing " +
+                  percent +
+                  "%. It is safe to close this page. Keep Nen open.";
+                if (notice.element.isConnected) notice.update(message, true);
+                else notice = showToast(message, undefined, true);
+              });
+              if (confirm.open && start.isConnected) accountSettings();
+              showToast(
+                "Imported " +
+                  (result.addedAniList + result.addedMyAnimeList) +
+                  " anime and updated " +
+                  (result.updatedAniList + result.updatedMyAnimeList) +
+                  " on " +
+                  to +
+                  ".",
+              );
+            } catch (e) {
+              if (confirm.open && start.isConnected) accountSettings();
+              error(e);
+            }
+          };
+        };
+      }
+    }
+  }
   const uninstall = document.createElement("button");
   uninstall.textContent = "Uninstall";
   uninstall.id = "uninstall";
@@ -1539,53 +2285,81 @@ function settings() {
   d.querySelector(".update-actions")!.prepend(uninstall);
   uninstall.onclick = () => {
     d.close();
-    const confirm = dialog('<h2 id="dialog-title">Uninstall Nen?</h2><p>Nen will close and open the Windows uninstaller.</p><div class="actions"><button id="confirm-uninstall">Uninstall</button><button id="cancel-uninstall">Cancel</button></div>');
-    confirm.querySelector<HTMLButtonElement>("#cancel-uninstall")!.onclick = () => { confirm.close(); settings(); };
-    confirm.querySelector<HTMLButtonElement>("#confirm-uninstall")!.onclick = () => void run(async () => { await api.uninstall(); });
+    const confirm = dialog(
+      '<h2 id="dialog-title">Uninstall Nen?</h2><p>Nen will close and open the Windows uninstaller.</p><div class="actions"><button id="confirm-uninstall">Uninstall</button><button id="cancel-uninstall">Cancel</button></div>',
+    );
+    confirm.querySelector<HTMLButtonElement>("#cancel-uninstall")!.onclick =
+      () => {
+        confirm.close();
+        settings();
+      };
+    confirm.querySelector<HTMLButtonElement>("#confirm-uninstall")!.onclick =
+      () =>
+        void run(async () => {
+          await api.uninstall();
+        });
   };
 
-  transfer.querySelector<HTMLElement>("#watch-export")!.onclick = () => void run(async () => { const path = await api.watchExport(); if (path) showToast(`Saved watch data to ${path}`, d); });
-  transfer.querySelector<HTMLElement>("#watch-import")!.onclick = () => void run(async () => {
-    const summary = await api.watchImportPreview();
-    if (!summary) return;
-    d.close();
-    const review = dialog(`<h2 id="dialog-title">Import watch data</h2><p>${summary.count} anime, ${summary.episodes} episode records. ${summary.newEntries} new anime and ${summary.changedEntries} existing anime.</p><p>Choose Merge to keep newer changes from each file. Replace removes all current watch entries. Nen will save a backup first.${state.anilist.connected ? " AniList entries can return on the next sync. Nen will not delete them from AniList." : ""}</p><div class="actions"><button id="import-merge" class="primary">Merge</button><button id="import-replace">Replace</button></div>`);
-    for (const mode of ["merge", "replace"] as const) review.querySelector<HTMLElement>(`#import-${mode}`)!.onclick = () => void run(async () => {
-      if (mode === "replace" && !confirm("Replace all current watch data? A backup will be saved.")) return;
-      state = await api.watchImport(mode);
-      review.close();
-      showToast("Watch data imported.");
-      if (state.anilist.connected) await showSyncReview();
-      else if (route === "watchlist") await watchlist();
-      if (route === "home") await home();
+  transfer.querySelector<HTMLElement>("#watch-export")!.onclick = () =>
+    void run(async () => {
+      const path = await api.watchExport();
+      if (path) showToast(`Saved watch data to ${path}`, d);
     });
-  });
-  const connectAniList = () => void run(async () => {
-    const result = await api.anilistConnect();
-    state = await api.state();
-    d.close();
-    await showSyncReview(true, result?.sharedWith ? `Connected. This AniList account is also connected to the ${result.sharedWith} profile.` : "");
-  });
-  transfer.querySelector<HTMLElement>("#anilist-connect")?.addEventListener("click", connectAniList);
-  transfer.querySelector<HTMLElement>("#anilist-sync")?.addEventListener("click", () => void run(async () => { d.close(); await showSyncReview(); }));
-  transfer.querySelector<HTMLButtonElement>("#anilist-disconnect")?.addEventListener("click", event => void run(async () => {
-    const button = event.currentTarget as HTMLButtonElement;
-    button.disabled = true;
-    try {
-      state = await api.anilistDisconnect();
-      transfer.querySelector<HTMLElement>("#anilist-state")!.textContent = "";
-      transfer.querySelector<HTMLElement>("#anilist-state")!.hidden = true;
-      transfer.querySelector("#anilist-sync")?.remove();
-      button.id = "anilist-connect";
-      button.textContent = "Connect AniList";
-      const connect = button.cloneNode(true) as HTMLButtonElement;
-      connect.disabled = false;
-      connect.onclick = connectAniList;
-      button.replaceWith(connect);
-      showToast("AniList disconnected.", d);
-    } finally { button.disabled = false; }
-  }));
-  if (api.local) void localSettings(d.querySelector<HTMLElement>("#settings-local-files")!).catch(error);
+  transfer.querySelector<HTMLElement>("#watch-import")!.onclick = () =>
+    void run(async () => {
+      const summary = await api.watchImportPreview();
+      if (!summary) return;
+      d.close();
+      const review = dialog(
+        `<h2 id="dialog-title">Import watch data</h2><p>${summary.count} anime, ${summary.episodes} episode records. ${summary.newEntries} new anime and ${summary.changedEntries} existing anime.</p><p>Choose Merge to keep newer changes from each file. Replace removes all current watch entries. Nen will save a backup first.${state.anilist.connected ? " AniList entries can return on the next sync. Nen will not delete them from AniList." : ""}</p><div class="actions"><button id="import-merge" class="primary">Merge</button><button id="import-replace">Replace</button></div>`,
+      );
+      for (const mode of ["merge", "replace"] as const)
+        review.querySelector<HTMLElement>(`#import-${mode}`)!.onclick = () =>
+          void run(async () => {
+            if (
+              mode === "replace" &&
+              !confirm(
+                "Replace all current watch data? A backup will be saved.",
+              )
+            )
+              return;
+            state = await api.watchImport(mode);
+            review.close();
+            showToast("Watch data imported.");
+            if (state.anilist.connected) await showSyncReview();
+            else if (route === "watchlist") await watchlist();
+            if (route === "home") await home();
+          });
+    });
+  const connectAniList = () =>
+    void accountAction(async () => {
+      await api.anilistConnect();
+      await api.anilistRefresh();
+    }, "AniList connected.");
+  transfer
+    .querySelector<HTMLElement>("#anilist-connect")
+    ?.addEventListener("click", connectAniList);
+  transfer
+    .querySelector<HTMLElement>("#anilist-sync")
+    ?.addEventListener(
+      "click",
+      () =>
+        void accountAction(() => api.anilistRefresh(), "AniList refreshed."),
+    );
+  transfer
+    .querySelector<HTMLButtonElement>("#anilist-disconnect")
+    ?.addEventListener(
+      "click",
+      () =>
+        void accountAction(
+          () => api.anilistDisconnect(),
+          "AniList disconnected.",
+        ),
+    );
+  if (api.local)
+    void localSettings(
+      d.querySelector<HTMLElement>("#settings-local-files")!,
+    ).catch(error);
   const initialAdult = s.showAdult;
   let saveQueue = Promise.resolve();
   const save = () => {
@@ -1627,29 +2401,56 @@ function settings() {
   d.querySelector<HTMLFormElement>("form")!.onsubmit = (e) =>
     e.preventDefault();
   const check = d.querySelector<HTMLButtonElement>("#check-updates")!;
-  let latestUpdate: import("./shared").UpdateStatus = { busy: false, message: "" };
+  let latestUpdate: import("./shared").UpdateStatus = {
+    busy: false,
+    message: "",
+  };
   let updateToast: ReturnType<typeof showToast> | undefined;
-  const showUpdate = (status: import("./shared").UpdateStatus, notify = true) => {
+  const showUpdate = (
+    status: import("./shared").UpdateStatus,
+    notify = true,
+  ) => {
     latestUpdate = status;
     check.disabled = status.busy;
-    check.textContent = status.available || status.installing ? "Update now" : "Check for updates";
+    check.textContent =
+      status.available || status.installing
+        ? "Update now"
+        : "Check for updates";
     check.classList.toggle("update-ready", !!status.available && !status.busy);
     if (notify && status.message && d.open) {
-      const text = status.message + (status.percent === undefined ? "" : " " + status.percent + "%");
-      if (updateToast?.element.isConnected) updateToast.update(text, status.busy);
+      const text =
+        status.message +
+        (status.percent === undefined ? "" : " " + status.percent + "%");
+      if (updateToast?.element.isConnected)
+        updateToast.update(text, status.busy);
       else updateToast = showToast(text, d, status.busy);
       updateToast.element.classList.toggle("loading", status.busy);
     }
   };
   const unsubscribeUpdate = api.onUpdateStatus(showUpdate);
-  void api.updateStatus().then(status => showUpdate(status, false)).catch(error);
-  check.onclick = () => void run(async () => {
-    await saveQueue;
-    const install = latestUpdate.available;
-    showUpdate({ busy: true, installing: install, message: install ? "Updating…" : "Checking for updates…" });
-    try { showUpdate(await (install ? api.installUpdate() : api.checkUpdates())); }
-    catch (e) { showUpdate({ busy: false, available: install, message: e instanceof Error ? e.message : "The update failed." }); }
-  });
+  void api
+    .updateStatus()
+    .then((status) => showUpdate(status, false))
+    .catch(error);
+  check.onclick = () =>
+    void run(async () => {
+      await saveQueue;
+      const install = latestUpdate.available;
+      showUpdate({
+        busy: true,
+        installing: install,
+        message: install ? "Updating…" : "Checking for updates…",
+      });
+      try {
+        showUpdate(await (install ? api.installUpdate() : api.checkUpdates()));
+      } catch (e) {
+        showUpdate({
+          busy: false,
+          available: install,
+          message: e instanceof Error ? e.message : "The update failed.",
+        });
+      }
+    });
   d.onclose = () => {
     changelogRequest++;
     unsubscribeUpdate();
@@ -1748,32 +2549,53 @@ async function start() {
   let lastNavigation = { direction: "", time: 0 };
   const navigate = (direction: "back" | "forward") => {
     const now = performance.now();
-    if (lastNavigation.direction === direction && now - lastNavigation.time < 200) return;
+    if (
+      lastNavigation.direction === direction &&
+      now - lastNavigation.time < 200
+    )
+      return;
     lastNavigation = { direction, time: now };
     const dialog = document.querySelector<HTMLDialogElement>("dialog[open]");
-    if (dialog) { if (direction === "back") dialog.close(); }
-    else if (playerMode) { if (direction === "back") void run(() => api.control("stop")); }
-    else void run(() => browseBack(direction));
+    if (dialog) {
+      if (direction === "back") dialog.close();
+    } else if (playerMode) {
+      if (direction === "back") void run(() => api.control("stop"));
+    } else void run(() => browseBack(direction));
   };
   api.onBack(navigate);
   if (api.browserHistory && !playerMode)
-    window.addEventListener("popstate", event => {
-      if (event.state?.nenVisit) void run(() => restoreVisit(event.state.nenVisit));
+    window.addEventListener("popstate", (event) => {
+      if (event.state?.nenVisit)
+        void run(() => restoreVisit(event.state.nenVisit));
     });
   for (const event of ["mousedown", "mouseup", "auxclick"])
-    document.addEventListener(event, e => {
-      const mouse = e as MouseEvent;
-      if (mouse.button !== 3 && mouse.button !== 4) return;
-      e.preventDefault();
-      if (event === "mouseup") navigate(mouse.button === 3 ? "back" : "forward");
-    }, true);
-  document.addEventListener("keydown", e => {
-    if ((e.altKey && ["ArrowLeft", "ArrowRight"].includes(e.key)) || ["BrowserBack", "BrowserForward"].includes(e.key)) {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      navigate(e.key === "ArrowLeft" || e.key === "BrowserBack" ? "back" : "forward");
-    }
-  }, true);
+    document.addEventListener(
+      event,
+      (e) => {
+        const mouse = e as MouseEvent;
+        if (mouse.button !== 3 && mouse.button !== 4) return;
+        e.preventDefault();
+        if (event === "mouseup")
+          navigate(mouse.button === 3 ? "back" : "forward");
+      },
+      true,
+    );
+  document.addEventListener(
+    "keydown",
+    (e) => {
+      if (
+        (e.altKey && ["ArrowLeft", "ArrowRight"].includes(e.key)) ||
+        ["BrowserBack", "BrowserForward"].includes(e.key)
+      ) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        navigate(
+          e.key === "ArrowLeft" || e.key === "BrowserBack" ? "back" : "forward",
+        );
+      }
+    },
+    true,
+  );
   applyTheme();
   if (playerMode) {
     const update = mountPlayer({
@@ -1785,12 +2607,23 @@ async function start() {
         }),
       next: (p) =>
         void run(async () => {
-          if (p.local) { await api.local?.next(); return; }
+          if (p.local) {
+            await api.local?.next();
+            return;
+          }
           const room = await api.togetherState();
-          if (room.connected && !room.host) throw Error("Only the host can choose the next episode.");
+          if (room.connected && !room.host)
+            throw Error("Only the host can choose the next episode.");
           if (p.mediaId && p.nextEpisode) {
-            if (p.episode) state = await api.watchEdit(p.mediaId, { episode: p.episode, watched: true });
-            await startEpisode(await api.media(p.nextMediaId ?? p.mediaId), p.nextEpisode);
+            if (p.episode)
+              state = await api.watchEdit(p.mediaId, {
+                episode: p.episode,
+                watched: true,
+              });
+            await startEpisode(
+              await api.media(p.nextMediaId ?? p.mediaId),
+              p.nextEpisode,
+            );
           }
         }),
       edit: editMarker,
@@ -1798,17 +2631,30 @@ async function start() {
     });
     let lastSessionFailure = "";
     const showSessionFailure = (p: Playback) => {
-      if (!p.error) { lastSessionFailure = ""; return; }
+      if (!p.error) {
+        lastSessionFailure = "";
+        return;
+      }
       const key = `${p.mediaId}:${p.episode}:${p.error}`;
       if (key === lastSessionFailure) return;
       lastSessionFailure = key;
-      void api.togetherState().then(room => {
-        if (!room.connected || playback?.error !== p.error) return;
-        const d = dialog(`<h2 id="dialog-title">Could not load this episode</h2><p role="alert">${esc(p.error)}</p><p>Automatic source loading failed. Pick a source manually to continue.</p><button id="manual-session-source">Choose a source manually</button>`);
-        d.querySelector<HTMLButtonElement>("#manual-session-source")!.onclick = () => {
-          if (p.mediaId && p.episode) void run(async () => releasePicker(await api.media(p.mediaId!), p.episode!));
-        };
-      }).catch(error);
+      void api
+        .togetherState()
+        .then((room) => {
+          if (!room.connected || playback?.error !== p.error) return;
+          const d = dialog(
+            `<h2 id="dialog-title">Could not load this episode</h2><p role="alert">${esc(p.error)}</p><p>Automatic source loading failed. Pick a source manually to continue.</p><button id="manual-session-source">Choose a source manually</button>`,
+          );
+          d.querySelector<HTMLButtonElement>(
+            "#manual-session-source",
+          )!.onclick = () => {
+            if (p.mediaId && p.episode)
+              void run(async () =>
+                releasePicker(await api.media(p.mediaId!), p.episode!),
+              );
+          };
+        })
+        .catch(error);
     };
     api.onPlayback((p) => {
       playback = p;
@@ -1824,11 +2670,14 @@ async function start() {
   } else {
     shell();
     if (api.local) void localNav().catch(error);
-    api.onWatchState(value => {
+    api.onWatchState((value) => {
       state = value;
       if (route === "watchlist") void watchlist();
       else if (route === "home") void home();
-      else if (route === "series") { renderEpisodes(); updateSeriesActions(); }
+      else if (route === "series") {
+        renderEpisodes();
+        updateSeriesActions();
+      }
     });
     api.onPlayback((p) => {
       const finding = document.querySelector<HTMLElement>("#finding-source");
@@ -1845,7 +2694,11 @@ async function start() {
       new URLSearchParams(location.search).get("returnMedia"),
     );
     const localSource = new URLSearchParams(location.search).get("localSource");
-    if (localSource && api.local) await localLibrary(localSource, new URLSearchParams(location.search).get("localPath") ?? "");
+    if (localSource && api.local)
+      await localLibrary(
+        localSource,
+        new URLSearchParams(location.search).get("localPath") ?? "",
+      );
     else if (returnMedia > 0) {
       try {
         const saved = JSON.parse(
@@ -1859,33 +2712,52 @@ async function start() {
           seriesReturn = saved.seriesReturn;
           visits = saved.visits ?? [];
           forwardVisits = saved.forwardVisits ?? [];
-          if (route !== "series")
-            visits.push({ route, mode, query, page });
+          if (route !== "series") visits.push({ route, mode, query, page });
           goingBack = true;
         }
       } catch {}
       await openMedia(returnMedia);
       goingBack = false;
-    } else if (api.browserHistory && history.state?.nenVisit) await restoreVisit(history.state.nenVisit);
-    else if (new URLSearchParams(location.search).has("together")) showTogether();
+    } else if (api.browserHistory && history.state?.nenVisit)
+      await restoreVisit(history.state.nenVisit);
+    else if (new URLSearchParams(location.search).has("together"))
+      showTogether();
     else await home();
-    if (new URLSearchParams(location.search).has("profileSwitched")) showToast(`Switched to ${activeProfileName()}.`);
+    if (new URLSearchParams(location.search).has("profileSwitched"))
+      showToast(`Switched to ${activeProfileName()}.`);
     clearInterval(animation);
     splash.classList.add("finished");
     setTimeout(() => splash.remove(), 300);
     let startupToast: ReturnType<typeof showToast> | undefined;
     let lastUpdateNotice = "";
     const notifyUpdate = (status: import("./shared").UpdateStatus) => {
-      if (document.querySelector("dialog[open] #settings") || (!status.installing && !status.available)) return;
-      const text = status.message + (status.percent === undefined ? "" : " " + status.percent + "%");
+      if (
+        document.querySelector("dialog[open] #settings") ||
+        (!status.installing && !status.available)
+      )
+        return;
+      const text =
+        status.message +
+        (status.percent === undefined ? "" : " " + status.percent + "%");
       if (!text || text === lastUpdateNotice) return;
       lastUpdateNotice = text;
       if (startupToast?.element.isConnected) startupToast.update(text, true);
-      else startupToast = showToast(status.available && !status.busy ? "New update available. Open Settings to update Nen." : text, document.querySelector<HTMLDialogElement>("dialog[open]") ?? document.body, true);
+      else
+        startupToast = showToast(
+          status.available && !status.busy
+            ? "New update available. Open Settings to update Nen."
+            : text,
+          document.querySelector<HTMLDialogElement>("dialog[open]") ??
+            document.body,
+          true,
+        );
       startupToast.element.classList.toggle("loading", status.busy);
     };
     api.onUpdateStatus(notifyUpdate);
-    void api.startupUpdate().then(notifyUpdate).catch(() => {});
+    void api
+      .startupUpdate()
+      .then(notifyUpdate)
+      .catch(() => {});
   }
 }
 void start().catch((e) => {

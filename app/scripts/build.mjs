@@ -1,3 +1,8 @@
+try {
+  process.loadEnvFile("../.env");
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -5,10 +10,21 @@ import { NtExecutable, NtExecutableResource, Resource, Data } from "resedit";
 import { build } from "esbuild";
 if (process.platform === "win32") {
   await mkdir("dist-electron", { recursive: true });
-  execFileSync(join(process.env.WINDIR || "C:/Windows", "Microsoft.NET/Framework64/v4.0.30319/csc.exe"), [
-    "/nologo", "/target:exe", `/out:${join("dist-electron", "video-host.exe")}`,
-    "/reference:System.Windows.Forms.dll", "/reference:System.Drawing.dll", join("electron", "video-host.cs"),
-  ], { stdio: "inherit", windowsHide: true });
+  execFileSync(
+    join(
+      process.env.WINDIR || "C:/Windows",
+      "Microsoft.NET/Framework64/v4.0.30319/csc.exe",
+    ),
+    [
+      "/nologo",
+      "/target:exe",
+      `/out:${join("dist-electron", "video-host.exe")}`,
+      "/reference:System.Windows.Forms.dll",
+      "/reference:System.Drawing.dll",
+      join("electron", "video-host.cs"),
+    ],
+    { stdio: "inherit", windowsHide: true },
+  );
   const executable = NtExecutable.from(await readFile("vendor/mpv/mpv.exe"));
   const resources = NtExecutableResource.from(executable);
   const icon = Data.IconFile.from(await readFile("public/n.ico"));
@@ -39,7 +55,17 @@ for (const name of ["main", "preload"]) {
   await build({
     entryPoints: [`electron/${name}.ts`],
     outfile: `dist-electron/${name}.cjs`,
-    define: { NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""), NEN_BUILD_VERSION: JSON.stringify(process.env.GITHUB_SHA ? `Build ${process.env.GITHUB_SHA.slice(0, 7)}` : "Build dev") },
+    define: {
+      NEN_MAL_APP_ID: JSON.stringify(
+        process.env.mal_app_id || "464ce8e95064e45ef657cfb068f9aa32",
+      ),
+      NEN_BUILD_COMMIT: JSON.stringify(process.env.GITHUB_SHA || ""),
+      NEN_BUILD_VERSION: JSON.stringify(
+        process.env.GITHUB_SHA
+          ? `Build ${process.env.GITHUB_SHA.slice(0, 7)}`
+          : "Build dev",
+      ),
+    },
     bundle: true,
     platform: "node",
     format: "cjs",

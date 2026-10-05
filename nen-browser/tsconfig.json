@@ -1,12 +1,8 @@
 {
   "extends": "../app/tsconfig.json",
-  "include": [
-    "browser.ts"
-  ],
+  "include": ["*.ts"],
   "compilerOptions": {
     "allowJs": true,
-    "typeRoots": [
-      "../app/node_modules/@types"
-    ]
+    "typeRoots": ["../app/node_modules/@types"]
   }
 }

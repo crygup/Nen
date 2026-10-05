@@ -1,13 +1,24 @@
 import { playerNotice, playerNoticeText } from "./player-notice";
 import { mountTogether } from "./together";
-import { escapeHtml as esc, audioTrackName, subtitleTrackName, type Playback, type SegmentType } from "./shared";
+import {
+  escapeHtml as esc,
+  audioTrackName,
+  subtitleTrackName,
+  type Playback,
+  type SegmentType,
+} from "./shared";
 const api = window.nen;
 const time = (n: number) =>
   `${Math.floor(n / 3600) ? `${Math.floor(n / 3600)}:` : ""}${String(Math.floor(n / 60) % 60).padStart(2, "0")}:${String(Math.floor(n % 60)).padStart(2, "0")}`;
 const downloadedGradient = (ranges: [number, number][], position: number) => {
   let end = position;
   for (const [start, stop] of [...ranges].sort((a, b) => a[0] - b[0])) {
-    if (Number.isFinite(start) && Number.isFinite(stop) && start <= end && stop > end)
+    if (
+      Number.isFinite(start) &&
+      Number.isFinite(stop) &&
+      start <= end &&
+      stop > end
+    )
       end = Math.min(1, stop);
   }
   return `linear-gradient(to right, transparent 0 ${position * 100}%, rgb(255 255 255 / 48%) ${position * 100}% ${end * 100}%, transparent ${end * 100}% 100%)`;
@@ -29,7 +40,8 @@ export function mountPlayer(actions: {
   volumeToast.className = "volume-toast";
   volumeToast.setAttribute("role", "status");
   volumeToast.setAttribute("aria-live", "polite");
-  volumeToast.innerHTML = '<span>Volume</span><strong>100%</strong><span class="volume-meter" aria-hidden="true"><span></span></span>';
+  volumeToast.innerHTML =
+    '<span>Volume</span><strong>100%</strong><span class="volume-meter" aria-hidden="true"><span></span></span>';
   document.querySelector(".player-stage")!.append(volumeToast);
   const volumePercent = volumeToast.querySelector("strong")!;
   let volumeToastTimer: ReturnType<typeof setTimeout>;
@@ -38,7 +50,10 @@ export function mountPlayer(actions: {
     volumeToast.style.setProperty("--volume-level", `${value}%`);
     volumeToast.classList.add("visible");
     clearTimeout(volumeToastTimer);
-    volumeToastTimer = setTimeout(() => volumeToast.classList.remove("visible"), 1500);
+    volumeToastTimer = setTimeout(
+      () => volumeToast.classList.remove("visible"),
+      1500,
+    );
   };
   const sliderVolume = document.createElement("output");
   sliderVolume.className = "volume-value";
@@ -50,7 +65,10 @@ export function mountPlayer(actions: {
     sliderVolume.textContent = `${value}%`;
     sliderVolume.classList.add("visible");
     clearTimeout(sliderVolumeTimer);
-    sliderVolumeTimer = setTimeout(() => sliderVolume.classList.remove("visible"), 850);
+    sliderVolumeTimer = setTimeout(
+      () => sliderVolume.classList.remove("visible"),
+      850,
+    );
   };
   const togetherPanel = document.createElement("aside");
   togetherPanel.className = "watch-together";
@@ -59,18 +77,32 @@ export function mountPlayer(actions: {
   let removeTogether: (() => void) | undefined;
   const roomUpdate = (room: import("./shared").TogetherState) => {
     togetherPanel.hidden = !room.connected;
-    el("change-source").hidden = !!latest?.local || room.connected && !room.members.find(m => m.id === room.self)?.error;
+    el("change-source").hidden =
+      !!latest?.local ||
+      (room.connected && !room.members.find((m) => m.id === room.self)?.error);
     root.classList.toggle("with-together", room.connected);
-    if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, true);
-    el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;
+    if (room.connected && !removeTogether)
+      removeTogether = mountTogether(togetherPanel, true);
+    el<HTMLButtonElement>("pause").disabled =
+      room.connected && !room.host && !room.allowPause;
     el<HTMLInputElement>("seek").disabled = room.connected && !room.host;
     el<HTMLButtonElement>("speed").disabled = room.connected && !room.host;
-    el<HTMLButtonElement>("play-next").disabled = el<HTMLButtonElement>("next-episode").disabled = room.connected && !room.host;
+    el<HTMLButtonElement>("play-next").disabled = el<HTMLButtonElement>(
+      "next-episode",
+    ).disabled = room.connected && !room.host;
   };
   const removeRoomListener = api.onTogether(roomUpdate);
   void api.togetherState().then(roomUpdate);
-  window.addEventListener("pagehide", () => { removeRoomListener(); removeTogether?.(); }, { once: true });
-  let captureError = "", lastPlaybackError = "";
+  window.addEventListener(
+    "pagehide",
+    () => {
+      removeRoomListener();
+      removeTogether?.();
+    },
+    { once: true },
+  );
+  let captureError = "",
+    lastPlaybackError = "";
   const surface = el<HTMLCanvasElement>("video-surface");
   const context = surface.getContext("2d", { alpha: false })!;
   let waitingForKey = true,
@@ -169,7 +201,10 @@ export function mountPlayer(actions: {
         pendingVolume = undefined;
     }
   };
-  const setVolume = (value: number, feedback: "toast" | "slider" | "none" = "none") => {
+  const setVolume = (
+    value: number,
+    feedback: "toast" | "slider" | "none" = "none",
+  ) => {
     const next = Math.max(0, Math.min(100, Math.round(value)));
     if (feedback === "toast") showVolumeToast(next);
     if (feedback !== "none") showSliderVolume(next);
@@ -184,11 +219,16 @@ export function mountPlayer(actions: {
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (
-        latest?.active && latest.ready && !latest.loadingNotice && !latest.buffering && !latest.error &&
+        latest?.active &&
+        latest.ready &&
+        !latest.loadingNotice &&
+        !latest.buffering &&
+        !latest.error &&
         !latest.paused &&
         !document.querySelector("dialog[open]") &&
         !dragging &&
-        el("track-panel").hidden && el("audio-panel").hidden &&
+        el("track-panel").hidden &&
+        el("audio-panel").hidden &&
         el("more-panel").hidden &&
         el("speed-panel").hidden
       )
@@ -196,16 +236,36 @@ export function mountPlayer(actions: {
     }, 3000);
   };
   const touchPlayer = () => matchMedia("(pointer: coarse)").matches;
-  document.addEventListener("pointermove", event => { if (event.pointerType === "mouse") wake(); });
-  document.addEventListener("pointerdown", event => { if (!touchPlayer() || (event.target as Element).closest("button,input,select,.watch-panel")) wake(); });
-  document.addEventListener("pointerdown", event => {
-    if ((event.target as HTMLElement).closest(".watch-panel, #speed, #audio-tracks, #tracks, #player-more")) return;
-    for (const panel of document.querySelectorAll<HTMLElement>(".watch-panel")) panel.hidden = true;
+  document.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse") wake();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      !touchPlayer() ||
+      (event.target as Element).closest("button,input,select,.watch-panel")
+    )
+      wake();
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (
+      (event.target as HTMLElement).closest(
+        ".watch-panel, #speed, #audio-tracks, #tracks, #player-more",
+      )
+    )
+      return;
+    for (const panel of document.querySelectorAll<HTMLElement>(".watch-panel"))
+      panel.hidden = true;
   });
   document.addEventListener("keydown", wake);
   document.addEventListener("focusin", wake);
-  document.addEventListener("pointerup", () => { dragging = false; if (!touchPlayer()) wake(); });
-  document.addEventListener("pointercancel", () => { dragging = false; wake(); });
+  document.addEventListener("pointerup", () => {
+    dragging = false;
+    if (!touchPlayer()) wake();
+  });
+  document.addEventListener("pointercancel", () => {
+    dragging = false;
+    wake();
+  });
   el("stop").onclick = () => run(api.control("stop"));
   el("pause").onclick = () => run(api.control("pause"));
   el("fullscreen").onclick = el("fullscreen-top").onclick = () =>
@@ -213,19 +273,42 @@ export function mountPlayer(actions: {
   el("download-video").onclick = () => {
     if (!api.downloads) return;
     const button = el<HTMLButtonElement>("download-video");
-    button.disabled = true; button.textContent = "Downloading…";
-    void api.downloads.save().then(saved => { if (saved) playerNotice("Episode saved."); }).catch(actions.error).finally(() => { button.disabled = false; button.textContent = "Download"; });
+    button.disabled = true;
+    button.textContent = "Downloading…";
+    void api.downloads
+      .save()
+      .then((saved) => {
+        if (saved) playerNotice("Episode saved.");
+      })
+      .catch(actions.error)
+      .finally(() => {
+        button.disabled = false;
+        button.textContent = "Download";
+      });
   };
   el("copy-magnet").onclick = () => {
-    if (api.downloads) void api.downloads.copyMagnet().then(() => playerNotice("Magnet link copied.")).catch(actions.error);
+    if (api.downloads)
+      void api.downloads
+        .copyMagnet()
+        .then(() => playerNotice("Magnet link copied."))
+        .catch(actions.error);
   };
-  el("local-subtitle").onclick = () => { if (api.local) run(api.local.subtitle()); };
-  el("play-next").onclick = el("next-episode").onclick = () => actions.next(latest);
+  el("local-subtitle").onclick = () => {
+    if (api.local) run(api.local.subtitle());
+  };
+  el("play-next").onclick = el("next-episode").onclick = () =>
+    actions.next(latest);
   el("change-source").onclick = () => actions.sources(latest);
-  for (const [button, panel] of [["audio-tracks", "audio-panel"], ["tracks", "track-panel"], ["player-more", "more-panel"], ["speed", "speed-panel"]]) {
+  for (const [button, panel] of [
+    ["audio-tracks", "audio-panel"],
+    ["tracks", "track-panel"],
+    ["player-more", "more-panel"],
+    ["speed", "speed-panel"],
+  ]) {
     el(button).onclick = () => {
       const opening = el(panel).hidden;
-      for (const item of document.querySelectorAll<HTMLElement>(".watch-panel")) item.hidden = item.id !== panel || !opening;
+      for (const item of document.querySelectorAll<HTMLElement>(".watch-panel"))
+        item.hidden = item.id !== panel || !opening;
       wake();
     };
   }
@@ -234,9 +317,13 @@ export function mountPlayer(actions: {
   speedSlider.onpointerdown = () => {
     speedDragging = true;
   };
-  speedSlider.onchange = speedSlider.onpointerup = speedSlider.onpointercancel = speedSlider.onblur = () => {
-    speedDragging = false;
-  };
+  speedSlider.onchange =
+    speedSlider.onpointerup =
+    speedSlider.onpointercancel =
+    speedSlider.onblur =
+      () => {
+        speedDragging = false;
+      };
   speedSlider.oninput = () => {
     el("speed-value").textContent = speedSlider.value + "×";
     run(api.control("speed", Number(speedSlider.value)));
@@ -255,7 +342,13 @@ export function mountPlayer(actions: {
   };
   seek.oninput = () => {
     el("position").textContent = time(Number(seek.value));
-    seek.style.setProperty("--downloaded", downloadedGradient(latest?.download?.ranges ?? [], Number(seek.value) / Number(seek.max)));
+    seek.style.setProperty(
+      "--downloaded",
+      downloadedGradient(
+        latest?.download?.ranges ?? [],
+        Number(seek.value) / Number(seek.max),
+      ),
+    );
     seek.style.setProperty(
       "--played",
       `${(Number(seek.value) / Number(seek.max)) * 100}%`,
@@ -293,7 +386,8 @@ export function mountPlayer(actions: {
       e.target instanceof HTMLSelectElement
     )
       return;
-    if ((e.target as HTMLElement).closest("input,textarea,.watch-together")) return;
+    if ((e.target as HTMLElement).closest("input,textarea,.watch-together"))
+      return;
     if (e.code === "Space") {
       e.preventDefault();
       if (!e.repeat) run(api.control("pause"));
@@ -302,7 +396,12 @@ export function mountPlayer(actions: {
       e.preventDefault();
       run(api.control("seekRelative", e.key === "ArrowRight" ? 5 : -5));
     }
-    if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    if (
+      (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+      !e.altKey &&
+      !e.ctrlKey &&
+      !e.metaKey
+    ) {
       e.preventDefault();
       setVolume(volumeTarget + (e.key === "ArrowUp" ? 5 : -5), "toast");
     }
@@ -310,13 +409,14 @@ export function mountPlayer(actions: {
     if (e.key === "Escape") run(api.control("stop"));
   });
   const stage = document.querySelector<HTMLElement>(".player-stage")!;
-  const interactive = (event: Event) => (event.target as Element).closest(
-    "button,input,select,textarea,.watch-panel,.watch-header,.watch-footer,.skip-popup,dialog",
-  );
+  const interactive = (event: Event) =>
+    (event.target as Element).closest(
+      "button,input,select,textarea,.watch-panel,.watch-header,.watch-footer,.skip-popup,dialog",
+    );
   let tapTimer: ReturnType<typeof setTimeout> | undefined;
   let tapSide = 0;
   stage.style.touchAction = "manipulation";
-  stage.addEventListener("click", event => {
+  stage.addEventListener("click", (event) => {
     if (interactive(event)) {
       clearTimeout(tapTimer);
       tapTimer = undefined;
@@ -344,7 +444,7 @@ export function mountPlayer(actions: {
       }
     }, 280);
   });
-  stage.addEventListener("dblclick", event => {
+  stage.addEventListener("dblclick", (event) => {
     if (touchPlayer() || interactive(event)) return;
     run(api.control("fullscreen"));
   });
@@ -361,19 +461,52 @@ export function mountPlayer(actions: {
     }
     const ranges = p.download?.ranges;
     el("stats-peers").textContent = ranges ? String(p.peers) : "Not available";
-    el("stats-speed").textContent = ranges ? (p.speed / 1000000).toFixed(2) + " MB/s" : "Not available";
-    el("stats-source").textContent = p.local ? p.local.name : p.sourceName || "Not available";
-    el("stats-downloaded").textContent = ranges ? (Math.min(1, Math.max(0, ranges.reduce((sum, [start, end]) => sum + end - start, 0))) * 100).toFixed(2) + "%" : "Not available";
-    const wasBlocked = !latest?.ready || latest.paused || latest.buffering || latest.loadingNotice || latest.error;
+    el("stats-speed").textContent = ranges
+      ? (p.speed / 1000000).toFixed(2) + " MB/s"
+      : "Not available";
+    el("stats-source").textContent = p.local
+      ? p.local.name
+      : p.sourceName || "Not available";
+    el("stats-downloaded").textContent = ranges
+      ? (
+          Math.min(
+            1,
+            Math.max(
+              0,
+              ranges.reduce((sum, [start, end]) => sum + end - start, 0),
+            ),
+          ) * 100
+        ).toFixed(2) + "%"
+      : "Not available";
+    const wasBlocked =
+      !latest?.ready ||
+      latest.paused ||
+      latest.buffering ||
+      latest.loadingNotice ||
+      latest.error;
     latest = p;
-    if (wasBlocked && p.ready && !p.paused && !p.buffering && !p.loadingNotice && !p.error) wake();
-    el("buffering").hidden = !p.error && !p.loadingNotice && !!p.ready && !p.seeking && !p.buffering;
+    if (
+      wasBlocked &&
+      p.ready &&
+      !p.paused &&
+      !p.buffering &&
+      !p.loadingNotice &&
+      !p.error
+    )
+      wake();
+    el("buffering").hidden =
+      !p.error && !p.loadingNotice && !!p.ready && !p.seeking && !p.buffering;
     el("buffering").classList.toggle("failed", !!p.error);
     el("buffering").textContent =
-      p.error ?? (p.loadingNotice === "Press Play to start." || p.loadingNotice === "Choose a source to continue." ? p.loadingNotice : "Loading");
+      p.error ??
+      (p.loadingNotice === "Press Play to start." ||
+      p.loadingNotice === "Choose a source to continue."
+        ? p.loadingNotice
+        : "Loading");
     el("watch-title").textContent = p.title ?? "Nen";
-    el("watch-episode").textContent =
-      p.local ? p.local.name : p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
+    el("watch-episode").textContent = p.local
+      ? p.local.name
+      : p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
         ? `${p.episodeTitle} · Episode ${p.episode}`
         : p.episode
           ? `Episode ${p.episode}`
@@ -402,25 +535,49 @@ export function mountPlayer(actions: {
       );
     }
     const download = p.active ? p.download : undefined;
-    const position = Math.max(0, Math.min(1, Number(seek.value) / (p.duration || 1)));
+    const position = Math.max(
+      0,
+      Math.min(1, Number(seek.value) / (p.duration || 1)),
+    );
     const downloadKey = JSON.stringify([download?.ranges ?? [], position]);
     if (downloadKey !== displayedDownloadRanges) {
       displayedDownloadRanges = downloadKey;
-      seek.style.setProperty("--downloaded", downloadedGradient(download?.ranges ?? [], position));
+      seek.style.setProperty(
+        "--downloaded",
+        downloadedGradient(download?.ranges ?? [], position),
+      );
     }
     const timelineKey = JSON.stringify([p.active, p.duration, p.markers]);
     if (timelineKey !== displayedMarkers) {
       displayedMarkers = timelineKey;
       const segments = p.active && p.duration > 0 ? p.markers : [];
-      const kinds = { op: "intro", "mixed-op": "intro", ed: "outro", "mixed-ed": "outro", recap: "recap" } as const;
+      const kinds = {
+        op: "intro",
+        "mixed-op": "intro",
+        ed: "outro",
+        "mixed-ed": "outro",
+        recap: "recap",
+      } as const;
       const gradients: string[] = [];
       for (const marker of segments) {
         const kind = kinds[marker.type];
-        const start = Math.max(0, marker.start), end = Math.min(p.duration, marker.end);
-        if (!kind || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
-        gradients.push(`linear-gradient(to right, transparent 0 ${start / p.duration * 100}%, ${{ intro: "#70b8ef", outro: "#c69ae8", recap: "#e8b65e" }[kind]} ${start / p.duration * 100}% ${end / p.duration * 100}%, transparent ${end / p.duration * 100}% 100%)`);
+        const start = Math.max(0, marker.start),
+          end = Math.min(p.duration, marker.end);
+        if (
+          !kind ||
+          !Number.isFinite(start) ||
+          !Number.isFinite(end) ||
+          end <= start
+        )
+          continue;
+        gradients.push(
+          `linear-gradient(to right, transparent 0 ${(start / p.duration) * 100}%, ${{ intro: "#70b8ef", outro: "#c69ae8", recap: "#e8b65e" }[kind]} ${(start / p.duration) * 100}% ${(end / p.duration) * 100}%, transparent ${(end / p.duration) * 100}% 100%)`,
+        );
       }
-      seek.style.setProperty("--segments", gradients.join(",") || "linear-gradient(transparent, transparent)");
+      seek.style.setProperty(
+        "--segments",
+        gradients.join(",") || "linear-gradient(transparent, transparent)",
+      );
     }
     const pauseLabel = p.paused ? "Play" : "Pause";
     if (el("pause").getAttribute("aria-label") !== pauseLabel) {
@@ -432,9 +589,17 @@ export function mountPlayer(actions: {
     el("play-next").textContent = nextLabel;
     el("next-episode").setAttribute("aria-label", nextLabel);
     el("next-episode").title = nextLabel;
-    el("next-popup").hidden = !p.nextEpisode || !p.ready || p.duration <= 0 || p.duration - p.position > 15 || !!p.error;
+    el("next-popup").hidden =
+      !p.nextEpisode ||
+      !p.ready ||
+      p.duration <= 0 ||
+      p.duration - p.position > 15 ||
+      !!p.error;
     const actualVolume = p.volume ?? 100;
-    if (pendingVolume === undefined || (!volumeSending && actualVolume === pendingVolume)) {
+    if (
+      pendingVolume === undefined ||
+      (!volumeSending && actualVolume === pendingVolume)
+    ) {
       pendingVolume = undefined;
       volumeTarget = actualVolume;
       el<HTMLInputElement>("volume").value = String(actualVolume);
@@ -442,7 +607,8 @@ export function mountPlayer(actions: {
     }
     const playbackError = p.error || "";
     if (playbackError !== lastPlaybackError) {
-      if (playbackError || playerNoticeText() === lastPlaybackError) playerNotice(playbackError);
+      if (playbackError || playerNoticeText() === lastPlaybackError)
+        playerNotice(playbackError);
       lastPlaybackError = playbackError;
     }
     const key = JSON.stringify(p.tracks);
@@ -450,33 +616,85 @@ export function mountPlayer(actions: {
       trackKey = key;
       for (const type of ["audio", "sub"] as const) {
         const panel = el(type === "audio" ? "audio-panel" : "track-panel");
-        const tracks = p.tracks.filter(t => t.type === type);
-        panel.innerHTML = '<strong>' + (type === "audio" ? "Audio tracks" : "Subtitles") + '</strong><div class="track-list">'
-          + (type === "sub" ? '<button data-track-id="0" aria-pressed="' + !tracks.some(t => t.selected) + '">Off</button>' : "")
-          + tracks.map(t => '<button data-track-id="' + t.id + '" aria-pressed="' + !!t.selected + '">' + esc(type === "audio" ? audioTrackName(t) : subtitleTrackName(t)) + '</button>').join("")
-          + (!tracks.length ? '<p>No ' + (type === "audio" ? 'audio tracks' : 'subtitles') + ' available.</p>' : "") + '</div>';
+        const tracks = p.tracks.filter((t) => t.type === type);
+        panel.innerHTML =
+          "<strong>" +
+          (type === "audio" ? "Audio tracks" : "Subtitles") +
+          '</strong><div class="track-list">' +
+          (type === "sub"
+            ? '<button data-track-id="0" aria-pressed="' +
+              !tracks.some((t) => t.selected) +
+              '">Off</button>'
+            : "") +
+          tracks
+            .map(
+              (t) =>
+                '<button data-track-id="' +
+                t.id +
+                '" aria-pressed="' +
+                !!t.selected +
+                '">' +
+                esc(
+                  type === "audio" ? audioTrackName(t) : subtitleTrackName(t),
+                ) +
+                "</button>",
+            )
+            .join("") +
+          (!tracks.length
+            ? "<p>No " +
+              (type === "audio" ? "audio tracks" : "subtitles") +
+              " available.</p>"
+            : "") +
+          "</div>";
         if (type === "sub") {
           const controls = document.createElement("div");
           controls.className = "subtitle-adjustments";
           panel.prepend(controls);
-          void api.state().then(state => {
-            for (const [key,label,min,max,step,fallback] of [["subtitleDelay","Delay",-30,30,0.1,0],["subtitleSize","Size",50,250,5,100],["subtitlePosition","Vertical position",0,100,1,5]] as const) {
+          void api.state().then((state) => {
+            for (const [key, label, min, max, step, fallback] of [
+              ["subtitleDelay", "Delay", -30, 30, 0.1, 0],
+              ["subtitleSize", "Size", 50, 250, 5, 100],
+              ["subtitlePosition", "Vertical position", 0, 100, 1, 5],
+            ] as const) {
               let value = state.settings[key] ?? fallback;
               const row = document.createElement("div");
               row.innerHTML = `<span>${label}</span><div class="subtitle-stepper"><button aria-label="Decrease ${label.toLowerCase()}">−</button><output aria-live="polite"></output><button aria-label="Increase ${label.toLowerCase()}">+</button></div>`;
               const buttons = row.querySelectorAll("button");
               const update = () => {
-                row.querySelector("output")!.textContent = key === "subtitleDelay" ? (value === 0 ? "0 s" : `${value > 0 ? "+" : ""}${value.toFixed(1)} s`) : `${value}%`;
-                buttons[0].disabled = value <= min; buttons[1].disabled = value >= max;
+                row.querySelector("output")!.textContent =
+                  key === "subtitleDelay"
+                    ? value === 0
+                      ? "0 s"
+                      : `${value > 0 ? "+" : ""}${value.toFixed(1)} s`
+                    : `${value}%`;
+                buttons[0].disabled = value <= min;
+                buttons[1].disabled = value >= max;
               };
-              buttons.forEach((button,i) => button.onclick = () => { value = Math.max(min,Math.min(max,Math.round((value + (i ? step : -step))*10)/10)); update(); run(api.control(key,value)); });
-              update(); controls.append(row);
+              buttons.forEach(
+                (button, i) =>
+                  (button.onclick = () => {
+                    value = Math.max(
+                      min,
+                      Math.min(
+                        max,
+                        Math.round((value + (i ? step : -step)) * 10) / 10,
+                      ),
+                    );
+                    update();
+                    run(api.control(key, value));
+                  }),
+              );
+              update();
+              controls.append(row);
             }
           });
         }
-        panel.querySelectorAll<HTMLButtonElement>("[data-track-id]").forEach(button => {
-          button.onclick = () => run(api.control(type, Number(button.dataset.trackId)));
-        });
+        panel
+          .querySelectorAll<HTMLButtonElement>("[data-track-id]")
+          .forEach((button) => {
+            button.onclick = () =>
+              run(api.control(type, Number(button.dataset.trackId)));
+          });
       }
     }
     const marker = p.markers.find(
@@ -496,14 +714,20 @@ export function mountPlayer(actions: {
       markerKey = nextKey;
     }
     activeMarker = marker?.type;
-    el("skip-popup").hidden =
-      !marker || dismissed.has(markerKey);
+    el("skip-popup").hidden = !marker || dismissed.has(markerKey);
     el("skip-current").textContent =
       marker?.type === "op" || marker?.type === "mixed-op"
         ? "Skip intro"
         : marker?.type === "recap"
           ? "Skip recap"
           : "Skip outro";
-    if ((!touchPlayer() && p.paused) || p.error || p.loadingNotice || !p.ready || p.buffering) el("app").classList.remove("controls-hidden");
+    if (
+      (!touchPlayer() && p.paused) ||
+      p.error ||
+      p.loadingNotice ||
+      !p.ready ||
+      p.buffering
+    )
+      el("app").classList.remove("controls-hidden");
   };
 }

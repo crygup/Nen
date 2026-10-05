@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
-import { audioTrackLanguage, matchSubtitle, type SubtitleSelection, type Playback, type Settings } from "../src/shared";
+import {
+  audioTrackLanguage,
+  matchSubtitle,
+  type SubtitleSelection,
+  type Playback,
+  type Settings,
+} from "../src/shared";
 export class Player {
   static subtitleSelection?: SubtitleSelection;
   private subtitleChosen = false;
@@ -32,7 +38,8 @@ export class Player {
     paused: false,
     tracks: [],
     speed: 0,
-    peers: 0,    markers: [],
+    peers: 0,
+    markers: [],
   };
   async start(
     url: string,
@@ -44,7 +51,9 @@ export class Player {
     playbackRate = 1,
     volume = 100,
   ) {
-    this.preferredAudio = audioTrackLanguage({ lang: settings.audio.split(",")[0] });
+    this.preferredAudio = audioTrackLanguage({
+      lang: settings.audio.split(",")[0],
+    });
     this.audioChosen = false;
     this.subtitleChosen = false;
     const bundled = join(
@@ -91,7 +100,6 @@ export class Player {
       `--sub-scale=${(settings.subtitleSize ?? 100) / 100}`,
       `--sub-pos=${100 - (settings.subtitlePosition ?? 5)}`,
       ...(settings.subtitles === "no" ? ["--sid=no"] : []),
-
     ];
     const child = (this.child = spawn(binary, args, {
       windowsHide: !parentHandle,
@@ -165,7 +173,8 @@ export class Player {
       "speed",
     ].entries())
       await this.command(["observe_property", id, key]);
-    if (this.status.local) await this.command(["set_property", "sub-auto", "no"]);
+    if (this.status.local)
+      await this.command(["set_property", "sub-auto", "no"]);
     await this.command(["loadfile", url, "replace"]);
   }
   private message(data: any) {
@@ -206,27 +215,45 @@ export class Player {
         this.status.playbackRate = data.data;
       if (data.name === "pause") this.status.paused = !!data.data;
       if (data.name === "seeking") this.status.seeking = data.data === true;
-      if (data.name === "paused-for-cache") this.status.buffering = data.data === true;
+      if (data.name === "paused-for-cache")
+        this.status.buffering = data.data === true;
       if (data.name === "chapter-list" && Array.isArray(data.data))
         this.status.chapters = data.data;
       if (data.name === "track-list" && Array.isArray(data.data)) {
         this.status.tracks = data.data;
         if (!this.subtitleChosen && Player.subtitleSelection !== undefined) {
-          const track = Player.subtitleSelection && matchSubtitle(this.status.tracks.filter(t => t.type === "sub"), Player.subtitleSelection);
+          const track =
+            Player.subtitleSelection &&
+            matchSubtitle(
+              this.status.tracks.filter((t) => t.type === "sub"),
+              Player.subtitleSelection,
+            );
           if (track || Player.subtitleSelection === null) {
             this.subtitleChosen = true;
-            void this.command(["set_property", "sid", track ? track.id : "no"]).catch(() => {});
+            void this.command([
+              "set_property",
+              "sid",
+              track ? track.id : "no",
+            ]).catch(() => {});
           }
         }
         if (!this.audioChosen && this.preferredAudio) {
-          const track = this.status.tracks.find(t => t.type === "audio" && audioTrackLanguage(t) === this.preferredAudio);
+          const track = this.status.tracks.find(
+            (t) =>
+              t.type === "audio" &&
+              audioTrackLanguage(t) === this.preferredAudio,
+          );
           if (track) {
             this.audioChosen = true;
-            if (!track.selected) void this.command(["set_property", "aid", track.id]).catch(() => {});
+            if (!track.selected)
+              void this.command(["set_property", "aid", track.id]).catch(
+                () => {},
+              );
           }
         }
       }
-      if (this.fileLoaded && this.restarted && this.status.duration > 0) this.status.ready = true;
+      if (this.fileLoaded && this.restarted && this.status.duration > 0)
+        this.status.ready = true;
       this.onChange();
     }
   }

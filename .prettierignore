@@ -1,0 +1,14 @@
+**/node_modules/
+**/vendor/
+**/dist/
+**/dist-electron/
+**/release/
+test-builds/
+**/.local/
+**/test-results/
+**/coverage/
+**/playwright-report/
+**/package-lock.json
+**/.env*
+nen-browser/server.cjs
+nen-browser/server-meta.json

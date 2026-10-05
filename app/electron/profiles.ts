@@ -1,5 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import type { ProfileSummary, Settings, State } from "../src/shared";
 
@@ -13,43 +21,71 @@ export interface ProfileData {
   favorites?: State["favorites"];
   favoriteChanges?: State["favoriteChanges"];
   anilist?: State["anilist"];
+  mal?: State["mal"];
 }
 // Increase only when the saved-data format changes, and migrate older formats first.
 const schemaVersion = 1;
 function checkFormat(data: any) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) throw Error("Invalid saved data.");
+  if (!data || typeof data !== "object" || Array.isArray(data))
+    throw Error("Invalid saved data.");
   if (data.schemaVersion !== undefined && data.schemaVersion !== schemaVersion)
-    throw Error("This saved data uses an unsupported format. Install a compatible Nen version. Your data has not been reset.");
+    throw Error(
+      "This saved data uses an unsupported format. Install a compatible Nen version. Your data has not been reset.",
+    );
 }
 export const legacyProfileId = "0000000000000000";
 
 export function profileId(value: unknown): string {
-  if (typeof value !== "string" || !/^[a-f0-9]{16}$/.test(value)) throw Error("Invalid profile.");
+  if (typeof value !== "string" || !/^[a-f0-9]{16}$/.test(value))
+    throw Error("Invalid profile.");
   return value;
 }
 export function newProfileId(list: ProfileSummary[]): string {
   let id: string;
-  do id = randomBytes(8).toString("hex"); while (id === legacyProfileId || list.some(p => p.id === id));
+  do id = randomBytes(8).toString("hex");
+  while (id === legacyProfileId || list.some((p) => p.id === id));
   return id;
 }
-export function profileName(value: unknown, list: ProfileSummary[], except?: string): string {
+export function profileName(
+  value: unknown,
+  list: ProfileSummary[],
+  except?: string,
+): string {
   if (typeof value !== "string") throw Error("Enter a profile name.");
   const name = value.replace(/\s+/g, " ").trim();
-  if (!name || name.length > 40) throw Error("Use a profile name of 1 to 40 characters.");
+  if (!name || name.length > 40)
+    throw Error("Use a profile name of 1 to 40 characters.");
   if (/[\u0000-\u001f\u007f]/.test(name)) throw Error("Invalid profile name.");
-  if (list.some(p => p.id !== except && p.name.toLowerCase() === name.toLowerCase())) throw Error("A profile with that name already exists.");
+  if (
+    list.some(
+      (p) => p.id !== except && p.name.toLowerCase() === name.toLowerCase(),
+    )
+  )
+    throw Error("A profile with that name already exists.");
   return name;
 }
-export function uniqueProfileName(value: string, list: ProfileSummary[]): string {
-  const base = value.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, 36) || "Profile";
+export function uniqueProfileName(
+  value: string,
+  list: ProfileSummary[],
+): string {
+  const base =
+    value
+      .replace(/[\u0000-\u001f\u007f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 36) || "Profile";
   for (let n = 1; ; n++) {
     const name = n === 1 ? base : `${base} ${n}`;
-    if (!list.some(p => p.name.toLowerCase() === name.toLowerCase())) return name;
+    if (!list.some((p) => p.name.toLowerCase() === name.toLowerCase()))
+      return name;
   }
 }
-export const profileDir = (root: string, id: string) => join(root, "profiles", profileId(id));
-export const profileFile = (root: string, id: string) => join(profileDir(root, id), "profile.json");
-export const tokenFile = (root: string, id: string) => join(profileDir(root, id), "anilist-token.bin");
+export const profileDir = (root: string, id: string) =>
+  join(root, "profiles", profileId(id));
+export const profileFile = (root: string, id: string) =>
+  join(profileDir(root, id), "profile.json");
+export const tokenFile = (root: string, id: string) =>
+  join(profileDir(root, id), "anilist-token.bin");
 
 export function writeJson(path: string, value: unknown) {
   writeFileSync(path + ".tmp", JSON.stringify(value));
@@ -60,7 +96,10 @@ export function writeProfile(root: string, id: string, data: ProfileData) {
   const path = profileFile(root, id);
   if (existsSync(path)) {
     const stored = readProfile(root, id);
-    if (stored.schemaVersion === undefined && !existsSync(path + ".before-format-1.json"))
+    if (
+      stored.schemaVersion === undefined &&
+      !existsSync(path + ".before-format-1.json")
+    )
       copyFileSync(path, path + ".before-format-1.json");
   }
   writeJson(path, { ...data, schemaVersion });
@@ -77,10 +116,29 @@ export function readProfile(root: string, id: string): ProfileData {
 
 /** Splits the in-memory state into device-wide data and the active profile's data. */
 export function splitState(state: State) {
-  const { settings: { autoUpdates, ...settings }, seriesAudio, progress, watch, favorites, favoriteChanges, anilist, ...shared } = state;
+  const {
+    settings: { autoUpdates, ...settings },
+    seriesAudio,
+    progress,
+    watch,
+    favorites,
+    favoriteChanges,
+    anilist,
+    mal,
+    ...shared
+  } = state;
   return {
     shared: { ...shared, autoUpdates, schemaVersion },
-    profile: { settings, seriesAudio, progress, watch, favorites, favoriteChanges, anilist } satisfies ProfileData,
+    profile: {
+      settings,
+      seriesAudio,
+      progress,
+      watch,
+      favorites,
+      favoriteChanges,
+      anilist,
+      mal,
+    } satisfies ProfileData,
   };
 }
 
@@ -94,9 +152,13 @@ export function migrateLegacy(root: string, statePath: string) {
   checkFormat(stored);
   const legacyToken = join(root, "anilist-token.bin");
   if (stored.profiles) {
-    if (!Array.isArray(stored.profiles.list) || !stored.profiles.list.length) throw Error("Invalid profile list.");
+    if (!Array.isArray(stored.profiles.list) || !stored.profiles.list.length)
+      throw Error("Invalid profile list.");
     for (const profile of stored.profiles.list) readProfile(root, profile.id);
-    if (stored.schemaVersion === undefined && !existsSync(statePath + ".before-format-1.json"))
+    if (
+      stored.schemaVersion === undefined &&
+      !existsSync(statePath + ".before-format-1.json")
+    )
       copyFileSync(statePath, statePath + ".before-format-1.json");
     // Only left behind when a migration stopped after state.json was rewritten; the profile already has a copy.
     rmSync(legacyToken, { force: true });
@@ -105,12 +167,40 @@ export function migrateLegacy(root: string, statePath: string) {
   const backup = statePath + ".before-profiles.json";
   if (!existsSync(backup)) copyFileSync(statePath, backup);
   const connected = existsSync(legacyToken);
-  const { settings: { autoUpdates, ...settings } = {} as Settings, seriesAudio, progress, watch, favorites, favoriteChanges, anilist, ...shared } = stored;
+  const {
+    settings: { autoUpdates, ...settings } = {} as Settings,
+    seriesAudio,
+    progress,
+    watch,
+    favorites,
+    favoriteChanges,
+    anilist,
+    mal,
+    ...shared
+  } = stored;
   const id = legacyProfileId;
-  writeProfile(root, id, { settings, seriesAudio, progress, watch, favorites, favoriteChanges, anilist });
+  writeProfile(root, id, {
+    settings,
+    seriesAudio,
+    progress,
+    watch,
+    favorites,
+    favoriteChanges,
+    anilist,
+    mal,
+  });
   if (connected) copyFileSync(legacyToken, tokenFile(root, id));
-  const user = connected && typeof anilist?.user === "string" ? anilist.user : undefined;
+  const user =
+    connected && typeof anilist?.user === "string" ? anilist.user : undefined;
   const name = uniqueProfileName(user ?? "Default", []);
-  writeJson(statePath, { ...shared, autoUpdates, schemaVersion, profiles: { active: id, list: [{ id, name, created: Date.now(), anilistUser: user }] } });
+  writeJson(statePath, {
+    ...shared,
+    autoUpdates,
+    schemaVersion,
+    profiles: {
+      active: id,
+      list: [{ id, name, created: Date.now(), anilistUser: user }],
+    },
+  });
   rmSync(legacyToken, { force: true });
 }
