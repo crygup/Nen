@@ -1,4 +1,4 @@
-import { playerNotice } from "./player-notice";
+import { playerNotice, playerNoticeText } from "./player-notice";
 import { mountTogether } from "./together";
 import { escapeHtml as esc, audioTrackName, subtitleTrackName, type Playback, type SegmentType } from "./shared";
 const api = window.nen;
@@ -22,7 +22,7 @@ export function mountPlayer(actions: {
 }) {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
-  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Loading</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><section class="player-statistics"><strong>Statistics</strong><dl><dt>Peers</dt><dd id="stats-peers"></dd><dt>Speed</dt><dd id="stats-speed"></dd><dt>Source</dt><dd id="stats-source"></dd><dt>Downloaded</dt><dd id="stats-downloaded"></dd></dl></section><section class="player-skips"><strong>Skips</strong><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button></section></div><p id="player-error" role="alert"></p></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Loading</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><section class="player-statistics"><strong>Statistics</strong><dl><dt>Peers</dt><dd id="stats-peers"></dd><dt>Speed</dt><dd id="stats-speed"></dd><dt>Source</dt><dd id="stats-source"></dd><dt>Downloaded</dt><dd id="stats-downloaded"></dd></dl></section><section class="player-skips"><strong id="more-heading">Skips</strong><button id="local-subtitle" hidden>Load subtitle file</button><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button><div id="player-downloads" hidden><hr><strong>Downloads</strong><button id="download-video">Download</button><button id="copy-magnet">Copy magnet link</button></div></section></div></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
   const volumeToast = document.createElement("div");
@@ -59,7 +59,7 @@ export function mountPlayer(actions: {
   let removeTogether: (() => void) | undefined;
   const roomUpdate = (room: import("./shared").TogetherState) => {
     togetherPanel.hidden = !room.connected;
-    el("change-source").hidden = room.connected && !room.members.find(m => m.id === room.self)?.error;
+    el("change-source").hidden = !!latest?.local || room.connected && !room.members.find(m => m.id === room.self)?.error;
     root.classList.toggle("with-together", room.connected);
     if (room.connected && !removeTogether) removeTogether = mountTogether(togetherPanel, true);
     el<HTMLButtonElement>("pause").disabled = room.connected && !room.host && !room.allowPause;
@@ -91,7 +91,7 @@ export function mountPlayer(actions: {
       }
       context.drawImage(frame, 0, 0);
       if (captureError) {
-        if (el("player-error").textContent === captureError) playerNotice("");
+        if (playerNoticeText() === captureError) playerNotice("");
         captureError = "";
       }
       frame.close();
@@ -210,6 +210,16 @@ export function mountPlayer(actions: {
   el("pause").onclick = () => run(api.control("pause"));
   el("fullscreen").onclick = el("fullscreen-top").onclick = () =>
     run(api.control("fullscreen"));
+  el("download-video").onclick = () => {
+    if (!api.downloads) return;
+    const button = el<HTMLButtonElement>("download-video");
+    button.disabled = true; button.textContent = "Downloading…";
+    void api.downloads.save().then(saved => { if (saved) playerNotice("Episode saved."); }).catch(actions.error).finally(() => { button.disabled = false; button.textContent = "Download"; });
+  };
+  el("copy-magnet").onclick = () => {
+    if (api.downloads) void api.downloads.copyMagnet().then(() => playerNotice("Magnet link copied.")).catch(actions.error);
+  };
+  el("local-subtitle").onclick = () => { if (api.local) run(api.local.subtitle()); };
   el("play-next").onclick = el("next-episode").onclick = () => actions.next(latest);
   el("change-source").onclick = () => actions.sources(latest);
   for (const [button, panel] of [["audio-tracks", "audio-panel"], ["tracks", "track-panel"], ["player-more", "more-panel"], ["speed", "speed-panel"]]) {
@@ -340,10 +350,19 @@ export function mountPlayer(actions: {
   });
   wake();
   return (p: Playback) => {
+    el("player-downloads").hidden = !api.downloads || !p.release || !!p.local;
+    if (p.local) el("change-source").hidden = true;
+    el("local-subtitle").hidden = !p.local;
+    el("undo").hidden = el("edit-marker").hidden = !!p.local;
+    el("more-heading").textContent = p.local ? "Subtitles" : "Skips";
+    for (const id of ["stats-peers", "stats-speed", "stats-downloaded"]) {
+      el(id).hidden = !!p.local;
+      (el(id).previousElementSibling as HTMLElement).hidden = !!p.local;
+    }
     const ranges = p.download?.ranges;
     el("stats-peers").textContent = ranges ? String(p.peers) : "Not available";
     el("stats-speed").textContent = ranges ? (p.speed / 1000000).toFixed(2) + " MB/s" : "Not available";
-    el("stats-source").textContent = p.sourceName || "Not available";
+    el("stats-source").textContent = p.local ? p.local.name : p.sourceName || "Not available";
     el("stats-downloaded").textContent = ranges ? (Math.min(1, Math.max(0, ranges.reduce((sum, [start, end]) => sum + end - start, 0))) * 100).toFixed(2) + "%" : "Not available";
     const wasBlocked = !latest?.ready || latest.paused || latest.buffering || latest.loadingNotice || latest.error;
     latest = p;
@@ -354,7 +373,7 @@ export function mountPlayer(actions: {
       p.error ?? (p.loadingNotice === "Press Play to start." || p.loadingNotice === "Choose a source to continue." ? p.loadingNotice : "Loading");
     el("watch-title").textContent = p.title ?? "Nen";
     el("watch-episode").textContent =
-      p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
+      p.local ? p.local.name : p.episodeTitle && p.episodeTitle !== `Episode ${p.episode}`
         ? `${p.episodeTitle} · Episode ${p.episode}`
         : p.episode
           ? `Episode ${p.episode}`
@@ -423,7 +442,7 @@ export function mountPlayer(actions: {
     }
     const playbackError = p.error || "";
     if (playbackError !== lastPlaybackError) {
-      if (playbackError || el("player-error").textContent === lastPlaybackError) playerNotice(playbackError);
+      if (playbackError || playerNoticeText() === lastPlaybackError) playerNotice(playbackError);
       lastPlaybackError = playbackError;
     }
     const key = JSON.stringify(p.tracks);

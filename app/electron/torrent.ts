@@ -1,3 +1,4 @@
+import { saveVideoFile } from "./download";
 import WebTorrent from "webtorrent";
 import type { Server } from "node:http";
 import { streamFile } from "./stream";
@@ -18,6 +19,7 @@ let client: WebTorrent.Instance | undefined,
   torrent: WebTorrent.Torrent | undefined,
   server: Server | undefined;
 let timer: NodeJS.Timeout | undefined;
+let saving = false, stopping = false;
 let selectedFile: { offset: number; length: number; first: number; last: number } | undefined;
 function fileDownload() {
   const bitfield = (torrent as (WebTorrent.Torrent & { bitfield?: { get(index: number): boolean } }) | undefined)?.bitfield;
@@ -125,12 +127,23 @@ port.on("message", async ({ data }) => {
       const result = await streamFile(file);
       server = result.server;
       send({ event: "stream", url: result.url });
+    } else if (data.action === "save") {
+      if (saving) { send({ event: "saved", error: "A download is already running for this source." }); return; }
+      saving = true;
+      try {
+        const file = torrent?.files[data.index];
+        if (!file || typeof data.destination !== "string") throw Error("No episode file to download.");
+        await saveVideoFile(file, data.destination);
+        send({ event: "saved" });
+      } catch (error) { send({ event: "saved", error: (error as Error).message }); }
+      finally { saving = false; if (stopping) client?.destroy(() => process.exit(0)); }
     } else if (data.action === "stop") {
+      stopping = true;
       selectedFile = undefined;
       if (timer) clearInterval(timer);
       server?.closeAllConnections();
       server?.close();
-      client?.destroy(() => process.exit(0));
+      if (!saving) client?.destroy(() => process.exit(0));
       if (!client) process.exit(0);
     }
   } catch (error) {

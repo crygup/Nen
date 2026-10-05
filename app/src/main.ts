@@ -1,3 +1,4 @@
+import { showToast, dismissToast } from "./toast";
 import { playerNotice } from "./player-notice";
 import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
@@ -77,9 +78,11 @@ let episodeData: EpisodePage | undefined;
 const playerMode = new URLSearchParams(location.search).has("player");
 let playback: Playback | undefined;
 let route = "home";
+let localLocation = { id: "", path: "" };
 let seriesReturn = "home";
 type BrowseVisit = {
   route: string;
+  local?: { id: string; path: string };
   mediaId?: number;
   mode: "trending" | "season" | "search" | "romance";
   query: string;
@@ -90,12 +93,12 @@ let forwardVisits: BrowseVisit[] = [];
 let goingBack = false;
 function setRoute(next: string, mediaId?: number) {
   if (api.browserHistory && !playerMode && !goingBack) {
-    history.replaceState({ nenVisit: { route, mediaId: current?.id, mode, query, page } }, "");
-    if (route !== next || next === "series")
+    history.replaceState({ nenVisit: { route, mediaId: current?.id, mode, query, page, local: { ...localLocation } } }, "");
+    if (route !== next || next === "series" || (next === "local" && !goingBack))
       history.pushState({ nenVisit: { route: next, mediaId, mode, query, page } }, "");
   }
-  if (!goingBack && (route !== next || next === "series")) {
-    visits.push({ route, mediaId: current?.id, mode, query, page });
+  if (!goingBack && (route !== next || next === "series" || (next === "local" && !goingBack))) {
+    visits.push({ route, mediaId: current?.id, mode, query, page, local: { ...localLocation } });
     forwardVisits = [];
   }
   route = next;
@@ -108,7 +111,7 @@ async function browseBack(direction: "back" | "forward" = "back") {
   }
   const previous = (direction === "back" ? visits : forwardVisits).pop();
   if (!previous) return;
-  (direction === "back" ? forwardVisits : visits).push({ route, mediaId: current?.id, mode, query, page });
+  (direction === "back" ? forwardVisits : visits).push({ route, mediaId: current?.id, mode, query, page, local: { ...localLocation } });
   await restoreVisit(previous);
 }
 async function restoreVisit(previous: BrowseVisit) {
@@ -122,6 +125,7 @@ async function restoreVisit(previous: BrowseVisit) {
     else if (previous.route === "history") await watchlist();
     else if (previous.route === "watchlist") await watchlist();
     else if (previous.route === "together") showTogether();
+    else if (previous.route === "local") await localLibrary(previous.local?.id, previous.local?.path);
     else if (previous.route === "discover") await discover(page);
     else await home();
   } finally {
@@ -135,41 +139,6 @@ if (!playerMode)
       JSON.stringify({ mode, query, page, route, seriesReturn, visits, forwardVisits }),
     );
   });
-let dismissToast = () => {};
-function showToast(message: string, parent: HTMLElement = document.body, persistent = false) {
-  dismissToast();
-  const toast = document.createElement("div");
-  toast.className = "update-toast";
-  toast.setAttribute("popover", "manual");
-  toast.setAttribute("role", "status");
-  toast.setAttribute("aria-live", "polite");
-  const label = document.createElement("span");
-  const close = document.createElement("button");
-  close.type = "button";
-  close.className = "toast-close";
-  close.setAttribute("aria-label", "Dismiss notification");
-  close.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>';
-  toast.append(label, close);
-  parent.append(toast);
-  toast.showPopover();
-  toast.classList.add("visible");
-  let fade: ReturnType<typeof setTimeout> | undefined;
-  let remove: ReturnType<typeof setTimeout> | undefined;
-  const update = (text: string, keepVisible = false) => {
-    clearTimeout(fade);
-    clearTimeout(remove);
-    label.textContent = text;
-    toast.classList.add("visible");
-    if (!keepVisible) fade = setTimeout(() => {
-      toast.classList.remove("visible");
-      remove = setTimeout(() => toast.remove(), 250);
-    }, 3000);
-  };
-  dismissToast = () => { clearTimeout(fade); clearTimeout(remove); toast.remove(); };
-  close.onclick = dismissToast;
-  update(message, persistent);
-  return { element: toast, update };
-}
 function error(e: unknown) {
   const raw = e instanceof Error ? e.message : String(e);
   const text = /No matching source was found|No streams found/.test(raw)
@@ -237,7 +206,7 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>'  , folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
@@ -255,7 +224,7 @@ function showTogether() {
   leaveTogetherView = mountTogether(main.querySelector<HTMLElement>("#together-lobby")!);
 }
 function shell() {
-  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button></nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button>${api.local ? `<button data-nav="local" hidden>${uiIcon("folder")} Local files</button>` : ""}</nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const input = document.querySelector<HTMLInputElement>("#search-input")!;
   const results = document.querySelector<HTMLElement>("#search-suggestions")!;
   const clear = document.querySelector<HTMLButtonElement>("#clear-search")!;
@@ -406,6 +375,7 @@ function shell() {
         else if (b.dataset.nav === "history") void watchlist();
         else if (b.dataset.nav === "watchlist") void watchlist();
         else if (b.dataset.nav === "together") showTogether();
+        else if (b.dataset.nav === "local") void run(() => localLibrary());
         else if (b.dataset.nav === "home") void home();
         else {
           mode = "trending";
@@ -1115,41 +1085,12 @@ document.addEventListener("contextmenu", event => {
       if (!state.settings.hideOpenAniList) actions.push(["Open on AniList", () => api.external("anilist", id)]);
     }
     if (!actions.length) return;
-    const menu = document.createElement("div");
-    menu.id = "anime-context-menu";
-    menu.popover = "auto";
-    menu.setAttribute("role", "menu");
-    menu.setAttribute("aria-label", episodeRow ? "Episode actions" : "Anime actions");
-    for (const [label, action] of actions) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.setAttribute("role", "menuitem");
-      button.textContent = label;
-      button.onclick = () => {
-        menu.hidePopover();
-        void run(async () => {
-          await action();
-          if (route === "series") { updateSeriesActions(); renderEpisodes(); }
-          else if (route === "watchlist") await watchlist();
-          else if (route === "home") await home();
-        });
-      };
-      menu.append(button);
-    }
-    menu.onkeydown = e => {
-      const buttons = [...menu.querySelectorAll("button")];
-      const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
-        e.preventDefault();
-        buttons[e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
-      }
-    };
-    menu.addEventListener("toggle", () => { if (!menu.matches(":popover-open")) menu.remove(); });
-    document.body.append(menu);
-    menu.showPopover();
-    menu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4)) + "px";
-    menu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4)) + "px";
-    menu.querySelector("button")?.focus();
+    showContextMenu(event, "anime-context-menu", episodeRow ? "Episode actions" : "Anime actions", actions.map(([label, action]) => [label, async () => {
+      await action();
+      if (route === "series") { updateSeriesActions(); renderEpisodes(); }
+      else if (route === "watchlist") await watchlist();
+      else if (route === "home") await home();
+    }]));
   });
 });
 
@@ -1348,6 +1289,130 @@ function profileSection(root: HTMLElement, d: HTMLDialogElement) {
     });
   });
 }
+function showContextMenu(event: MouseEvent, id: string, label: string, actions: [string, () => Promise<unknown>][]) {
+  document.querySelector("#" + id)?.remove();
+  const menu = document.createElement("div");
+  menu.id = id;
+  menu.popover = "auto";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", label);
+  for (const [label, action] of actions) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    button.textContent = label;
+    button.onclick = () => {
+      menu.hidePopover();
+      void run(action);
+    };
+    menu.append(button);
+  }
+  menu.onkeydown = e => {
+    const buttons = [...menu.querySelectorAll("button")];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(e.key)) {
+      e.preventDefault();
+      buttons[e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : (index + (e.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length].focus();
+    }
+  };
+  menu.addEventListener("toggle", () => { if (!menu.matches(":popover-open")) menu.remove(); });
+  ((event.target as HTMLElement).closest("dialog") ?? document.body).append(menu);
+  menu.showPopover();
+  menu.style.left = Math.max(4, Math.min(event.clientX, innerWidth - menu.offsetWidth - 4)) + "px";
+  menu.style.top = Math.max(4, Math.min(event.clientY, innerHeight - menu.offsetHeight - 4)) + "px";
+  menu.querySelector("button")?.focus();
+}
+function localRefreshMenu(event: MouseEvent, refresh: () => Promise<void>) {
+  showContextMenu(event, "local-context-menu", "Local file actions", [["Refresh", refresh]]);
+}
+async function localNav() {
+  const value = await api.local!.state();
+  const button = document.querySelector<HTMLElement>('[data-nav="local"]');
+  if (button) button.hidden = !value.enabled;
+  return value;
+}
+async function localSettings(section: HTMLElement) {
+  const value = await localNav();
+  section.innerHTML = '<label class="check"><input id="local-enabled" type="checkbox" ' + (value.enabled ? 'checked' : '') + '> Enable local files</label><button type="button" id="local-add">Add source</button><hr><div id="local-sources"></div>';
+  section.onchange = event => event.stopPropagation();
+  section.querySelector<HTMLInputElement>("#local-enabled")!.onchange = event => {
+    event.stopPropagation();
+    void run(async () => {
+      await api.local!.enable((event.target as HTMLInputElement).checked);
+      await localNav();
+      if (route === "local") await localLibrary();
+    });
+  };
+  const sources = section.querySelector<HTMLElement>("#local-sources")!;
+  for (const source of value.sources) {
+    const row = document.createElement("div");
+    row.className = "local-source";
+    row.innerHTML = '<strong>' + esc(source.name) + '</strong><small>' + esc(source.path) + '</small>' + (!source.available ? '<p>Folder unavailable. Connect the drive, then refresh.</p>' : '') + '<div class="actions"><button type="button" data-refresh>Refresh</button><button type="button" data-remove>Remove</button></div>';
+    row.querySelector<HTMLButtonElement>("[data-refresh]")!.onclick = () => void run(() => localSettings(section));
+    row.querySelector<HTMLButtonElement>("[data-remove]")!.onclick = () => void run(async () => { await api.local!.remove(source.id); await localSettings(section); if (route === "local") await localLibrary(); });
+    row.oncontextmenu = event => { event.preventDefault(); localRefreshMenu(event, () => localSettings(section)); };
+    sources.append(row);
+  }
+  section.querySelector<HTMLButtonElement>("#local-add")!.onclick = () => void run(async () => { await api.local!.add(); await localSettings(section); if (route === "local") await localLibrary(); });
+}
+async function localLibrary(id = "", path = "") {
+  if (!api.local) return;
+  setRoute("local"); activeNav("local");
+  localLocation = { id, path };
+  const token = ++request;
+  const main = document.querySelector<HTMLElement>("#main")!;
+  document.querySelector("#page-title")!.innerHTML = "<h1>Local files</h1>";
+  main.innerHTML = '<p role="status">Loading local files…</p>';
+  try {
+    const value = await localNav();
+    if (route !== "local" || token !== request) return;
+    if (!value.enabled) { main.innerHTML = '<p>Enable Local files in Settings to browse your folders.</p>'; return; }
+    const source = value.sources.find(s => s.id === id);
+    main.innerHTML = (source ? '<button id="local-up" class="back">' + uiIcon("left") + ' Back</button>' : '') + '<h2 id="local-heading"></h2><div class="local-entries"></div>';
+    const up = main.querySelector<HTMLButtonElement>("#local-up");
+    if (up) up.onclick = () => void run(() => localLibrary());
+    main.oncontextmenu = event => {
+      if (route !== "local") return;
+      event.preventDefault();
+      localRefreshMenu(event, () => localLibrary(id, path));
+    };
+    const list = main.querySelector<HTMLElement>(".local-entries")!;
+    if (!source) {
+      main.querySelector("#local-heading")!.textContent = "Sources";
+      if (!value.sources.length) list.innerHTML = '<p>Add a source folder in Settings to begin.</p>';
+      for (const item of value.sources) {
+        const button = document.createElement("button");
+        button.textContent = item.name + (item.available ? "" : " (unavailable)");
+        button.setAttribute("aria-disabled", String(!item.available));
+        button.onclick = () => { if (item.available) void run(() => localLibrary(item.id)); };
+        list.append(button);
+      }
+      return;
+    }
+    main.querySelector("#local-heading")!.textContent = source.name + (path ? " / " + path : "");
+    if (!source.available) { list.innerHTML = '<p>Folder unavailable. Connect the drive, then select Refresh.</p>'; return; }
+    const folder = await api.local.list(id, path);
+    if (route !== "local" || token !== request) return;
+    up!.onclick = () => void run(() => folder.parent === null ? localLibrary() : localLibrary(id, folder.parent));
+    if (!folder.entries.length) list.innerHTML = '<p>No video files or folders found.</p>';
+    for (const entry of folder.entries) {
+      const button = document.createElement("button");
+      button.textContent = (entry.directory ? "Folder: " : "") + entry.name;
+      button.onclick = () => void run(async () => {
+        if (entry.directory) await localLibrary(id, entry.path);
+        else { button.disabled = true; try { await api.local!.play(id, entry.path); } finally { button.disabled = false; } }
+      });
+      list.append(button);
+    }
+  } catch (error) {
+    if (route === "local" && token === request) {
+      main.replaceChildren();
+      const message = document.createElement("p"); message.textContent = "Could not open the folder: " + String(error);
+      const back = document.createElement("button"); back.textContent = "Back to sources"; back.onclick = () => void run(() => localLibrary());
+      main.append(message, back);
+    }
+  }
+}
 function settings() {
   const s = state.settings;
   const languages = audioLanguages;
@@ -1355,11 +1420,12 @@ function settings() {
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
     `<h2 id="dialog-title">Settings</h2>
-    <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account", "Changelog"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase()}" aria-controls="settings-${name.toLowerCase()}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(name === "App" ? "settings" : name === "Changelog" ? "history" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
+    <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account", ...(api.local ? ["Local files"] : []), "Changelog"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase().replaceAll(" ", "-")}" aria-controls="settings-${name.toLowerCase().replaceAll(" ", "-")}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(name === "Local files" ? "folder" : name === "App" ? "settings" : name === "Changelog" ? "history" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
     <form id="settings">
     <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="hideOpenAniList" type="checkbox" ${s.hideOpenAniList ? "checked" : ""}> Hide Open on AniList button</label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
     <section id="settings-streaming" role="tabpanel" aria-labelledby="settings-tab-streaming" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
     <section id="settings-account" role="tabpanel" aria-labelledby="settings-tab-account" hidden></section>
+    ${api.local ? `<section id="settings-local-files" role="tabpanel" aria-labelledby="settings-tab-local-files" hidden></section>` : ""}
     <section id="settings-changelog" role="tabpanel" aria-labelledby="settings-tab-changelog" hidden><p id="changelog-status" role="status"></p><div id="changelog-list"></div><button id="changelog-more" type="button" hidden>Load more</button></section>
     </form><p id="settings-message" role="status"></p>`,
   );
@@ -1519,6 +1585,7 @@ function settings() {
       showToast("AniList disconnected.", d);
     } finally { button.disabled = false; }
   }));
+  if (api.local) void localSettings(d.querySelector<HTMLElement>("#settings-local-files")!).catch(error);
   const initialAdult = s.showAdult;
   let saveQueue = Promise.resolve();
   const save = () => {
@@ -1718,6 +1785,7 @@ async function start() {
         }),
       next: (p) =>
         void run(async () => {
+          if (p.local) { await api.local?.next(); return; }
           const room = await api.togetherState();
           if (room.connected && !room.host) throw Error("Only the host can choose the next episode.");
           if (p.mediaId && p.nextEpisode) {
@@ -1755,6 +1823,7 @@ async function start() {
     showSessionFailure(p);
   } else {
     shell();
+    if (api.local) void localNav().catch(error);
     api.onWatchState(value => {
       state = value;
       if (route === "watchlist") void watchlist();
@@ -1775,7 +1844,9 @@ async function start() {
     const returnMedia = Number(
       new URLSearchParams(location.search).get("returnMedia"),
     );
-    if (returnMedia > 0) {
+    const localSource = new URLSearchParams(location.search).get("localSource");
+    if (localSource && api.local) await localLibrary(localSource, new URLSearchParams(location.search).get("localPath") ?? "");
+    else if (returnMedia > 0) {
       try {
         const saved = JSON.parse(
           sessionStorage.getItem("browse-return") ?? "null",

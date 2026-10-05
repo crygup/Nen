@@ -1,5 +1,6 @@
 import { parseSearch } from "../src/filters";
-import { readFileSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeJson } from "./profiles";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join } from "node:path";
@@ -44,13 +45,7 @@ function persistCache() {
   cacheTimer = setTimeout(() => {
     cacheTimer = undefined;
     try {
-      writeFileSync(
-        cachePath! + ".tmp",
-        JSON.stringify(
-          [...cache].filter(([, v]) => v.expires > Date.now() - 7 * 86400000),
-        ),
-      );
-      renameSync(cachePath! + ".tmp", cachePath!);
+      writeJson(cachePath!, [...cache].filter(([, v]) => v.expires > Date.now() - 7 * 86400000));
     } catch {}
   }, 500);
   cacheTimer.unref();

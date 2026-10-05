@@ -1,3 +1,4 @@
+import { LocalFiles, subtitleExtensions } from "./local-files";
 import { Together } from "./together";
 import { DiscordPresence, DISCORD_APP_ID } from "./discord";
 import { findUpdate, downloadUpdate, type Update } from "./updates";
@@ -352,7 +353,15 @@ function playbackSettings(mediaId: number): Settings {
   const audio = state.seriesAudio?.[String(mediaId)];
   return { ...state.settings, audio: typeof audio === "string" && /^[a-z]{3}$/.test(audio) ? audio : state.settings.audio };
 }
+let localFiles: LocalFiles;
+let localCurrent: { id: string; path: string; info: { size: number; mtimeMs: number }; next?: string } | undefined;
 function record() {
+  if (localCurrent && player) {
+    try { localFiles.record(localCurrent.id, localCurrent.path, player.status.position, player.status.duration, localCurrent.info); }
+    catch (error) { player.status.error = "Local progress could not be saved: " + String(error); }
+    lastSave = Date.now();
+    return;
+  }
   if (current && player && player.status.duration > 0) {
     current.position = player.status.position;
     current.duration = player.status.duration;
@@ -435,6 +444,7 @@ function stop(closeView = true, keepTorrent = false, returnQuery?: Record<string
   discordPresence.update(state.settings.discordPresence === true, undefined, together.state);
   record();
   const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
+  if (localCurrent && !returnQuery) returnQuery = { localSource: localCurrent.id, localPath: dirname(localCurrent.path) === "." ? "" : dirname(localCurrent.path) };
   if (closeView) {
     playbackRequest++;
     sourceSearch?.abort();
@@ -456,6 +466,7 @@ function stop(closeView = true, keepTorrent = false, returnQuery?: Record<string
   player?.stop();
   player = undefined;
   current = undefined;
+  localCurrent = undefined;
   remote = [];
   skipped.clear();
   undoPosition = undefined;
@@ -465,7 +476,7 @@ function stop(closeView = true, keepTorrent = false, returnQuery?: Record<string
   const old = worker;
   worker = undefined;
   old?.postMessage({ action: "stop" });
-  if (old)
+  if (old && !downloadWorkers.has(old))
     setTimeout(() => {
       try {
         old.kill();
@@ -476,6 +487,7 @@ function stop(closeView = true, keepTorrent = false, returnQuery?: Record<string
   publish();
   return page;
 }
+const downloadWorkers = new Set<UtilityProcess>();
 function workerRequest(event: string, payload: object, timeout = 60000): Promise<any> {
   const target = worker;
   if (!target) return Promise.reject(Error("Torrent engine is not ready."));
@@ -504,12 +516,12 @@ function workerRequest(event: string, payload: object, timeout = 60000): Promise
       cleanup();
       reject(Error("Torrent engine stopped."));
     };
-    let timer = setTimeout(() => {
+    let timer = timeout ? setTimeout(() => {
       cleanup();
       reject(
         Error("No torrent metadata arrived. Try a release with more seeds."),
       );
-    }, timeout);
+    }, timeout) : undefined;
     target.on("message", message);
     target.once("exit", exit);
     target.postMessage(payload);
@@ -771,25 +783,8 @@ async function play(
         }
       publish();
     };
-    await openPlayerView();
-    if (request !== playbackRequest) throw Error("Playback cancelled.");
-    await active.start(
-      result.url,
-      startAt,
-      playbackSettings(mediaId),
-      app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "vendor"),
-      process.platform === "win32"
-        ? String(videoView!.getNativeWindowHandle().readUInt32LE())
-        : process.platform === "linux"
-          ? String(videoView!.getNativeWindowHandle().readBigUInt64LE())
-          : undefined,
-      together.state.connected,
-      together.state.connected ? together.state.playbackRate ?? 1 : sessionPlaybackRate,
-      state.volume ?? 100,
-    );
-    controls?.show();
-    controls?.moveTop();
-    controls?.focus();
+    await startPlayer(active, result.url, startAt, playbackSettings(mediaId), request, together.state.connected,
+      together.state.connected ? together.state.playbackRate ?? 1 : sessionPlaybackRate);
     switching = undefined;
     record();
     publish();
@@ -799,6 +794,63 @@ async function play(
   } finally {
     busy = false;
   }
+}
+async function startPlayer(active: Player, url: string, position: number, settings: Settings, request: number, paused = false, rate = sessionPlaybackRate) {
+  await openPlayerView();
+  if (request !== playbackRequest) throw Error("Playback cancelled.");
+  await active.start(url, position, settings,
+    app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "vendor"),
+    process.platform === "win32" ? String(videoView!.getNativeWindowHandle().readUInt32LE()) : process.platform === "linux" ? String(videoView!.getNativeWindowHandle().readBigUInt64LE()) : undefined,
+    paused, rate, state.volume ?? 100);
+  if (request !== playbackRequest) { active.stop(); throw Error("Playback cancelled."); }
+  controls?.show(); controls?.moveTop(); controls?.focus();
+}
+async function playLocal(id: string, path: string) {
+  if (busy || automaticRunning) throw Error("Wait for the current video to finish loading.");
+  if (together.state.connected) throw Error("Leave Watch together before playing local files.");
+  busy = true;
+  const request = ++playbackRequest;
+  try {
+    const video = await localFiles.video(id, path);
+    const subtitles = await localFiles.subtitles(id, path);
+    if (request !== playbackRequest) return;
+    stop(false);
+    pendingPlayback = undefined;
+    localCurrent = { id, path, info: video.info, next: video.next };
+    const active = player = new Player();
+    Object.assign(active.status, { title: video.folder, local: { name: video.name, folder: video.folder }, sourceName: "Local file", nextEpisode: video.next ? 1 : undefined });
+    active.onClose = () => { if (active === player) void stop(); };
+    let nextStarted = false, subtitlesLoaded = false;
+    active.onChange = () => {
+      if (active !== player) return;
+      if (active.status.ready && !subtitlesLoaded) {
+        subtitlesLoaded = true;
+        void (async () => {
+          for (const file of subtitles) {
+            if (active !== player) return;
+            await active.command(["sub-add", file, "auto"]);
+          }
+        })().catch(error => { active.status.error = "Could not load subtitles: " + error.message; publish(); });
+      }
+      if (Date.now() - lastSave > 5000) record();
+      if (active.status.ended && video.next && state.settings.autoNext && !nextStarted && !busy) {
+        nextStarted = true;
+        void playLocal(id, video.next).catch(error => {
+          if (player) player.status.error = error.message;
+          publish();
+        });
+      }
+      publish();
+    };
+    await startPlayer(active, video.full, video.position, state.settings, request);
+    publish();
+  } catch (error) {
+    if (request === playbackRequest && localCurrent && player) {
+      player.status.error = error instanceof Error ? error.message : String(error);
+      publish();
+    }
+    throw error;
+  } finally { busy = false; }
 }
 async function cancelAutomatic() {
   if (!automaticRunning) return;
@@ -988,6 +1040,7 @@ else {
     .whenReady()
     .then(() => {
       userRoot = app.getPath("userData");
+      localFiles = new LocalFiles(join(userRoot, "local-files.json"));
       statePath = join(userRoot, "state.json");
       mkdirSync(userRoot, { recursive: true });
       state = structuredClone(defaults);
@@ -1567,6 +1620,48 @@ else {
           child.once("spawn", () => { child.unref(); resolve(); });
         });
         setTimeout(() => app.quit(), 200);
+      });
+      handle("localState", () => localFiles.state());
+      handle("localEnable", (value) => localFiles.enable(value));
+      handle("localAdd", async () => {
+        const result = await dialog.showOpenDialog(window, { title: "Add local source", properties: ["openDirectory"] });
+        if (!result.canceled && result.filePaths[0]) await localFiles.add(result.filePaths[0]);
+      });
+      handle("localRemove", id => localFiles.remove(text(id)));
+      handle("localList", (id, path) => localFiles.list(text(id), typeof path === "string" ? path : ""));
+      handle("localPlay", (id, path) => playLocal(text(id), path));
+      handle("localNext", async () => {
+        if (localCurrent?.next) await playLocal(localCurrent.id, localCurrent.next);
+      });
+      handle("localSubtitle", async () => {
+        const active = player;
+        if (!localCurrent || !active) throw Error("Start a local video first.");
+        const result = await dialog.showOpenDialog(window, { title: "Load subtitle file", properties: ["openFile"], filters: [{ name: "Subtitles", extensions: subtitleExtensions }] });
+        if (!result.canceled && result.filePaths[0] && player === active && localCurrent) {
+          if (!/\.(srt|vtt|ass|ssa)$/i.test(result.filePaths[0])) throw Error("Select a subtitle file.");
+          await active.command(["sub-add", result.filePaths[0], "select"]);
+        }
+      });
+      handle("copyMagnet", () => {
+        if (!current || !selected || !worker) throw Error("No torrent source is playing.");
+        clipboard.writeText("magnet:?xt=urn:btih:" + hash(current.hash) + "&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce");
+      });
+      handle("downloadVideo", async () => {
+        const active = worker, episode = current;
+        if (!active || !episode) throw Error("No episode file to download.");
+        if (downloadWorkers.has(active)) throw Error("A download is already running for this source.");
+        downloadWorkers.add(active);
+        try {
+          const result = await dialog.showSaveDialog(window, { title: "Download episode", defaultPath: episode.file.path.split(/[\\/]/).at(-1), buttonLabel: "Download" });
+          if (result.canceled || !result.filePath) return false;
+          if (worker !== active || current !== episode) throw Error("The source changed. Start the download again.");
+          const saved = await workerRequest("saved", { action: "save", index: episode.file.index, destination: result.filePath }, 0);
+          if (saved.error) throw Error(saved.error);
+          return true;
+        } finally {
+          downloadWorkers.delete(active);
+          if (worker !== active) { try { active.postMessage({ action: "stop" }); } catch { /* The completed worker can already have exited. */ } }
+        }
       });
       handle("state", () => state);
       handle("startupUpdate", startupUpdate);

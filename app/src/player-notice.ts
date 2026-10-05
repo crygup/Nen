@@ -1,9 +1,9 @@
-let timer: ReturnType<typeof setTimeout> | undefined;
+import { showToast } from "./toast";
+let notice: ReturnType<typeof showToast> | undefined;
+export function playerNoticeText() {
+  return notice?.element.isConnected ? notice.element.querySelector("span")?.textContent ?? "" : "";
+}
 export function playerNotice(message: string) {
-  const box = document.querySelector<HTMLElement>("#player-error");
-  if (!box) return;
-  clearTimeout(timer);
-  box.textContent = message;
-  box.hidden = false;
-  if (message) timer = setTimeout(() => { box.textContent = ""; }, 5000);
+  notice?.element.remove();
+  notice = message ? showToast(message, (document.fullscreenElement as HTMLElement) ?? document.body) : undefined;
 }

@@ -9,6 +9,17 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 const api: API = {
+  downloads: { save: () => ipcRenderer.invoke("downloadVideo"), copyMagnet: () => ipcRenderer.invoke("copyMagnet") },
+  local: {
+    state: () => ipcRenderer.invoke("localState"),
+    enable: value => ipcRenderer.invoke("localEnable", value),
+    add: () => ipcRenderer.invoke("localAdd"),
+    remove: id => ipcRenderer.invoke("localRemove", id),
+    list: (id, path) => ipcRenderer.invoke("localList", id, path),
+    play: (id, path) => ipcRenderer.invoke("localPlay", id, path),
+    next: () => ipcRenderer.invoke("localNext"),
+    subtitle: () => ipcRenderer.invoke("localSubtitle"),
+  },
   togetherCopyCode: () => ipcRenderer.invoke("togetherCopyCode"),
   togetherState: () => ipcRenderer.invoke("togetherState"),
   togetherConnect: code => ipcRenderer.invoke("togetherConnect", code),

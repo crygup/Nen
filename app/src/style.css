@@ -683,11 +683,6 @@ progress {
 
 
 
-#player-error {
-  font-size: 11px;
-  color: var(--notice);
-  margin-bottom: 0;
-}
 #message {
   margin: 18px 42px 0;
   padding: 10px 15px;
@@ -993,6 +988,7 @@ html.player-mode body {
   transition: width 100ms ease;
 }
 .watch-panel {
+  z-index: 4;
   position: absolute;
   right: 28px;
   bottom: 120px;
@@ -1071,14 +1067,6 @@ html.player-mode body {
 .controls-hidden .player-stage,
 .controls-hidden .player-stage * {
   cursor: none !important;
-}
-.player-mode #player-error {
-  color: #ecc994;
-  font-size: 12px;
-  margin: 8px 0 0;
-}
-.player-mode #player-error:empty {
-  display: none;
 }
 .player-mode dialog {
   --panel: #302d3f;
@@ -1870,9 +1858,9 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
   .episode-content { transition: none; }
 }
 
-#anime-context-menu { position: fixed; inset: auto; margin: 0; padding: 4.5px; min-width: 171px; font-size: 12.6px; max-width: calc(100vw - 8px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
-#anime-context-menu button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 8.1px 10.8px; }
-#anime-context-menu button:hover, #anime-context-menu button:focus-visible { background: var(--hover); outline: none; }
+:is(#anime-context-menu, #local-context-menu) { position: fixed; inset: auto; margin: 0; padding: 4.5px; min-width: 171px; font-size: 12.6px; max-width: calc(100vw - 8px); background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); }
+:is(#anime-context-menu, #local-context-menu) button { display: block; width: 100%; border: 0; background: transparent; text-align: left; padding: 8.1px 10.8px; }
+:is(#anime-context-menu, #local-context-menu) button:hover, :is(#anime-context-menu, #local-context-menu) button:focus-visible { background: var(--hover); outline: none; }
 #track-panel {width:min(460px,calc(100vw - 40px));display:grid;grid-template-columns:170px minmax(0,1fr);grid-template-rows:auto 1fr;gap:8px 16px;align-items:start}
 #track-panel[hidden] {display:none}
 #track-panel > strong {grid-column:2;grid-row:1}
@@ -1912,3 +1900,16 @@ dialog:has(#settings, #help-content) h2 { grid-column: 1 / -1; margin: 0; paddin
 .player-skips {display:grid;align-content:start;gap:8px;min-width:0}
 .player-skips strong {margin-bottom:6px}
 .player-skips button:is(:hover, :focus-visible):not(:disabled) { background: var(--hover); }
+
+.local-source { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.local-source small { display: block; overflow-wrap: anywhere; margin: 6px 0; }
+.local-entries { display: grid; gap: 8px; }
+.local-entries button { text-align: left; padding: 14px; overflow-wrap: anywhere; }
+.local-entries button:hover:not(:disabled), .local-entries button:focus-visible { background: var(--hover); }
+#local-heading, #stats-source { overflow-wrap: anywhere; }
+
+#local-heading { margin-bottom: 20px; }
+#local-add { margin-top: 8px; }
+
+#player-downloads hr { margin: 8px 0 14px; }
+#player-downloads strong { display: block; }

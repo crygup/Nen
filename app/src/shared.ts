@@ -208,6 +208,7 @@ export interface State {
   mappings: Record<string, number>;
 }
 export interface Playback {
+  local?: { name: string; folder: string };
   cover?: string;
   episodeTitle?: string;
   volume?: number;
@@ -265,7 +266,21 @@ export interface TogetherState {
   at?: number;
   error?: string;
 }
+export interface LocalSource { id: string; name: string; path: string; available?: boolean }
+export interface LocalState { enabled: boolean; sources: LocalSource[] }
+export interface LocalFolder { path: string; parent: string | null; entries: { name: string; path: string; directory: boolean }[] }
 export interface API {
+  downloads?: { save(): Promise<boolean>; copyMagnet(): Promise<void> };
+  local?: {
+    state(): Promise<LocalState>;
+    enable(value: boolean): Promise<void>;
+    add(): Promise<void>;
+    remove(id: string): Promise<void>;
+    list(id: string, path: string): Promise<LocalFolder>;
+    play(id: string, path: string): Promise<void>;
+    next(): Promise<void>;
+    subtitle(): Promise<void>;
+  };
   browserHistory?: boolean;
   togetherState(): Promise<TogetherState>;
   togetherCopyCode(): Promise<void>;

@@ -89,6 +89,7 @@
       "oneClick": true,
       "perMachine": false,
       "allowElevation": false,
+      "include": "scripts/installer.nsh",
       "deleteAppDataOnUninstall": true,
       "artifactName": "Nen-Setup-${version}.${ext}"
     }

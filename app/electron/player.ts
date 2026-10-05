@@ -165,6 +165,7 @@ export class Player {
       "speed",
     ].entries())
       await this.command(["observe_property", id, key]);
+    if (this.status.local) await this.command(["set_property", "sub-auto", "no"]);
     await this.command(["loadfile", url, "replace"]);
   }
   private message(data: any) {
