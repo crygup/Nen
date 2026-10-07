@@ -33,7 +33,6 @@ import {
   mkdirSync,
   readFileSync,
   writeFileSync,
-  renameSync,
   existsSync,
   statSync,
   rmSync,
@@ -2890,16 +2889,22 @@ else {
       handle("updateStatus", () => updateStatus);
       handle("changelog", async (page, refresh) => ({
         ...(await listChangelog(page, refresh === true)),
-        buildCommit: NEN_BUILD_COMMIT,
       }));
-      handle("openChangelogCommit", (commit) => {
+      handle("openChangelogCommit", (commit, day) => {
+        if (
+          day !== undefined &&
+          (typeof day !== "string" ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
+            Number.isNaN(Date.parse(day)))
+        )
+          throw Error("Invalid date.");
         if (
           commit !== undefined &&
           (typeof commit !== "string" || !/^[a-f0-9]{40}$/.test(commit))
         )
           throw Error("Invalid commit.");
         return shell.openExternal(
-          `https://github.com/may-be-gay/Nen/${commit ? `commit/${commit}` : "commits/main/"}`,
+          `https://github.com/may-be-gay/Nen/${commit ? `commit/${commit}` : `commits/main/${day ? `?since=${day}&until=${day}` : ""}`}`,
         );
       });
       handle("settings", (value) => {

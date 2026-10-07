@@ -82,7 +82,8 @@ const api: API = {
   installUpdate: () => ipcRenderer.invoke("installUpdate"),
   updateStatus: () => ipcRenderer.invoke("updateStatus"),
   changelog: (page, refresh) => ipcRenderer.invoke("changelog", page, refresh),
-  openChangelogCommit: (sha) => ipcRenderer.invoke("openChangelogCommit", sha),
+  openChangelogCommit: (sha, day) =>
+    ipcRenderer.invoke("openChangelogCommit", sha, day),
   onUpdateStatus: (callback) => subscribe("update-status", callback),
   autoPlay: (...a) => ipcRenderer.invoke("autoPlay", ...a),
   startVideo: () => ipcRenderer.invoke("startVideo"),

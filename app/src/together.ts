@@ -10,8 +10,8 @@ export function mountTogether(root: HTMLElement, player = false) {
     <div class="together-room" hidden><div class="together-controls">${player ? "" : "<h3>Controls and settings</h3>"}<div class="together-invite"><span>Session code</span><button data-copy aria-label="Copy session code" title="Copy session code"></button><button data-reveal aria-label="Reveal session code" aria-pressed="false"></button><span data-copied role="status"></span></div>
     <p data-title hidden></p><p data-status role="status" ${player ? "hidden" : ""}></p>
     <div class="together-host" hidden>
-    <label><input type="checkbox" data-permission> Allow anyone to pause or resume</label>
-    <label><input type="checkbox" data-chat-permission> Enable chat</label>
+    <label><input type="checkbox" role="switch" data-permission> Allow anyone to pause or resume</label>
+    <label><input type="checkbox" role="switch" data-chat-permission> Enable chat</label>
     </div>
     <div class="actions"><button data-retry>Retry loading video</button><button data-leave>Leave session</button></div></div>
     <section class="together-member-section"><h3>Members</h3><ul class="together-members"></ul></section><section class="together-chat"><header><h3>Chat</h3><button data-collapse aria-label="Collapse chat" aria-expanded="true" title="Collapse chat"></button></header>

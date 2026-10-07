@@ -1,5 +1,4 @@
 import { showToast, dismissToast } from "./toast";
-import { playerNotice } from "./player-notice";
 import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
 import "./style.css";
@@ -1083,8 +1082,34 @@ function renderEpisodes() {
 }
 
 function dialog(content: string) {
-  const d = document.querySelector<HTMLDialogElement>("#dialog")!;
-  d.setAttribute("closedby", "closerequest");
+  const previous = document.querySelector<HTMLDialogElement>("#dialog")!;
+  const d = previous.cloneNode(false) as HTMLDialogElement;
+  d.removeAttribute("open");
+  previous.onclose = null;
+  if (previous.open) previous.close();
+  previous.replaceWith(d);
+  const lightDismiss =
+    content.includes('id="settings"') ||
+    content.includes('id="help-content"') ||
+    content.includes('id="shelf-editor"');
+  d.setAttribute("closedby", lightDismiss ? "any" : "closerequest");
+  const outside = (event: MouseEvent) => {
+    const bounds = d.getBoundingClientRect();
+    return (
+      event.target === d &&
+      (event.clientX < bounds.left ||
+        event.clientX > bounds.right ||
+        event.clientY < bounds.top ||
+        event.clientY > bounds.bottom)
+    );
+  };
+  let startedOutside = false;
+  d.onpointerdown = (event) => {
+    startedOutside = outside(event);
+  };
+  d.onclick = (event) => {
+    if (lightDismiss && startedOutside && outside(event)) d.close();
+  };
   d.innerHTML = `<div class="dialog-header"><span class="eyebrow">Nen</span><button id="close-dialog" aria-label="Close dialog">${uiIcon("close")}</button></div>${content}`;
   d.onclose = null;
   if (!d.open) d.showModal();
@@ -1997,7 +2022,7 @@ async function localNav() {
 async function localSettings(section: HTMLElement) {
   const value = await localNav();
   section.innerHTML =
-    '<label class="check"><input id="local-enabled" type="checkbox" ' +
+    '<label class="check"><input id="local-enabled" type="checkbox" role="switch" ' +
     (value.enabled ? "checked" : "") +
     '> Enable local files</label><button type="button" id="local-add">Add source</button><hr><div id="local-sources"></div>';
   section.onchange = (event) => event.stopPropagation();
@@ -2147,10 +2172,33 @@ function settings() {
     `${sub ? `<option value="no" ${value === "no" ? "selected" : ""}>Off</option>` : ""}<option value="" ${value === "" ? "selected" : ""}>Use file default</option>${languages.map(([code, name]) => `<option value="${code}" ${value.split(",")[0] === code ? "selected" : ""}>${name}</option>`).join("")}`;
   const d = dialog(
     `<h2 id="dialog-title">Settings</h2>
-    <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Streaming", "Account", ...(api.local ? ["Local files"] : []), "Changelog"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase().replaceAll(" ", "-")}" aria-controls="settings-${name.toLowerCase().replaceAll(" ", "-")}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(name === "Local files" ? "folder" : name === "App" ? "settings" : name === "Changelog" ? "history" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
+    <div class="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings">${["App", "Player", "Subtitles", "Account", ...(api.local ? ["Local files"] : []), "Changelog"].map((name, i) => `<button type="button" role="tab" id="settings-tab-${name.toLowerCase().replaceAll(" ", "-")}" aria-controls="settings-${name.toLowerCase().replaceAll(" ", "-")}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}">${uiIcon(name === "Player" ? "streaming" : name === "Subtitles" ? "subtitles" : name === "Local files" ? "folder" : name === "App" ? "settings" : name === "Changelog" ? "history" : name.toLowerCase())}<span>${name}</span></button>`).join("")}</div>
     <form id="settings">
-    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input name="hideOpenAniList" type="checkbox" ${s.hideOpenAniList ? "checked" : ""}> Hide Open on AniList button</label><label class="check"><input name="discordPresence" type="checkbox" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
-    <section id="settings-streaming" role="tabpanel" aria-labelledby="settings-tab-streaming" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Search sources<select name="source">${["all", "Nyaa", "Bangumi Moe"].map((v) => `<option value="${v}" ${s.source === v ? "selected" : ""}>${v === "all" ? "All sources" : v}</option>`).join("")}</select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="showAdult" type="checkbox" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="hideZeroSeeds" type="checkbox" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
+    <section id="settings-app" role="tabpanel" aria-labelledby="settings-tab-app"><label>Appearance<select name="theme">${["system", "light", "dark"].map((v) => `<option value="${v}" ${s.theme === v ? "selected" : ""}>${v === "system" ? "Use system theme" : v[0].toUpperCase() + v.slice(1)}</option>`).join("")}</select></label><label class="check"><input id="auto-updates" name="autoUpdates" type="checkbox" role="switch" ${s.autoUpdates ? "checked" : ""}> Enable auto updates</label><label class="check"><input name="showAdult" type="checkbox" role="switch" ${s.showAdult ? "checked" : ""}> Show NSFW content</label><label class="check"><input name="discordPresence" type="checkbox" role="switch" ${s.discordPresence === true ? "checked" : ""}> Show what I’m watching on Discord</label><label class="check"><input name="compactView" type="checkbox" role="switch" ${s.compactView ? "checked" : ""}> Use compact view</label><label class="check"><input name="showEpisodeName" type="checkbox" role="switch" ${s.showEpisodeName !== false ? "checked" : ""}> Show episode name</label><label class="check"><input name="blurUnwatched" type="checkbox" role="switch" ${s.blurUnwatched ? "checked" : ""}> Blur unwatched episode images</label><label class="check"><input name="privateSession" type="checkbox" role="switch" ${s.privateSession ? "checked" : ""}> Private session</label><label class="check"><input name="hideOpenAniList" type="checkbox" role="switch" ${s.hideOpenAniList ? "checked" : ""}> Hide Open on AniList button</label><label class="check"><input name="hideOpenMyAnimeList" type="checkbox" role="switch" ${s.hideOpenMyAnimeList !== false ? "checked" : ""}> Hide Open on MyAnimeList button</label><hr><div class="actions update-actions"><button id="check-updates" type="button">Check for updates</button></div></section>
+    <section id="settings-player" role="tabpanel" aria-labelledby="settings-tab-player" hidden><div class="field-pair"><label>Preferred audio<select name="audio">${options(s.audio)}</select></label><label>Preferred subtitles<select name="subtitles">${options(s.subtitles, true)}</select></label></div><label>Choose a source<select name="sourceMode"><option value="auto" ${s.sourceMode !== "manual" ? "selected" : ""}>Find the best source automatically</option><option value="manual" ${s.sourceMode === "manual" ? "selected" : ""}>Always let me choose</option></select></label><label>Preferred quality</label><details class="quality-dropdown"><summary id="quality-summary">${(s.qualities ?? [1080, 720, 480, 360]).map((q) => q + "p").join(", ")}</summary><fieldset><legend class="sr-only">Allowed video qualities</legend>${[2160, 1440, 1080, 720, 480, 360].map((q) => `<label class="check"><input name="qualities" type="checkbox" role="switch" value="${q}" ${(s.qualities ?? [1080, 720, 480, 360]).includes(q) ? "checked" : ""}> ${q}p${q === 2160 ? " (4K)" : ""}</label>`).join("")}</fieldset></details><label class="check"><input name="autoNext" type="checkbox" role="switch" ${s.autoNext ? "checked" : ""}> Auto play next episode</label><label class="check"><input name="autoSkip" type="checkbox" role="switch" ${s.autoSkip ? "checked" : ""}> Automatically skip intros and outros</label><label class="check"><input name="autoSkipRecaps" type="checkbox" role="switch" ${s.autoSkipRecaps ? "checked" : ""}> Automatically skip recaps</label><label class="check"><input name="prepareNext" type="checkbox" role="switch" ${s.prepareNext ? "checked" : ""}> Prepare next episode when current episode is complete</label><label class="check"><input name="hideZeroSeeds" type="checkbox" role="switch" ${s.hideZeroSeeds !== false ? "checked" : ""}> Hide videos with 0 seeders</label></section>
+    <section id="settings-subtitles" role="tabpanel" aria-labelledby="settings-tab-subtitles" hidden><label>Preferred subtitle language<select name="subtitleLanguage">${options(s.subtitles, true)}</select></label><div class="settings-subtitle-row">${[
+      ["subtitleSize", "Size", s.subtitleSize ?? 100],
+      ["subtitlePosition", "Vertical position", s.subtitlePosition ?? 5],
+    ]
+      .map(
+        ([key, label, value]) =>
+          `<div class="settings-subtitle-adjustment"><span>${label}</span><div class="subtitle-stepper" data-setting="${key}"><button type="button" data-step="-1" aria-label="Decrease ${String(label).toLowerCase()}">−</button><output aria-live="polite">${value}%</output><button type="button" data-step="1" aria-label="Increase ${String(label).toLowerCase()}">+</button><input type="hidden" name="${key}" value="${value}"></div></div>`,
+      )
+      .join("")}</div><div class="subtitle-colours">${[
+      ["subtitleColour", "Colour", s.subtitleColour ?? "#ffffff"],
+      [
+        "subtitleOutlineColour",
+        "Outline colour",
+        s.subtitleOutlineColour ?? "#000000",
+      ],
+    ]
+      .map(
+        ([key, label, value]) =>
+          `<div class="subtitle-colour-field" role="group" aria-labelledby="${key}-label"><span id="${key}-label">${label}</span><div class="subtitle-colour-inputs"><input name="${key}" type="color" aria-label="${label}" value="${value}"><input type="text" data-colour-hex="${key}" aria-label="${label} hex value" value="${value}" pattern="#?[a-fA-F0-9]{6}" maxlength="7" required spellcheck="false"></div></div>`,
+      )
+      .join(
+        "",
+      )}</div><label class="check"><input name="subtitleShadow" type="checkbox" role="switch" ${s.subtitleShadow !== false ? "checked" : ""}> Drop shadow</label></section>
     <section id="settings-account" role="tabpanel" aria-labelledby="settings-tab-account" hidden></section>
     ${api.local ? `<section id="settings-local-files" role="tabpanel" aria-labelledby="settings-tab-local-files" hidden></section>` : ""}
     <section id="settings-changelog" role="tabpanel" aria-labelledby="settings-tab-changelog" hidden><p id="changelog-status" role="status"></p><div id="changelog-list"></div><button id="changelog-more" type="button" hidden>Load more</button></section>
@@ -2172,7 +2220,6 @@ function settings() {
   let changelogEntries: ChangelogEntry[] = [];
   let changelogPage = 0;
   let changelogHasMore = false;
-  let changelogBuild = "";
   let changelogLoading = false;
   let changelogRequest = 0;
   const renderChangelog = () => {
@@ -2184,49 +2231,57 @@ function settings() {
       changelogList.append(empty);
       return;
     }
-    let lastDate = "";
-    let group: HTMLElement;
+    const days = new Map<string, ChangelogEntry[]>();
     for (const entry of visibleEntries) {
-      const date = entry.date
-        ? new Date(entry.date).toLocaleDateString(undefined, {
+      const day = entry.date
+        ? new Date(entry.date).toISOString().slice(0, 10)
+        : "";
+      if (!days.has(day)) days.set(day, []);
+      days.get(day)!.push(entry);
+    }
+    for (const [day, entries] of days) {
+      const group = document.createElement("section");
+      group.className = "changelog-day";
+      const heading = document.createElement("h3");
+      const date = day
+        ? new Date(day).toLocaleDateString(undefined, {
             year: "numeric",
             month: "long",
             day: "numeric",
+            timeZone: "UTC",
           })
         : "Date unknown";
-      if (date !== lastDate) {
-        group = document.createElement("section");
-        group.className = "changelog-day";
-        const heading = document.createElement("h3");
-        heading.textContent = date;
-        group.append(heading);
-        changelogList.append(group);
-        lastDate = date;
-      }
-      const item = document.createElement("article");
-      item.className = "changelog-entry";
-      const title = document.createElement("p");
-      title.className = "changelog-title";
-      title.textContent = entry.title;
-      const meta = document.createElement("span");
-      meta.className = "changelog-meta";
+      heading.textContent = date;
       const link = document.createElement("button");
       link.type = "button";
-      link.textContent = `(${entry.sha.slice(0, 7)})`;
+      link.className = "changelog-link";
+      link.innerHTML = uiIcon("external");
       link.setAttribute(
         "aria-label",
-        `View commit ${entry.sha.slice(0, 7)} on GitHub`,
+        "View commits for " + date + " on GitHub",
       );
-      link.onclick = () => void api.openChangelogCommit(entry.sha).catch(error);
-      meta.append(link);
-      if (entry.sha === changelogBuild) {
-        const badge = document.createElement("span");
-        badge.textContent = "Your build";
-        meta.append(badge);
+      link.onclick = () =>
+        void api
+          .openChangelogCommit(
+            entries.length === 1 ? entries[0].sha : undefined,
+            entries.length > 1 && day ? day : undefined,
+          )
+          .catch(error);
+      heading.append(link);
+      group.append(heading);
+      const list = document.createElement("ul");
+      list.className = "changelog-entries";
+      group.append(list);
+      for (const entry of entries) {
+        const item = document.createElement("li");
+        item.className = "changelog-entry";
+        const title = document.createElement("p");
+        title.className = "changelog-title";
+        title.textContent = entry.title;
+        item.append(title);
+        list.append(item);
       }
-      title.append(" · ", meta);
-      item.append(title);
-      group!.append(item);
+      changelogList.append(group);
     }
   };
   const loadChangelog = async (nextPage: number, refresh = false) => {
@@ -2250,7 +2305,6 @@ function settings() {
             ];
       changelogPage = nextPage;
       changelogHasMore = result.hasMore;
-      changelogBuild = result.buildCommit;
       renderChangelog();
       changelogStatus.textContent = result.stale
         ? "Could not refresh. Showing saved commits."
@@ -2522,6 +2576,7 @@ function settings() {
   const initialAdult = s.showAdult;
   let saveQueue = Promise.resolve();
   const save = () => {
+    if (!form.checkValidity()) return;
     const f = new FormData(form);
     const qualities = f.getAll("qualities").map(Number);
     if (!qualities.length) {
@@ -2532,12 +2587,23 @@ function settings() {
     const next = {
       ...state.settings,
       theme: f.get("theme") as typeof s.theme,
-      source: f.get("source") as typeof s.source,
+      source: "all" as const,
       sourceMode: f.get("sourceMode") as "auto" | "manual",
       audio: String(f.get("audio")),
       subtitles: String(f.get("subtitles")),
       qualities,
       autoSkip: f.has("autoSkip"),
+      autoSkipRecaps: f.has("autoSkipRecaps"),
+      prepareNext: f.has("prepareNext"),
+      compactView: f.has("compactView"),
+      showEpisodeName: f.has("showEpisodeName"),
+      blurUnwatched: f.has("blurUnwatched"),
+      hideOpenMyAnimeList: f.has("hideOpenMyAnimeList"),
+      subtitleShadow: f.has("subtitleShadow"),
+      subtitleSize: Number(f.get("subtitleSize")),
+      subtitlePosition: Number(f.get("subtitlePosition")),
+      subtitleColour: String(f.get("subtitleColour")),
+      subtitleOutlineColour: String(f.get("subtitleOutlineColour")),
       autoNext: f.has("autoNext"),
       discordPresence: f.has("discordPresence"),
       privateSession: f.has("privateSession"),
@@ -2561,9 +2627,73 @@ function settings() {
       .then(() => {
         message.textContent = "";
       })
-      .catch(error);
+      .catch(async (e) => {
+        state = await api.state();
+        const input = form.querySelector<HTMLInputElement>(
+          '[name="privateSession"]',
+        );
+        if (input) input.checked = !!state.settings.privateSession;
+        error(e);
+      });
   };
-  d.querySelector<HTMLFormElement>("form")!.onchange = save;
+  form
+    .querySelectorAll<HTMLElement>(".subtitle-stepper[data-setting]")
+    .forEach((stepper) => {
+      const input = stepper.querySelector<HTMLInputElement>("input")!;
+      const size = input.name === "subtitleSize";
+      const min = size ? 50 : 0,
+        max = size ? 250 : 100,
+        step = size ? 5 : 1;
+      const update = () => {
+        stepper.querySelector("output")!.textContent = input.value + "%";
+        stepper
+          .querySelectorAll<HTMLButtonElement>("button")
+          .forEach((button) => {
+            button.disabled =
+              Number(button.dataset.step) < 0
+                ? Number(input.value) <= min
+                : Number(input.value) >= max;
+          });
+      };
+      stepper.querySelectorAll<HTMLButtonElement>("button").forEach(
+        (button) =>
+          (button.onclick = () => {
+            input.value = String(
+              Math.max(
+                min,
+                Math.min(
+                  max,
+                  Number(input.value) + Number(button.dataset.step) * step,
+                ),
+              ),
+            );
+            update();
+            save();
+          }),
+      );
+      update();
+    });
+  form.onchange = (event) => {
+    const input = event.target as HTMLInputElement;
+    if (input.dataset.colourHex && input.checkValidity()) {
+      input.value = "#" + input.value.replace(/^#/, "").toLowerCase();
+      form.querySelector<HTMLInputElement>(
+        `[name="${input.dataset.colourHex}"]`,
+      )!.value = input.value;
+    } else if (input.type === "color") {
+      form.querySelector<HTMLInputElement>(
+        `[data-colour-hex="${input.name}"]`,
+      )!.value = input.value;
+    }
+    if (input.name === "subtitles" || input.name === "subtitleLanguage") {
+      form
+        .querySelectorAll<HTMLSelectElement>(
+          '[name="subtitles"], [name="subtitleLanguage"]',
+        )
+        .forEach((select) => (select.value = input.value));
+    }
+    if (form.reportValidity()) save();
+  };
   d.querySelector<HTMLFormElement>("form")!.onsubmit = (e) =>
     e.preventDefault();
   const check = d.querySelector<HTMLButtonElement>("#check-updates")!;

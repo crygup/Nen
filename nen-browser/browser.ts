@@ -21,16 +21,8 @@ import {
   activeRun,
   markEpisode,
   validateTransfer,
-  mergeWatch,
 } from "../app/electron/watch-data";
-import type {
-  API,
-  State,
-  Media,
-  Playback,
-  WatchEntry,
-  Marker,
-} from "../app/src/shared";
+import type { API, State, Media, Playback } from "../app/src/shared";
 import "./browser.css";
 
 if (window.parent !== window) {
@@ -202,6 +194,15 @@ if (window.parent !== window) {
   function updateSubtitles() {
     if (!video) return;
     video.style.setProperty(
+      "--subtitle-colour",
+      state.settings.subtitleColour ?? "#ffffff",
+    );
+    const outline = state.settings.subtitleOutlineColour ?? "#000000";
+    video.style.setProperty(
+      "--subtitle-shadow",
+      `-1px -1px 0 ${outline}, 1px -1px 0 ${outline}, -1px 1px 0 ${outline}, 1px 1px 0 ${outline}${state.settings.subtitleShadow === false ? "" : ", 2px 2px 3px #000000"}`,
+    );
+    video.style.setProperty(
       "--subtitle-size",
       `${(2 * (state.settings.subtitleSize ?? 100)) / 100}vw`,
     );
@@ -369,19 +370,27 @@ if (window.parent !== window) {
         };
         video.append(track);
       }
-      if (subtitleSelection !== undefined) {
+      const preference =
+        subtitleSelection !== undefined
+          ? subtitleSelection
+          : state.settings.subtitles === "no"
+            ? null
+            : state.settings.subtitles
+              ? { lang: state.settings.subtitles.split(",")[0] }
+              : undefined;
+      if (preference !== undefined) {
         const tracks = Array.from(video.querySelectorAll("track"));
         const selected =
-          subtitleSelection &&
+          preference &&
           matchSubtitle(
             tracks.map((element) => ({
               element,
               title: element.label,
               lang: element.srclang,
             })),
-            subtitleSelection,
+            preference,
           );
-        if (selected || subtitleSelection === null)
+        if (selected || preference === null)
           for (const element of tracks) {
             element.default = element === selected?.element;
             element.track.mode =
@@ -909,7 +918,6 @@ if (window.parent !== window) {
       entries: [],
       hasMore: false,
       stale: false,
-      buildCommit: "",
     }),
     openChangelogCommit: async () => {},
     uninstall: async () => {},

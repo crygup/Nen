@@ -24,6 +24,7 @@ html .list-card:hover .cover > img {
 label:has([name="discordPresence"]),
 label:has([name="autoUpdates"]),
 label:has([name="hideZeroSeeds"]),
+label:has([name="prepareNext"]),
 label:has([name="source"]),
 label:has([name="sourceMode"]),
 #settings-tab-changelog {
@@ -70,12 +71,9 @@ label:has([name="sourceMode"]),
   font-size: var(--subtitle-size, 2vw);
   font-weight: 500;
   font-style: normal;
-  color: #fff;
+  color: var(--subtitle-colour, #fff);
   background: transparent;
-  text-shadow:
-    0 1px 3px #000,
-    1px 0 2px #000,
-    -1px 0 2px #000;
+  text-shadow: var(--subtitle-shadow, 0 1px 3px #000);
 }
 #browser-video::cue(i) {
   font-style: normal;

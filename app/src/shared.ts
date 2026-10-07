@@ -329,7 +329,6 @@ export interface ChangelogPage {
   entries: ChangelogEntry[];
   hasMore: boolean;
   stale: boolean;
-  buildCommit: string;
 }
 export interface TogetherState {
   connected: boolean;
@@ -452,7 +451,7 @@ export interface API {
   updateStatus(): Promise<UpdateStatus>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   changelog(page: number, refresh?: boolean): Promise<ChangelogPage>;
-  openChangelogCommit(sha?: string): Promise<void>;
+  openChangelogCommit(sha?: string, day?: string): Promise<void>;
   autoPlay(mediaId: number, episode: number): Promise<void>;
   startVideo(): Promise<void>;
   onVideo(

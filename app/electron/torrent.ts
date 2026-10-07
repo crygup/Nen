@@ -45,6 +45,11 @@ function fileDownload() {
   }
   return { ranges };
 }
+let preparation: [number, number][] = [];
+function clearPreparation() {
+  for (const [first, last] of preparation) torrent?.deselect(first, last, 5);
+  preparation = [];
+}
 port.on("message", async ({ data }) => {
   try {
     if (data.action === "inspect") {
@@ -112,7 +117,27 @@ port.on("message", async ({ data }) => {
           }),
         1000,
       );
+    } else if (data.action === "unprepare") {
+      clearPreparation();
+    } else if (data.action === "prepare") {
+      clearPreparation();
+      const file = torrent?.files[data.index];
+      if (!file || !torrent) throw Error("File not found.");
+      const offset = torrent.files
+        .slice(0, data.index)
+        .reduce((n, f) => n + f.length, 0);
+      const first = Math.floor(offset / torrent.pieceLength);
+      const last = Math.floor((offset + file.length - 1) / torrent.pieceLength);
+      const head = Math.ceil((8 * 1024 * 1024) / torrent.pieceLength);
+      const tail = Math.ceil((2 * 1024 * 1024) / torrent.pieceLength);
+      preparation = [
+        [first, Math.min(last, first + head - 1)],
+        [Math.max(first, last - tail + 1), last],
+      ];
+      for (const [start, end] of preparation) torrent.select(start, end, 5);
+      send({ event: "prepared" });
     } else if (data.action === "stream") {
+      clearPreparation();
       const file = torrent?.files[data.index];
       if (!file) throw Error("File not found.");
       server?.closeAllConnections();
