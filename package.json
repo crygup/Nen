@@ -11,7 +11,8 @@
     "dev:browser": "npm --prefix nen-browser run dev",
     "build:browser": "npm --prefix nen-browser run build && npm --prefix nen-browser run build:server",
     "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format:check": "prettier . --check",
+    "test": "npm --prefix app test"
   },
   "devDependencies": {
     "prettier": "3.9.9"

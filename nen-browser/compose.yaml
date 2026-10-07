@@ -16,6 +16,7 @@ services:
       - "127.0.0.1:8091:8091"
     volumes:
       - downloads:/app/downloads
+      - cache:/app/cache
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -42,3 +43,4 @@ services:
 
 volumes:
   downloads:
+  cache:

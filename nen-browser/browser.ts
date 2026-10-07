@@ -1,3 +1,4 @@
+import { showToast } from "../app/src/toast";
 import {
   exportBackup,
   readBackup,
@@ -9,6 +10,7 @@ import { toggleFullscreen } from "./fullscreen";
 declare const NEN_BROWSER_VERSION: string;
 import { browserRoom } from "./room";
 import {
+  audioTrackLanguage,
   episodeAvailability,
   matchSubtitle,
   type SubtitleSelection,
@@ -16,6 +18,7 @@ import {
 import { connectAccount } from "./account";
 import Hls from "hls.js";
 import {
+  editWatch,
   migrateWatchLater,
   newEntry,
   activeRun,
@@ -109,11 +112,47 @@ if (window.parent !== window) {
     undoPosition = 0,
     imported: ReturnType<typeof readBackup> | undefined;
   const snapshot = () => structuredClone(state);
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let savedState = localStorage.getItem(key);
+  let dirty = false;
+  let saveFailed = false;
+  function flushSave() {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+    if (!dirty) return;
+    const body = JSON.stringify(state);
+    try {
+      if (body !== savedState) localStorage.setItem(key, body);
+      saveFailed = false;
+    } catch (error) {
+      if (!saveFailed)
+        showToast(
+          "Changes could not be saved. Browser storage may be full or unavailable.",
+          document.body,
+          true,
+        );
+      saveFailed = true;
+      throw error;
+    }
+    savedState = body;
+    dirty = false;
+  }
   function save(notify = false) {
-    localStorage.setItem(key, JSON.stringify(state));
+    dirty = true;
+    saveTimer ??= setTimeout(() => {
+      try {
+        flushSave();
+      } catch {
+        /* Keep dirty data for the next save attempt. */
+      }
+    }, 250);
     if (notify) watchListeners.forEach((fn) => fn(snapshot()));
   }
-  async function request(path: string, params: Record<string, unknown> = {}) {
+  async function request(
+    path: string,
+    params: Record<string, unknown> = {},
+    signal?: AbortSignal,
+  ) {
     const response = await fetch(
       "/nen-api/" +
         path +
@@ -121,7 +160,11 @@ if (window.parent !== window) {
         new URLSearchParams(
           Object.entries(params).map(([k, v]) => [k, String(v)]),
         ),
-      { signal: AbortSignal.timeout(90000) },
+      {
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(90000)])
+          : AbortSignal.timeout(90000),
+      },
     );
     const body = await response.json();
     if (!response.ok || body.error)
@@ -163,16 +206,32 @@ if (window.parent !== window) {
     const id = String(current.id),
       entry = (state.watch[id] ||= newEntry(current));
     const previous = activeRun(entry).episodes[String(p.episode)];
-    const watched =
-      previous?.watched || video.currentTime / video.duration > 0.85;
+    const watched = previous?.manual
+      ? previous.watched
+      : !!previous?.watched || video.currentTime / video.duration > 0.85;
+    if (
+      previous &&
+      previous.position === video.currentTime &&
+      previous.duration === video.duration &&
+      previous.watched === watched &&
+      state.volume === video.volume * 100
+    )
+      return;
     markEpisode(entry, p.episode, {
       position: video.currentTime,
       duration: video.duration,
       watched,
     });
-    if (watched && entry.status === "PLANNING") entry.status = "CURRENT";
-    if (current.episodes && entry.count >= current.episodes)
-      entry.status = "COMPLETED";
+    if (entry.status === "PLANNING") {
+      entry.status = "CURRENT";
+      entry.statusUpdated = Date.now();
+    }
+    if (
+      current.episodes &&
+      entry.count >= current.episodes &&
+      entry.status !== "COMPLETED"
+    )
+      editWatch(state, entry, { status: "COMPLETED" });
     state.progress[`${id}:${p.episode}`] = {
       ...state.progress[`${id}:${p.episode}`],
       mediaId: current.id,
@@ -299,15 +358,20 @@ if (window.parent !== window) {
     };
     publish();
     try {
-      current = await request("media", { id });
+      const media: Media = await request("media", { id }, signal);
       if (signal.aborted) return;
+      current = media;
       p.title = current!.title.english || current!.title.romaji;
       p.cover = current!.coverImage.large;
-      const source = await request("stream", { id, episode });
+      const source = await request("stream", { id, episode }, signal);
       if (signal.aborted) return;
       if (!source.streamLink) throw Error("No stream available.");
       p.episodeTitle = undefined;
-      void request("episodes", { id, page: Math.floor((episode - 1) / 50) + 1 })
+      void request(
+        "episodes",
+        { id, page: Math.floor((episode - 1) / 50) + 1 },
+        signal,
+      )
         .then((data) => {
           if (!signal.aborted) {
             p.episodeTitle = data.items.find(
@@ -330,7 +394,11 @@ if (window.parent !== window) {
         for (const edge of media.relations?.edges || []) {
           if (edge.relationType !== "SEQUEL" || edge.node.type !== "ANIME")
             continue;
-          const sequel: Media = await request("media", { id: edge.node.id });
+          const sequel: Media = await request(
+            "media",
+            { id: edge.node.id },
+            signal,
+          );
           if (signal.aborted) return;
           if (episodeAvailability(sequel, 1).released === true) {
             p.nextEpisode = 1;
@@ -417,12 +485,14 @@ if (window.parent !== window) {
         engine.loadSource(url);
         engine.on(Hls.Events.MANIFEST_PARSED, () => {
           if (signal.aborted) return;
-          const preferred =
-            state.seriesAudio?.[String(id)] || state.settings.audio;
+          const preferred = audioTrackLanguage({
+            lang:
+              state.seriesAudio?.[String(id)] ||
+              state.settings.audio.split(",")[0],
+          });
           const track = engine.audioTracks.findIndex(
             (t) =>
-              t.lang === preferred ||
-              t.lang?.slice(0, 2) === preferred.slice(0, 2),
+              audioTrackLanguage({ lang: t.lang, title: t.name }) === preferred,
           );
           if (preferred && track >= 0) engine.audioTrack = track;
           const qualities = state.settings.qualities || [];
@@ -573,34 +643,11 @@ if (window.parent !== window) {
       return snapshot();
     },
     watchEdit: async (id, patch) => {
-      const entry = (state.watch[String(id)] ||= newEntry(
-        await request("media", { id }),
-      ));
-      if (patch.startRewatch) {
-        entry.runs.push({ started: Date.now(), count: 0, episodes: {} });
-        entry.status = "REPEATING";
-        entry.repeat++;
-        entry.count = 0;
-      }
-      if (patch.status) entry.status = patch.status;
-      if (patch.count !== undefined) {
-        entry.count = patch.count;
-        activeRun(entry).count = patch.count;
-      }
-      if (patch.episode) {
-        markEpisode(entry, patch.episode, patch);
-        const saved = state.progress[`${id}:${patch.episode}`];
-        if (saved)
-          Object.assign(
-            saved,
-            Object.fromEntries(
-              Object.entries(patch).filter(([k]) =>
-                ["watched", "position", "duration"].includes(k),
-              ),
-            ),
-          );
-      }
-      entry.updated = Date.now();
+      editWatch(
+        state,
+        state.watch[String(id)] ?? newEntry(await request("media", { id })),
+        patch,
+      );
       save();
       return snapshot();
     },
@@ -735,8 +782,13 @@ if (window.parent !== window) {
           }
         }
       });
+      video.addEventListener("pause", () => {
+        persistProgress();
+        flushSave();
+      });
       video.addEventListener("ended", () => {
         persistProgress();
+        flushSave();
         if (!room.state.connected && state.settings.autoNext && p.nextEpisode)
           void startStream(p.nextMediaId ?? p.mediaId!, p.nextEpisode);
       });
@@ -753,7 +805,6 @@ if (window.parent !== window) {
         pendingSelection?.episode ?? (Number(params.get("episode")) || 1),
       );
     },
-    onVideo: () => () => {},
     playback: async () => structuredClone(p),
     onPlayback: (fn) => {
       playbackListeners.add(fn);
@@ -761,6 +812,9 @@ if (window.parent !== window) {
     },
     control: async (action, value) => {
       if (action === "stop" && room.state.connected) {
+        controller?.abort();
+        persistProgress();
+        flushSave();
         room.disconnect();
         playerFrame?.remove();
         playerFrame = undefined;
@@ -789,6 +843,7 @@ if (window.parent !== window) {
         persistProgress();
         previewFrames.reset();
         hls?.destroy();
+        flushSave();
         location.assign(
           "/?returnMedia=" +
             (p.mediaId || new URLSearchParams(location.search).get("id")),
@@ -845,7 +900,12 @@ if (window.parent !== window) {
         const track = hls.audioTracks[value! - 1];
         if (track) {
           state.seriesAudio ||= {};
-          state.seriesAudio[String(p.mediaId)] = track.lang || "";
+          const language = audioTrackLanguage({
+            lang: track.lang,
+            title: track.name,
+          });
+          if (language) state.seriesAudio[String(p.mediaId)] = language;
+          else delete state.seriesAudio[String(p.mediaId)];
           save();
         }
       }
@@ -898,6 +958,7 @@ if (window.parent !== window) {
     },
     ...roomApi,
     togetherLeave: async () => {
+      controller?.abort();
       room.disconnect();
       persistProgress();
       previewFrames.reset();
@@ -934,7 +995,17 @@ if (window.parent !== window) {
     play: async (id, ep) => api.autoPlay(id, ep),
   };
   window.nen = api;
-  window.addEventListener("pagehide", persistProgress);
+  window.addEventListener("pagehide", () => {
+    controller?.abort();
+    persistProgress();
+    flushSave();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      persistProgress();
+      flushSave();
+    }
+  });
   await import("../app/src/main");
 }
 

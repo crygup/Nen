@@ -1,0 +1,30 @@
+name: Check code
+on:
+  push:
+    paths:
+      ["app/**", "nen-browser/**", "service/**", ".github/workflows/checks.yml"]
+  pull_request:
+    paths:
+      ["app/**", "nen-browser/**", "service/**", ".github/workflows/checks.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            nen-browser/package-lock.json
+      - run: npm ci --ignore-scripts --prefix app
+      - run: npm ci --ignore-scripts --prefix nen-browser
+      - run: npm --prefix app run typecheck
+      - run: npm --prefix app test
+      - run: npm --prefix nen-browser run build
+      - run: npm --prefix nen-browser run build:server
+      - run: node --check service/together/server.mjs

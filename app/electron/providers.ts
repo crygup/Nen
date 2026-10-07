@@ -37,6 +37,15 @@ const cache = new Map<
 >();
 const pending = new Map<string, Promise<string>>();
 const blocked = new Map<string, number>();
+// Bound retained metadata by size as well as entry count on the browser server.
+function trimCache() {
+  let size = [...cache.values()].reduce((n, value) => n + value.body.length, 0);
+  while (cache.size > 400 || size > 16_000_000) {
+    const [key, value] = cache.entries().next().value!;
+    size -= value.body.length;
+    cache.delete(key);
+  }
+}
 let cachePath: string | undefined;
 let cacheTimer: ReturnType<typeof setTimeout> | undefined;
 export function initCache(path: string) {
@@ -44,14 +53,15 @@ export function initCache(path: string) {
   try {
     const entries = JSON.parse(readFileSync(path, "utf8"));
     if (Array.isArray(entries))
-      for (const [key, value] of entries.slice(-100))
+      for (const [key, value] of entries.slice(-400))
         if (
           typeof key === "string" &&
-          value?.expires > Date.now() - 7 * 86400000 &&
+          value?.expires > Date.now() - 90 * 86400000 &&
           typeof value.body === "string" &&
           value.body.length < 5000000
         )
           cache.set(key, value);
+    trimCache();
   } catch {}
 }
 function persistCache() {
@@ -61,7 +71,7 @@ function persistCache() {
     try {
       writeJson(
         cachePath!,
-        [...cache].filter(([, v]) => v.expires > Date.now() - 7 * 86400000),
+        [...cache].filter(([, v]) => v.expires > Date.now() - 90 * 86400000),
       );
     } catch {}
   }, 500);
@@ -102,10 +112,13 @@ async function request(
       old = undefined;
     }
   }
+  const metadata =
+    url.startsWith("https://api.jikan.moe/") ||
+    url.startsWith("https://kitsu.io/");
   const stale =
-    url === "https://graphql.anilist.co" &&
+    (metadata || url === "https://graphql.anilist.co") &&
     old &&
-    old.expires > Date.now() - 7 * 86400000;
+    old.expires > Date.now() - (metadata ? 90 : 7) * 86400000;
   if (old && old.expires > Date.now()) return old.body;
   if (pending.has(key)) return stale ? old!.body : pending.get(key)!;
   const task = (async () => {
@@ -159,6 +172,7 @@ async function request(
         : await fetch(url, options);
     if (response.status === 304 && old) {
       old.expires = Date.now() + ttl;
+      persistCache();
       return old.body;
     }
     if (response.status === 429) {
@@ -175,7 +189,6 @@ async function request(
     if (!response.ok) throw Error(`${host}: HTTP ${response.status}`);
     const body = await response.text();
     if (body.length > 5000000) throw Error("Provider response is too large.");
-    if (cache.size >= 100) cache.delete(cache.keys().next().value!);
     if (url.includes("api.jikan.moe")) {
       const payload = JSON.parse(body);
       if (!Array.isArray(payload.data)) {
@@ -184,11 +197,13 @@ async function request(
       }
     }
     validate(body);
+    cache.delete(key);
     cache.set(key, {
       expires: Date.now() + ttl,
       body,
       etag: response.headers.get("etag"),
     });
+    trimCache();
     persistCache();
     return body;
   })().catch((error) => {
@@ -854,6 +869,10 @@ export async function episodes(id: number, page: number): Promise<EpisodePage> {
   let notice: string | undefined;
   const first = (page - 1) * 50 + 1;
   const end = Math.min(first + 49, anime.episodes ?? first + 49);
+  const metadataTtl =
+    anime.status === "FINISHED" || end < latestEpisode(anime)
+      ? 7 * 86400000
+      : 3600000;
   await Promise.all([
     (async () => {
       if (
@@ -873,7 +892,7 @@ export async function episodes(id: number, page: number): Promise<EpisodePage> {
             await request(
               `https://api.jikan.moe/v4/anime/${anime.idMal}/episodes?page=${Math.floor((page - 1) / 2) + 1}`,
               {},
-              3600000,
+              metadataTtl,
             ),
           );
           for (const row of result.data ?? [])
@@ -929,7 +948,7 @@ export async function episodes(id: number, page: number): Promise<EpisodePage> {
                     offset +
                     "&sort=number",
                   {},
-                  3600000,
+                  metadataTtl,
                 ),
               );
               for (const row of data.data ?? []) {

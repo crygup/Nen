@@ -1,4 +1,5 @@
 import type {
+  API,
   State,
   Media,
   Progress,
@@ -6,7 +7,7 @@ import type {
   WatchEpisode,
   WatchStatus,
 } from "../src/shared";
-import { seasonNumber } from "./rules";
+import { positive, seasonNumber } from "./rules";
 
 export const statuses: WatchStatus[] = [
   "CURRENT",
@@ -340,4 +341,170 @@ export function migrateWatchLater(state: State): boolean {
         ),
       ];
   return true;
+}
+
+export function editWatch(
+  state: Pick<State, "watch" | "progress">,
+  original: WatchEntry,
+  patch: Parameters<API["watchEdit"]>[1],
+) {
+  if (
+    !patch ||
+    typeof patch !== "object" ||
+    Array.isArray(patch) ||
+    (patch.startRewatch !== undefined &&
+      typeof patch.startRewatch !== "boolean")
+  )
+    throw Error("Invalid watch edit.");
+  const entry = structuredClone(original);
+  const mediaId = entry.mediaId;
+  if (
+    patch.count !== undefined &&
+    (!Number.isSafeInteger(patch.count) ||
+      patch.count < 0 ||
+      (entry.totalEpisodes != null && patch.count > entry.totalEpisodes))
+  )
+    throw Error("Episode progress exceeds the valid range.");
+  const now = Date.now();
+  if (patch.startRewatch) {
+    if (entry.status !== "COMPLETED")
+      throw Error("Complete the anime before a rewatch.");
+    activeRun(entry).completed ??= now;
+    entry.runs.push({ started: now, episodes: {}, count: 0 });
+    entry.status = "REPEATING";
+    entry.count = 0;
+    entry.statusUpdated = entry.countUpdated = now;
+  }
+  if (patch.status !== undefined) {
+    if (!statuses.includes(patch.status as WatchStatus))
+      throw Error("Invalid watch status.");
+    entry.status = patch.status;
+    entry.statusUpdated = now;
+    if (patch.status === "COMPLETED") {
+      const run = activeRun(entry);
+      if (!run.completed) {
+        run.completed = now;
+        if (entry.runs.length > 1) {
+          entry.repeat++;
+          entry.repeatUpdated = now;
+        }
+      }
+    }
+  }
+  if (patch.count !== undefined) {
+    entry.count = patch.count;
+    entry.countUpdated = now;
+    activeRun(entry).count = patch.count;
+  }
+  if (patch.episode !== undefined) {
+    const episode = positive(patch.episode, 100000);
+    if (patch.watched !== undefined && typeof patch.watched !== "boolean")
+      throw Error("Invalid watched mark.");
+    for (const value of [patch.position, patch.duration])
+      if (
+        value !== undefined &&
+        (!Number.isFinite(value) || value < 0 || value > 1000000)
+      )
+        throw Error("Invalid playback time.");
+    markEpisode(entry, episode, {
+      watched: patch.watched,
+      position: patch.position,
+      duration: patch.duration,
+    });
+    if (patch.watched !== undefined)
+      activeRun(entry).episodes[String(episode)].manual = true;
+    if (patch.watched === true && entry.status === "PLANNING") {
+      entry.status = "CURRENT";
+      entry.statusUpdated = now;
+    }
+    if (
+      patch.watched === true &&
+      entry.totalEpisodes &&
+      entry.count >= entry.totalEpisodes
+    ) {
+      entry.status = "COMPLETED";
+      entry.statusUpdated = now;
+      const run = activeRun(entry);
+      if (!run.completed) {
+        run.completed = now;
+        if (entry.runs.length > 1) {
+          entry.repeat++;
+          entry.repeatUpdated = now;
+        }
+      }
+    }
+  }
+  if (patch.startRewatch) {
+    for (const saved of Object.values(state.progress)) {
+      if (saved.mediaId === entry.mediaId) {
+        saved.position = 0;
+        saved.watched = false;
+        saved.updated = now;
+      }
+    }
+  }
+  entry.updated = now;
+  state.watch[String(mediaId)] = entry;
+  if (patch.episode !== undefined) {
+    const saved = state.progress[`${mediaId}:${patch.episode}`];
+    if (saved) {
+      if (patch.position !== undefined) saved.position = patch.position;
+      if (patch.watched !== undefined) saved.watched = patch.watched;
+      if (patch.duration !== undefined) saved.duration = patch.duration;
+      saved.updated = now;
+    }
+  }
+  return entry;
+}
+
+const syncAttempts = new WeakMap<object, { input: string; at: number }>();
+/** Position-only changes do not need an account sync. Keep remote edits checked every five minutes. */
+export function syncDue(
+  state: State,
+  service: "anilist" | "mal",
+  now = Date.now(),
+) {
+  const account = state[service];
+  if (state.settings.privateSession || !account?.connected || !account.lastSync)
+    return false;
+  const entries = Object.entries(state.watch).filter(([, entry]) =>
+    canSyncWatch(entry),
+  );
+  const input = JSON.stringify([
+    entries.map(([id, e]) => [id, e.status, e.count, e.repeat]),
+    service === "anilist" ? state.favoriteChanges : undefined,
+  ]);
+  const previous = syncAttempts.get(account);
+  if (previous && now - previous.at < (account.error ? 60000 : 12000))
+    return false;
+  const changed =
+    entries.some(([id, e]) => {
+      const base = account.baseline[id];
+      return (
+        !base ||
+        base.status !== e.status ||
+        base.count !== e.count ||
+        base.repeat !== e.repeat
+      );
+    }) ||
+    (service === "anilist" && Object.keys(state.favoriteChanges).length > 0);
+  if (
+    now - account.lastSync < 5 * 60000 &&
+    (!changed || (previous?.input === input && !account.error))
+  )
+    return false;
+  syncAttempts.set(account, { input, at: now });
+  return true;
+}
+
+export function watchViewKey(state: State) {
+  return JSON.stringify([
+    state.watch,
+    state.progress,
+    state.favorites,
+    state.settings,
+    state.profiles?.active,
+    state.anilist.connected,
+    state.anilist.user,
+  ]);
 }

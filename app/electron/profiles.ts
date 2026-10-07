@@ -1,3 +1,4 @@
+import { writeFile, rename } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import {
   copyFileSync,
@@ -91,9 +92,11 @@ export function writeJson(path: string, value: unknown) {
   writeFileSync(path + ".tmp", JSON.stringify(value));
   renameSync(path + ".tmp", path);
 }
-export function writeProfile(root: string, id: string, data: ProfileData) {
-  mkdirSync(profileDir(root, id), { recursive: true });
+const preparedProfiles = new Set<string>();
+function prepareProfile(root: string, id: string) {
   const path = profileFile(root, id);
+  if (preparedProfiles.has(path)) return path;
+  mkdirSync(profileDir(root, id), { recursive: true });
   if (existsSync(path)) {
     const stored = readProfile(root, id);
     if (
@@ -102,7 +105,40 @@ export function writeProfile(root: string, id: string, data: ProfileData) {
     )
       copyFileSync(path, path + ".before-format-1.json");
   }
-  writeJson(path, { ...data, schemaVersion });
+  preparedProfiles.add(path);
+  return path;
+}
+export function writeProfile(root: string, id: string, data: ProfileData) {
+  writeJson(prepareProfile(root, id), { ...data, schemaVersion });
+}
+
+const pendingWrites = new Map<string, string>();
+const written = new Map<string, string>();
+let writing: Promise<void> | undefined;
+export function queueJson(path: string, value: unknown) {
+  // Capture the value now so a later profile switch cannot change a queued save.
+  const body = JSON.stringify(value);
+  if (body !== (pendingWrites.get(path) ?? written.get(path)))
+    pendingWrites.set(path, body);
+}
+export function queueProfile(root: string, id: string, data: ProfileData) {
+  queueJson(prepareProfile(root, id), { ...data, schemaVersion });
+}
+export async function flushWrites(): Promise<void> {
+  while (writing || pendingWrites.size) {
+    writing ??= (async () => {
+      while (pendingWrites.size) {
+        const [path, body] = pendingWrites.entries().next().value!;
+        await writeFile(path + ".tmp", body);
+        await rename(path + ".tmp", path);
+        written.set(path, body);
+        if (pendingWrites.get(path) === body) pendingWrites.delete(path);
+      }
+    })().finally(() => {
+      writing = undefined;
+    });
+    await writing;
+  }
 }
 export function readProfile(root: string, id: string): ProfileData {
   try {

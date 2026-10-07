@@ -9,6 +9,10 @@ export function browserRoom(
   const listeners = new Set<(s: TogetherState) => void>();
   const room = new Together({
     version: NEN_BROWSER_VERSION,
+    url:
+      (location.protocol === "https:" ? "wss://" : "ws://") +
+      location.host +
+      "/nen-session",
     sourceHash: browserSourceHash,
     changed: (s) => listeners.forEach((fn) => fn(structuredClone(s))),
     playback,

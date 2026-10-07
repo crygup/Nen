@@ -1,4 +1,9 @@
-import { validateLibrary, type State, type Settings } from "../src/shared";
+import {
+  audioTrackLanguage,
+  validateLibrary,
+  type State,
+  type Settings,
+} from "../src/shared";
 import { validateTransfer, mergeWatch } from "./watch-data";
 
 export function exportBackup(state: State) {
@@ -137,7 +142,12 @@ export function readBackup(value: unknown) {
   for (const key of ["mappings", "seriesAudio"] as const)
     if (file[key] !== undefined) {
       const clean: Record<string, any> = {};
-      for (const [id, value] of Object.entries(object(file[key]))) {
+      for (const [id, raw] of Object.entries(object(file[key]))) {
+        if (key === "seriesAudio" && raw === "") continue;
+        const value =
+          key === "seriesAudio" && typeof raw === "string"
+            ? (audioTrackLanguage({ lang: raw }) ?? raw.toLowerCase())
+            : raw;
         if (
           !/^\d+$/.test(id) ||
           (key === "mappings"

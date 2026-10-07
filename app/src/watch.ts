@@ -107,70 +107,72 @@ export function mountPlayer(actions: {
   );
   let captureError = "",
     lastPlaybackError = "";
-  const surface = el<HTMLCanvasElement>("video-surface");
-  const context = surface.getContext("2d", { alpha: false })!;
-  let waitingForKey = true,
-    timestamp = 0;
-  const config: VideoDecoderConfig = {
-    codec: "avc1.640033",
-    optimizeForLatency: true,
-    hardwareAcceleration: "prefer-hardware",
-  };
-  const decoder = new VideoDecoder({
-    output: (frame) => {
-      if (
-        surface.width !== frame.displayWidth ||
-        surface.height !== frame.displayHeight
-      ) {
-        surface.width = frame.displayWidth;
-        surface.height = frame.displayHeight;
-      }
-      context.drawImage(frame, 0, 0);
-      if (captureError) {
-        if (playerNoticeText() === captureError) playerNotice("");
-        captureError = "";
-      }
-      frame.close();
-      surface.dataset.ready = "true";
-    },
-    error: (e) => {
-      captureError = e.message;
-      actions.error(e);
-    },
-  });
-  decoder.configure(config);
-  const unsubscribe = api.onVideo(
-    (data, key) => {
-      if (decoder.state === "closed") return;
-      if (decoder.decodeQueueSize > 3) {
-        decoder.reset();
-        decoder.configure(config);
-        waitingForKey = true;
-      }
-      if (waitingForKey && !key) return;
-      waitingForKey = false;
-      decoder.decode(
-        new EncodedVideoChunk({
-          type: key ? "key" : "delta",
-          timestamp: (timestamp += 16667),
-          data,
-        }),
-      );
-    },
-    (message) => {
-      captureError = message;
-      actions.error(message);
-    },
-  );
+  if (api.onVideo) {
+    const surface = el<HTMLCanvasElement>("video-surface");
+    const context = surface.getContext("2d", { alpha: false })!;
+    let waitingForKey = true,
+      timestamp = 0;
+    const config: VideoDecoderConfig = {
+      codec: "avc1.640033",
+      optimizeForLatency: true,
+      hardwareAcceleration: "prefer-hardware",
+    };
+    const decoder = new VideoDecoder({
+      output: (frame) => {
+        if (
+          surface.width !== frame.displayWidth ||
+          surface.height !== frame.displayHeight
+        ) {
+          surface.width = frame.displayWidth;
+          surface.height = frame.displayHeight;
+        }
+        context.drawImage(frame, 0, 0);
+        if (captureError) {
+          if (playerNoticeText() === captureError) playerNotice("");
+          captureError = "";
+        }
+        frame.close();
+        surface.dataset.ready = "true";
+      },
+      error: (e) => {
+        captureError = e.message;
+        actions.error(e);
+      },
+    });
+    decoder.configure(config);
+    const unsubscribe = api.onVideo(
+      (data, key) => {
+        if (decoder.state === "closed") return;
+        if (decoder.decodeQueueSize > 3) {
+          decoder.reset();
+          decoder.configure(config);
+          waitingForKey = true;
+        }
+        if (waitingForKey && !key) return;
+        waitingForKey = false;
+        decoder.decode(
+          new EncodedVideoChunk({
+            type: key ? "key" : "delta",
+            timestamp: (timestamp += 16667),
+            data,
+          }),
+        );
+      },
+      (message) => {
+        captureError = message;
+        actions.error(message);
+      },
+    );
+    window.addEventListener(
+      "pagehide",
+      () => {
+        unsubscribe();
+        if (decoder.state !== "closed") decoder.close();
+      },
+      { once: true },
+    );
+  }
   void api.startVideo().catch(actions.error);
-  window.addEventListener(
-    "pagehide",
-    () => {
-      unsubscribe();
-      if (decoder.state !== "closed") decoder.close();
-    },
-    { once: true },
-  );
   let latest: Playback;
   let dragging = false;
   let timer: ReturnType<typeof setTimeout>;

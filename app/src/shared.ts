@@ -454,7 +454,7 @@ export interface API {
   openChangelogCommit(sha?: string, day?: string): Promise<void>;
   autoPlay(mediaId: number, episode: number): Promise<void>;
   startVideo(): Promise<void>;
-  onVideo(
+  onVideo?(
     callback: (data: Uint8Array, key: boolean) => void,
     error: (message: string) => void,
   ): () => void;
@@ -869,4 +869,21 @@ export function validateLibrary(settings: Settings): void {
           throw Error("Invalid shelf layout.");
     }
   }
+}
+
+export function episodePages(
+  count: number,
+  all: boolean,
+  descending: boolean,
+  preferred?: number,
+): number[] {
+  const pages = [
+    ...new Set(
+      Array.from({ length: all ? count : Math.min(50, count) }, (_, i) =>
+        Math.ceil((descending ? count - i : i + 1) / 50),
+      ),
+    ),
+  ];
+  const first = preferred ? Math.ceil(preferred / 50) : pages[0];
+  return pages.sort((a, b) => Math.abs(a - first) - Math.abs(b - first));
 }

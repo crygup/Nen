@@ -16,6 +16,7 @@ WORKDIR /app
 COPY --from=build /build/nen-browser/server.cjs .
 COPY --from=build /build/nen-browser/dist ./dist
 COPY LICENSE .
-RUN mkdir /app/downloads && chown node:node /app/downloads
+RUN mkdir /app/downloads /app/cache && chown node:node /app/downloads /app/cache
+ENV NEN_CACHE_DIR=/app/cache
 USER node
 CMD ["node", "server.cjs"]

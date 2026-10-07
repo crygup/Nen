@@ -1,3 +1,4 @@
+import { syncDue } from "./watch-data";
 import { apply, preview, refreshRemote } from "./anilist";
 import { readMal, writeMal, malId, type MalRequest } from "./myanimelist";
 import {
@@ -129,7 +130,8 @@ export function malAccount(
         busy ||
         otherBusy() ||
         review ||
-        merge
+        merge ||
+        !syncDue(state, "mal")
       )
         return;
       await locked(async () => {

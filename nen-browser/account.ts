@@ -1,3 +1,4 @@
+import { syncDue } from "../app/electron/watch-data";
 import { malAccount } from "../app/electron/mal-account";
 import {
   readFollowing,
@@ -100,7 +101,8 @@ export function connectAccount(getState: () => State, save: () => void) {
       mal.reviewing ||
       review ||
       !token ||
-      !state.anilist.lastSync
+      !state.anilist.lastSync ||
+      !syncDue(state, "anilist")
     )
       return;
     busy = true;
@@ -113,14 +115,13 @@ export function connectAccount(getState: () => State, save: () => void) {
       save();
     }
   };
-  setInterval(
-    () =>
-      void (async () => {
-        await sync();
-        await mal.sync();
-      })().catch(() => {}),
-    12000,
-  );
+  const syncAccounts = () =>
+    void (async () => {
+      await sync();
+      await mal.sync();
+    })().catch(() => {});
+  setInterval(syncAccounts, 12000);
+  window.addEventListener("focus", syncAccounts);
   return {
     get busy() {
       return busy || mal.busy;

@@ -1,3 +1,4 @@
+import { watchViewKey } from "../electron/watch-data";
 import { showToast, dismissToast } from "./toast";
 import { mountTogether } from "./together";
 import { parseSearch, searchText, seasons, formats, statuses } from "./filters";
@@ -6,6 +7,7 @@ import {
   escapeHtml as esc,
   recentSeasons,
   labelForEpisode,
+  episodePages,
   episodeAvailability,
   latestEpisode,
   rankReleases,
@@ -841,7 +843,9 @@ async function openMedia(id: number) {
         }
       })
       .catch(() => {});
-    void loadEpisodes(token).catch(error);
+    void loadEpisodes(token, savedPosition ? undefined : latest?.episode).catch(
+      error,
+    );
   } catch (e) {
     if (token === request) {
       document.querySelector("#main")!.innerHTML =
@@ -852,23 +856,39 @@ async function openMedia(id: number) {
     }
   }
 }
-async function loadEpisodes(token = request) {
+async function loadEpisodes(token = request, preferred?: number) {
   if (!current) return;
   const load = ++episodeLoad;
-  const mediaId = current.id;
+  const media = current;
+  const mediaId = media.id;
   const count =
-    current.episodes ??
-    Math.max(latestEpisode(current), current.nextAiringEpisode?.episode ?? 0);
-  const numbers = Array.from(
-    { length: showAllEpisodes ? count : Math.min(50, count) },
-    (_, i) => (descendingEpisodes ? count - i : i + 1),
+    media.episodes ??
+    Math.max(latestEpisode(media), media.nextAiringEpisode?.episode ?? 0);
+  if (preferred === undefined) {
+    const visible = [
+      ...document.querySelectorAll<HTMLElement>("[data-episode]"),
+    ].find((row) => {
+      const bounds = row.getBoundingClientRect();
+      return bounds.bottom > 0 && bounds.top < innerHeight;
+    });
+    preferred = Number(visible?.dataset.episode) || undefined;
+  }
+  const pages = episodePages(
+    count,
+    showAllEpisodes,
+    descendingEpisodes,
+    preferred,
   );
-  const pages = [...new Set(numbers.map((n) => Math.ceil(n / 50)))];
-  for (const page of pages) {
-    if (token !== request || load !== episodeLoad) return;
+  const active = () => token === request && load === episodeLoad;
+  let changed = false;
+  async function loadPage(page: number) {
+    if (!active()) return;
     try {
       const cached = episodeCache.get(mediaId);
-      const required = numbers.filter((n) => Math.ceil(n / 50) === page);
+      const required = Array.from(
+        { length: Math.min(50, count - (page - 1) * 50) },
+        (_, i) => (page - 1) * 50 + i + 1,
+      );
       const known = new Map(
         episodeData?.items.map((item) => [item.number, item]),
       );
@@ -884,12 +904,12 @@ async function loadEpisodes(token = request) {
         complete ||
         (cached &&
           cached.expires > Date.now() &&
-          cached.data.latest >= latestEpisode(current!) &&
+          cached.data.latest >= latestEpisode(media) &&
           required.every((n) => known.has(n)))
       )
-        continue;
+        return;
       const result = await api.episodes(mediaId, page);
-      if (token !== request || load !== episodeLoad) return;
+      if (!active()) return;
       const items = new Map(episodeData?.items.map((e) => [e.number, e]));
       result.items.forEach((e) => {
         const previous = items.get(e.number);
@@ -911,9 +931,20 @@ async function loadEpisodes(token = request) {
       });
       if (episodeCache.size > 30)
         episodeCache.delete(episodeCache.keys().next().value!);
-      writeEpisodeCache(mediaId);
-      renderEpisodes();
+      changed = true;
+      renderEpisodes(result.items.map((item) => item.number));
     } catch {}
+  }
+  try {
+    // Resolve the page in view first, then fetch nearby pages with two workers.
+    const first = pages.shift();
+    if (first !== undefined) await loadPage(first);
+    const worker = async () => {
+      while (active() && pages.length) await loadPage(pages.shift()!);
+    };
+    await Promise.all([worker(), worker()]);
+  } finally {
+    if (changed) writeEpisodeCache(mediaId);
   }
 }
 
@@ -978,7 +1009,7 @@ function renderSeries() {
   synopsisSize.observe(synopsis);
   renderEpisodes();
 }
-function renderEpisodes() {
+function renderEpisodes(updated?: number[]) {
   if (!current || route !== "series") return;
   const m = current;
   const offset = state.mappings[String(m.id)];
@@ -989,11 +1020,20 @@ function renderEpisodes() {
     el.innerHTML = "<p>No episodes here yet</p>";
     return;
   }
-  const items = Array.from(
-    { length: showAllEpisodes ? count : Math.min(50, count) },
-    (_, i) => {
-      const n = descendingEpisodes ? count - i : i + 1;
-      const meta = episodeData?.items.find((e) => e.number === n);
+  const known = new Map(episodeData?.items.map((item) => [item.number, item]));
+  const visibleCount = showAllEpisodes ? count : Math.min(50, count);
+  const numbers = updated
+    ? updated.filter((n) =>
+        descendingEpisodes
+          ? n > count - visibleCount && n <= count
+          : n >= 1 && n <= visibleCount,
+      )
+    : Array.from({ length: visibleCount }, (_, i) =>
+        descendingEpisodes ? count - i : i + 1,
+      );
+  const items = numbers
+    .map((n) => {
+      const meta = known.get(n);
       return {
         n,
         title: meta?.title ?? `Episode ${n}`,
@@ -1001,9 +1041,9 @@ function renderEpisodes() {
         ...episodeAvailability(m, n),
         ...labelForEpisode(labelData, n, offset, m.source === "ORIGINAL"),
       };
-    },
-  ).filter((e) => !hideFiller || e.status !== "filler");
-  el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button>${labelData?.items.some((e) => e.status === "filler") ? `<button id="hide-filler" aria-pressed="${hideFiller}">${hideFiller ? "Show filler" : "Hide filler"}</button>` : ""}<button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button></div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
+    })
+    .filter((e) => !hideFiller || e.status !== "filler");
+  const rows = items
     .map((e) => {
       const watched =
         state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ??
@@ -1027,9 +1067,21 @@ function renderEpisodes() {
             : "";
       return `<button class="episode${!state.settings.compactView ? " episode-with-preview" : ""}" data-episode="${e.n}" aria-label="${esc(state.settings.showEpisodeName === false ? `Episode ${e.n}` : `Episode ${e.n}: ${e.title}`)}" ${future ? "disabled" : ""}>${!state.settings.compactView ? `<span class="episode-preview">${e.thumbnail ? `<img src="${esc(e.thumbnail)}" alt="" loading="lazy" class="${state.settings.blurUnwatched && !finished ? "blurred" : ""}">` : `<span aria-label="No episode image">${uiIcon("streaming")}</span>`}</span>` : ""}<span class="episode-number">${String(e.n).padStart(2, "0")}</span><span>${state.settings.showEpisodeName === false ? "" : esc(e.title)}${watched ? `<small>${time(watched.position)} / ${time(watched.duration)}</small>` : ""}</span><span class="episode-badges">${finished ? '<span class="badge watched-label">Watched</span>' : ""}${badge ? `<span class="badge ${future ? "upcoming" : ""}" title="${e.status === "filler" ? "Not canon. This episode is not adapted from the original story." : e.status === "mixed" ? "Contains both canon story and filler material." : ""}">${esc(badge)}</span>` : ""}</span></button>`;
     })
-    .join(
-      "",
-    )}</div><div class="pagination">${!showAllEpisodes && count > 50 ? '<button id="load-episodes">Load more</button>' : ""}</div></div></div>`;
+    .join("");
+  if (updated) {
+    const content = document.createElement("div");
+    content.innerHTML = rows;
+    for (const row of content.querySelectorAll<HTMLElement>("[data-episode]")) {
+      const previous = el.querySelector<HTMLElement>(
+        '[data-episode="' + row.dataset.episode + '"]',
+      );
+      const focused = previous === document.activeElement;
+      previous?.replaceWith(row);
+      if (focused) row.focus({ preventScroll: true });
+    }
+  } else {
+    el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button>${labelData?.items.some((e) => e.status === "filler") ? `<button id="hide-filler" aria-pressed="${hideFiller}">${hideFiller ? "Show filler" : "Hide filler"}</button>` : ""}<button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button></div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${rows}</div><div class="pagination">${!showAllEpisodes && count > 50 ? '<button id="load-episodes">Load more</button>' : ""}</div></div></div>`;
+  }
   el.querySelectorAll<HTMLImageElement>(".episode-preview img").forEach(
     (image) => {
       const fallback = () => {
@@ -1798,7 +1850,15 @@ function help() {
         )
         .join("") +
       '</div><div id="help-content"><section id="help-support" role="tabpanel" aria-labelledby="help-tab-support"><h3>Contact us</h3><p>Report a problem or ask for help. Include your Nen build, the anime and episode, and steps to repeat the problem.</p><div class="actions"><button data-support="discord">Discord server</button><button data-support="issues">GitHub issues</button><button data-support="email">Email support</button></div></section>' +
-      '<section id="help-faq" role="tabpanel" aria-labelledby="help-tab-faq" hidden><h4>Why are no streams found?</h4><p>Available sources may have no active seeders or no matching episode.</p><h4>Do I need an AniList account?</h4><p>No. Nen can keep your lists and progress locally.</p><h4>When does an episode count as watched?</h4><p>After you watch more than 85% of an episode, or when you go to the next episode.</p><h4>How do I update Nen?</h4><p>Open Settings, then check for updates. You can also enable auto updates to install new builds on launch.</p></section>' +
+      '<section id="help-faq" role="tabpanel" aria-labelledby="help-tab-faq" hidden><h4>Why are no streams found?</h4><p>' +
+      (api.browserHistory
+        ? "The streaming provider may not have this title or episode. Try again later."
+        : "Available sources may have no active seeders or no matching episode.") +
+      "</p><h4>Do I need an AniList account?</h4><p>No. Nen can keep your lists and progress locally.</p><h4>When does an episode count as watched?</h4><p>After you watch more than 85% of an episode, or when you go to the next episode.</p><h4>How do I update Nen?</h4><p>" +
+      (api.browserHistory
+        ? "Reload this browser page to use the latest website build."
+        : "Open Settings, then check for updates. You can also enable auto updates to install new builds on launch.") +
+      "</p></section>" +
       '<section id="help-donations" role="tabpanel" aria-labelledby="help-tab-donations" hidden><p>You can support Nen on Ko-fi.</p><button data-support="donate">Donate on Ko-fi</button></section></div>',
   );
   const version = d.querySelector(".dialog-header .eyebrow")!;
@@ -2903,7 +2963,8 @@ async function start() {
       sources: (p) =>
         void run(async () => {
           if (p.mediaId && p.episode) {
-            await releasePicker(await api.media(p.mediaId), p.episode);
+            if (api.browserHistory) await api.control("sources");
+            else await releasePicker(await api.media(p.mediaId), p.episode);
           }
         }),
       next: (p) =>
@@ -2972,7 +3033,9 @@ async function start() {
     shell();
     if (api.local) void localNav().catch(error);
     api.onWatchState((value) => {
+      const changed = watchViewKey(state) !== watchViewKey(value);
       state = value;
+      if (!changed) return;
       if (route === "watchlist") void watchlist();
       else if (route === "home") void home();
       else if (route === "series") {
@@ -3494,9 +3557,11 @@ async function followingShelf(token: number, expanded = false) {
   const grid = shelf.querySelector<HTMLElement>(".home-grid")!;
   const load = async () => {
     try {
-      const data = (await friendsData()).filter(
-        (row) => state.settings.showAdult || !row.media.isAdult,
-      );
+      const data = (
+        await friendsData(() => {
+          if (token === request && shelf.isConnected) void load();
+        })
+      ).filter((row) => state.settings.showAdult || !row.media.isAdult);
       if (token !== request || !shelf.isConnected) return;
       grid.innerHTML =
         data
@@ -3570,7 +3635,7 @@ const friendCache = new Map<string, { expires: number; data: Friends }>();
 function friendKey() {
   return `${state.profiles?.active ?? "web"}:${state.anilist.user ?? ""}`;
 }
-async function friendsData(): Promise<Friends> {
+async function friendsData(onRefresh?: () => void): Promise<Friends> {
   if (!state.anilist.connected) return [];
   const key = friendKey();
   let cached = friendCache.get(key);
@@ -3579,26 +3644,38 @@ async function friendsData(): Promise<Friends> {
       const saved = JSON.parse(
         localStorage.getItem(`nen-friends-v1-${key}`) || "null",
       );
-      if (saved?.expires > Date.now() && Array.isArray(saved.data)) {
+      if (
+        saved?.expires > Date.now() - 7 * 86400000 &&
+        Array.isArray(saved.data)
+      ) {
         cached = saved;
         friendCache.set(key, saved);
       }
     } catch {}
   }
   if (cached && cached.expires > Date.now()) return cached.data;
-  if (friendRequests.has(key)) return friendRequests.get(key)!;
-  const pending = api
-    .following()
-    .then((data) => {
-      const value = { data, expires: Date.now() + 5 * 60000 };
-      friendCache.set(key, value);
-      try {
-        localStorage.setItem(`nen-friends-v1-${key}`, JSON.stringify(value));
-      } catch {}
-      return data;
-    })
-    .finally(() => friendRequests.delete(key));
+  const pending =
+    friendRequests.get(key) ??
+    api
+      .following()
+      .then((data) => {
+        const value = { data, expires: Date.now() + 5 * 60000 };
+        friendCache.set(key, value);
+        try {
+          localStorage.setItem(`nen-friends-v1-${key}`, JSON.stringify(value));
+        } catch {}
+        return data;
+      })
+      .finally(() => friendRequests.delete(key));
   friendRequests.set(key, pending);
+  if (cached) {
+    void pending
+      .then(() => {
+        if (key === friendKey()) onRefresh?.();
+      })
+      .catch(() => {});
+    return cached.data;
+  }
   return pending;
 }
 const friendCovers = new Set<HTMLElement>();
@@ -3634,7 +3711,9 @@ async function decorateFriends(container: ParentNode) {
   }
   let data: Friends;
   try {
-    data = await friendsData();
+    data = await friendsData(() => {
+      void decorateFriends(container);
+    });
   } catch {
     return;
   }

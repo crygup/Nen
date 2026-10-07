@@ -18,7 +18,9 @@ export interface RemoteEntry extends SyncBase {
   isAdult?: boolean;
 }
 const endpoint =
-  process.env.NEN_E2E_USER_DATA && process.env.NEN_E2E_ANILIST_URL
+  typeof process !== "undefined" &&
+  process.env.NEN_E2E_USER_DATA &&
+  process.env.NEN_E2E_ANILIST_URL
     ? process.env.NEN_E2E_ANILIST_URL
     : "https://graphql.anilist.co";
 let waitUntil = 0;

@@ -21,6 +21,7 @@ export class Together {
   constructor(
     private hooks: {
       version: string;
+      url?: string;
       sourceHash?: string;
       changed: (state: TogetherState) => void;
       cancel?: () => void;
@@ -36,7 +37,7 @@ export class Together {
   async connect(code?: string) {
     if (this.socket) throw Error("Leave your current session first.");
     const socket = (this.socket = new WebSocket(
-      process.env.NEN_TOGETHER_URL || "wss://together.crygup.com/session",
+      this.hooks.url ?? "wss://together.crygup.com/session",
     ));
     this.state = { connected: false, members: [], messages: [] };
     await new Promise<void>((resolve, reject) => {

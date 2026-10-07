@@ -53,14 +53,18 @@ import {
   type AccountReview,
 } from "./anilist";
 import {
+  syncDue,
+  editWatch,
   markEpisode,
   migrateWatchLater,
   migrateProgress,
   newEntry,
-  statuses,
   activeRun,
 } from "./watch-data";
 import {
+  flushWrites,
+  queueJson,
+  queueProfile,
   migrateLegacy,
   newProfileId,
   profileDir,
@@ -71,7 +75,6 @@ import {
   splitState,
   tokenFile,
   uniqueProfileName,
-  writeJson,
   writeProfile,
 } from "./profiles";
 import {
@@ -105,7 +108,6 @@ import type {
   SegmentType,
   Playback,
   UpdateStatus,
-  WatchStatus,
   SyncChange,
   SyncPreview,
   ProfileSummary,
@@ -153,6 +155,7 @@ let stopVideoCapture: (() => void) | undefined;
 let captureResize: ReturnType<typeof setTimeout> | undefined;
 let updateStatus: UpdateStatus = { busy: false, message: "" };
 let state: State;
+let readyToSave = false;
 let statePath: string;
 let userRoot: string;
 let importFile: string | undefined;
@@ -239,7 +242,12 @@ function queueSync() {
 async function syncUncontested() {
   if (state.settings.privateSession) return;
   if (syncRunning || malAccounts.busy || malAccounts.reviewing) return;
-  if (!state.anilist.connected || !state.anilist.lastSync || syncPreview) {
+  if (
+    !state.anilist.connected ||
+    !state.anilist.lastSync ||
+    syncPreview ||
+    !syncDue(state, "anilist")
+  ) {
     await malAccounts.sync();
     return;
   }
@@ -475,6 +483,7 @@ async function installUpdate() {
     });
     record();
     save();
+    await flushWrites();
     await new Promise<void>((resolve, reject) => {
       const child = spawn(installer, ["/S", "--updated", "--force-run"], {
         detached: true,
@@ -500,6 +509,7 @@ async function installUpdate() {
   }
   return updateStatus;
 }
+let lastSaveError = "";
 function save() {
   const profiles = state.profiles!;
   const summary = profiles.list.find((p) => p.id === profiles.active);
@@ -510,8 +520,17 @@ function save() {
     summary.malUser = state.mal?.connected ? state.mal.user : undefined;
   }
   const { shared, profile } = splitState(state);
-  writeProfile(userRoot, profiles.active, profile);
-  writeJson(statePath, shared);
+  queueProfile(userRoot, profiles.active, profile);
+  queueJson(statePath, shared);
+  void flushWrites()
+    .then(() => {
+      lastSaveError = "";
+    })
+    .catch((error) => {
+      if (lastSaveError !== String(error))
+        dialog.showErrorBox("Nen could not save changes", String(error));
+      lastSaveError = String(error);
+    });
 }
 function activeProfile() {
   return state.profiles!.list.find((p) => p.id === state.profiles!.active)!;
@@ -588,6 +607,7 @@ async function switchProfile(id: unknown) {
     throw Error(
       "Wait for the current video to finish loading, then try again.",
     );
+  await flushWrites();
   const data = readProfileData(target.id);
   cancelSignIn?.(
     Error("AniList sign-in was cancelled because the profile changed."),
@@ -656,6 +676,15 @@ function record() {
         String(current.episode)
       ];
     current.watched = oldMark?.manual ? oldMark.watched : isWatched(current);
+    if (
+      oldMark &&
+      oldMark.position === current.position &&
+      oldMark.duration === current.duration &&
+      oldMark.watched === current.watched
+    ) {
+      lastSave = Date.now();
+      return;
+    }
     current.updated = Date.now();
     state.progress[`${current.mediaId}:${current.episode}`] = current;
     let entry = state.watch[String(current.mediaId)];
@@ -688,6 +717,7 @@ function record() {
   }
 }
 const together = new Together({
+  url: process.env.NEN_TOGETHER_URL || "wss://together.crygup.com/session",
   version: NEN_BUILD_COMMIT ? app.getVersion() : `${app.getVersion()}-dev`,
   cancel: () => {
     playbackRequest++;
@@ -1196,11 +1226,6 @@ async function play(
       episodeAvailability(anime as any, episode).released === false
     )
       throw Error("This episode has not aired yet.");
-    const episodeInfo = resume
-      ? undefined
-      : await providers
-          .episodes(mediaId, Math.floor((episode - 1) / 50) + 1)
-          .catch(() => undefined);
     const watchEntry = state.watch[String(mediaId)];
     const watchPosition =
       watchEntry?.runs.at(-1)?.episodes[String(episode)]?.position;
@@ -1221,10 +1246,7 @@ async function play(
         state.watch[String(mediaId)]?.runs.at(-1)?.episodes[String(episode)]
           ?.watched ?? isWatched(state.progress[`${mediaId}:${episode}`]),
       isAdult: "isAdult" in anime ? anime.isAdult === true : resume?.isAdult,
-      episodeTitle:
-        resume?.episodeTitle ??
-        episodeInfo?.items.find((e) => e.number === episode)?.title ??
-        `Episode ${episode}`,
+      episodeTitle: resume?.episodeTitle ?? `Episode ${episode}`,
       season: resume?.season ?? (anime.title.english || anime.title.romaji),
       malId: anime.idMal,
       totalEpisodes: anime.episodes,
@@ -1250,6 +1272,19 @@ async function play(
       episodeTitle: current.episodeTitle,
       release: selected,
     });
+    if (!resume?.episodeTitle) {
+      void providers
+        .episodes(mediaId, Math.ceil(episode / 50))
+        .then((data) => {
+          if (request !== playbackRequest || player !== active || !current)
+            return;
+          const title = data.items.find(
+            (item) => item.number === episode,
+          )?.title;
+          if (title) current.episodeTitle = active.status.episodeTitle = title;
+        })
+        .catch(() => {});
+    }
     void (resume ? providers.media(mediaId) : Promise.resolve(anime))
       .then(async (media) => {
         if (episodeAvailability(media as any, episode + 1).released === true) {
@@ -1874,6 +1909,11 @@ else {
       providers.initCache(join(userRoot, "provider-cache.json"));
       loadProfile(state.profiles.active);
       save();
+      readyToSave = true;
+      setInterval(
+        () => void syncUncontested().catch(() => {}),
+        5 * 60000,
+      ).unref();
       const dev = process.env.NEN_DEV_URL;
       const entry = pathToFileURL(join(__dirname, "../dist/index.html")).href;
       const allowed = dev ? new URL(dev).origin : entry;
@@ -1941,18 +1981,15 @@ else {
         maximized = false;
       });
       window.on("close", (event) => {
+        if (savedBeforeQuit) return;
+        event.preventDefault();
         if (miniWindow && !closing) {
-          event.preventDefault();
           stop();
           window.show();
           window.focus();
           return;
         }
-        closing = true;
-        stop();
-        const { width, height } = window.getNormalBounds();
-        state.window = { width, height, maximized };
-        save();
+        app.quit();
       });
       if (maximized) window.maximize();
       window.on("app-command", (event, command) => {
@@ -2137,106 +2174,14 @@ else {
       });
       handle("watchEdit", async (id, patch) => {
         const mediaId = positive(id);
-        if (!patch || typeof patch !== "object")
-          throw Error("Invalid watch edit.");
-        const entry = structuredClone(
+        editWatch(
+          state,
           state.watch[String(mediaId)] ??
             newEntry(await providers.media(mediaId)),
+          patch,
         );
-        if (
-          patch.count !== undefined &&
-          (!Number.isSafeInteger(patch.count) ||
-            patch.count < 0 ||
-            (entry.totalEpisodes != null && patch.count > entry.totalEpisodes))
-        )
-          throw Error("Episode progress exceeds the valid range.");
-        const now = Date.now();
-        if (patch.startRewatch) {
-          if (entry.status !== "COMPLETED")
-            throw Error("Complete the anime before a rewatch.");
-          activeRun(entry).completed ??= now;
-          entry.runs.push({ started: now, episodes: {}, count: 0 });
-          entry.status = "REPEATING";
-          entry.count = 0;
-          entry.statusUpdated = entry.countUpdated = now;
-          for (const saved of Object.values(state.progress)) {
-            if (saved.mediaId === entry.mediaId) {
-              saved.position = 0;
-              saved.watched = false;
-              saved.updated = now;
-            }
-          }
-          if (current?.mediaId === entry.mediaId) current = undefined;
-        }
-        if (patch.status !== undefined) {
-          if (!statuses.includes(patch.status as WatchStatus))
-            throw Error("Invalid watch status.");
-          entry.status = patch.status;
-          entry.statusUpdated = now;
-          if (patch.status === "COMPLETED") {
-            const run = activeRun(entry);
-            if (!run.completed) {
-              run.completed = now;
-              if (entry.runs.length > 1) {
-                entry.repeat++;
-                entry.repeatUpdated = now;
-              }
-            }
-          }
-        }
-        if (patch.count !== undefined) {
-          entry.count = patch.count;
-          entry.countUpdated = now;
-          activeRun(entry).count = patch.count;
-        }
-        if (patch.episode !== undefined) {
-          const episode = positive(patch.episode, 100000);
-          if (patch.watched !== undefined && typeof patch.watched !== "boolean")
-            throw Error("Invalid watched mark.");
-          for (const value of [patch.position, patch.duration])
-            if (
-              value !== undefined &&
-              (!Number.isFinite(value) || value < 0 || value > 1000000)
-            )
-              throw Error("Invalid playback time.");
-          markEpisode(entry, episode, {
-            watched: patch.watched,
-            position: patch.position,
-            duration: patch.duration,
-          });
-          if (patch.watched !== undefined)
-            activeRun(entry).episodes[String(episode)].manual = true;
-          if (patch.watched === true && entry.status === "PLANNING") {
-            entry.status = "CURRENT";
-            entry.statusUpdated = now;
-          }
-          if (
-            patch.watched === true &&
-            entry.totalEpisodes &&
-            entry.count >= entry.totalEpisodes
-          ) {
-            entry.status = "COMPLETED";
-            entry.statusUpdated = now;
-            const run = activeRun(entry);
-            if (!run.completed) {
-              run.completed = now;
-              if (entry.runs.length > 1) {
-                entry.repeat++;
-                entry.repeatUpdated = now;
-              }
-            }
-          }
-        }
-        entry.updated = now;
-        state.watch[String(mediaId)] = entry;
-        if (patch.episode !== undefined) {
-          const saved = state.progress[`${mediaId}:${patch.episode}`];
-          if (saved) {
-            if (patch.position !== undefined) saved.position = patch.position;
-            if (patch.watched !== undefined) saved.watched = patch.watched;
-            saved.updated = now;
-          }
-        }
+        if (patch.startRewatch && current?.mediaId === mediaId)
+          current = undefined;
         save();
         queueSync();
         return state;
@@ -2448,7 +2393,8 @@ else {
         save();
         return state;
       });
-      handle("profileDelete", (id) => {
+      handle("profileDelete", async (id) => {
+        await flushWrites();
         const profile = findProfile(id);
         if (profile.id === state.profiles!.active)
           throw Error("Switch to another profile before deleting this one.");
@@ -3005,6 +2951,7 @@ else {
         if (!Object.hasOwn(urls, target)) throw Error("Invalid link.");
         return shell.openExternal(urls[target]);
       });
+      window.on("focus", () => void syncUncontested().catch(() => {}));
       if (dev) void window.loadURL(dev);
       else void window.loadFile(join(__dirname, "../dist/index.html"));
     })
@@ -3012,11 +2959,36 @@ else {
       dialog.showErrorBox("Nen could not start", String(error));
       app.quit();
     });
-  app.on("before-quit", () => {
-    together.disconnect();
+  let savedBeforeQuit = false;
+  let savingBeforeQuit = false;
+  app.on("before-quit", (event) => {
+    if (savedBeforeQuit) return;
+    event.preventDefault();
+    if (savingBeforeQuit) return;
+    savingBeforeQuit = true;
     closing = true;
+    together.disconnect();
     discordPresence.close();
-    stop();
+    void (async () => {
+      if (readyToSave) {
+        stop();
+        if (window && !window.isDestroyed()) {
+          const { width, height } = window.getNormalBounds();
+          state.window = { width, height, maximized: window.isMaximized() };
+        }
+        save();
+      }
+      await flushWrites();
+    })()
+      .then(() => {
+        savedBeforeQuit = true;
+        app.quit();
+      })
+      .catch((error) => {
+        closing = false;
+        savingBeforeQuit = false;
+        dialog.showErrorBox("Nen could not save before closing", String(error));
+      });
   });
   app.on("window-all-closed", () => app.quit());
 }
