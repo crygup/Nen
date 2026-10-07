@@ -2936,6 +2936,23 @@ dialog:has(#settings, #help-content) h2 {
   max-height: 180px;
   overflow-y: auto;
 }
+
+.private-indicator {
+  color: #63b4ff;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  font-size: 12px;
+}
+.private-indicator svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.private-indicator[hidden] {
+  display: none;
+}
 .shelf-dice {
   opacity: 0;
   transition:
@@ -2974,4 +2991,14 @@ dialog:has(#settings, #help-content) h2 {
 .shelf-dice:focus-visible {
   color: var(--accent);
   transform: none;
+}
+
+.sidebar .private-indicator {
+  gap: 12px;
+  padding: 12px 14px;
+  font-size: 13px;
+}
+.sidebar .private-indicator svg {
+  width: 18px;
+  height: 18px;
 }

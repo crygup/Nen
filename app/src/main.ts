@@ -310,7 +310,7 @@ function showTogether() {
   );
 }
 function shell() {
-  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button>${api.local ? `<button data-nav="local" hidden>${uiIcon("folder")} Local files</button>` : ""}</nav><div class="sidebar-bottom"><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<aside class="sidebar"><nav aria-label="Main"><button data-nav="home">${uiIcon("home")} Home</button><button data-nav="watchlist">${uiIcon("lists")} Lists</button><button data-nav="together">${uiIcon("together")} Watch together</button><button data-nav="browse">${uiIcon("browse")} Browse</button>${api.local ? `<button data-nav="local" hidden>${uiIcon("folder")} Local files</button>` : ""}</nav><div class="sidebar-bottom"><span class="private-indicator" ${state.settings.privateSession ? "" : "hidden"} title="Private session" aria-label="Private session">${uiIcon("account")} Private session</span><button data-nav="help">${uiIcon("help")} Help</button><button data-nav="settings">${uiIcon("settings")} Settings</button></div></aside><div class="workspace"><header class="topbar"><div id="page-title"></div><form id="search" role="search"><label class="sr-only" for="search-input">Search anime</label>${uiIcon("search")}<input id="search-input" type="text" role="combobox" aria-autocomplete="list" aria-controls="search-suggestions" aria-expanded="false" placeholder="Search for anime" autocomplete="off" maxlength="200"><button type="button" id="clear-search" class="square-button" aria-label="Clear search" hidden>${uiIcon("close")}</button><div id="search-suggestions" role="listbox" aria-label="Anime suggestions" hidden></div></form><div id="page-actions"></div></header><div id="message" role="alert" hidden></div><main id="main" tabindex="-1"></main></div><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const input = document.querySelector<HTMLInputElement>("#search-input")!;
   const results = document.querySelector<HTMLElement>("#search-suggestions")!;
   const clear = document.querySelector<HTMLButtonElement>("#clear-search")!;
@@ -325,7 +325,7 @@ function shell() {
       recentSearches = saved.filter((v) => typeof v === "string").slice(0, 5);
   } catch {}
   const remember = (value: string) => {
-    if (!value) return;
+    if (!value || state.settings.privateSession) return;
     recentSearches = [
       value,
       ...recentSearches.filter((s) => s !== value),
@@ -1188,6 +1188,7 @@ async function releasePicker(m: Media, ep: number) {
   }
 }
 async function chooseRewatch(id: number): Promise<boolean> {
+  if (state.settings.privateSession) return true;
   if (state.watch[String(id)]?.status !== "COMPLETED") return true;
   const choice = await new Promise<string>((resolve) => {
     const d = dialog(
@@ -2281,7 +2282,7 @@ function settings() {
     profileSection(profiles, d);
   }
   const transfer = document.createElement("section");
-  transfer.innerHTML = `<h3 id="anilist-heading" class="local-data-heading">${state.profiles ? `AniList for ${esc(activeProfileName())}` : "AniList"}</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Refresh</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export watch data</button><button id="watch-import" type="button">Import watch data</button></div>`;
+  transfer.innerHTML = `<h3 id="anilist-heading" class="local-data-heading">${state.profiles ? `AniList for ${esc(activeProfileName())}` : "AniList"}</h3><p id="anilist-state" ${!state.anilist.connected && !state.anilist.error ? "hidden" : ""}>${state.anilist.connected ? `${state.anilist.lastSync ? `Last sync: ${new Date(state.anilist.lastSync).toLocaleString()}.` : "No sync yet."}` : ""}</p><div class="actions">${state.anilist.connected ? '<button id="anilist-sync" type="button">Refresh</button><button id="anilist-disconnect" type="button">Disconnect</button>' : '<button id="anilist-connect" type="button">Connect AniList</button>'}</div><hr><h3 class="local-data-heading">Local data</h3><div class="actions"><button id="clear-cache" type="button">Clear downloaded cache</button><button id="clear-history" type="button">Clear watch history</button></div><div class="actions watch-transfer-actions"><button id="watch-export" type="button">Export backup</button><button id="watch-import" type="button">Restore backup</button></div>`;
   d.querySelector("#settings-account")!.append(transfer);
   const accountSettings = () => {
     settings();
@@ -2456,7 +2457,7 @@ function settings() {
   transfer.querySelector<HTMLElement>("#watch-export")!.onclick = () =>
     void run(async () => {
       const path = await api.watchExport();
-      if (path) showToast(`Saved watch data to ${path}`, d);
+      if (path) showToast(`Saved backup to ${path}`, d);
     });
   transfer.querySelector<HTMLElement>("#watch-import")!.onclick = () =>
     void run(async () => {
@@ -2464,7 +2465,7 @@ function settings() {
       if (!summary) return;
       d.close();
       const review = dialog(
-        `<h2 id="dialog-title">Import watch data</h2><p>${summary.count} anime, ${summary.episodes} episode records. ${summary.newEntries} new anime and ${summary.changedEntries} existing anime.</p><p>Choose Merge to keep newer changes from each file. Replace removes all current watch entries. Nen will save a backup first.${state.anilist.connected ? " AniList entries can return on the next sync. Nen will not delete them from AniList." : ""}</p><div class="actions"><button id="import-merge" class="primary">Merge</button><button id="import-replace">Replace</button></div>`,
+        `<h2 id="dialog-title">Restore backup</h2><p>${summary.count} anime, ${summary.episodes} episode records. ${summary.newEntries} new anime and ${summary.changedEntries} existing anime.</p><p>Merge keeps newer watch records and current preferences, and adds missing favorites and custom-list items. Replace restores the sections included in the file. Old watch-only files still work. Account logins and downloaded video files are not included. Nen will save a backup first.${state.anilist.connected ? " AniList entries can return on the next sync. Nen will not delete them from AniList." : ""}</p><div class="actions"><button id="import-merge" class="primary">Merge</button><button id="import-replace">Replace</button></div>`,
       );
       for (const mode of ["merge", "replace"] as const)
         review.querySelector<HTMLElement>(`#import-${mode}`)!.onclick = () =>
@@ -2472,14 +2473,19 @@ function settings() {
             if (
               mode === "replace" &&
               !confirm(
-                "Replace all current watch data? A backup will be saved.",
+                "Replace the saved sections with this backup? A backup of current data will be saved.",
               )
             )
               return;
             state = await api.watchImport(mode);
             review.close();
-            showToast("Watch data imported.");
-            if (state.anilist.connected) await showSyncReview();
+            showToast("Backup restored.");
+            applyTheme();
+            document
+              .querySelectorAll<HTMLElement>(".private-indicator")
+              .forEach((el) => (el.hidden = !state.settings.privateSession));
+            if (state.anilist.connected && !state.settings.privateSession)
+              await showSyncReview();
             else if (route === "watchlist") await watchlist();
             if (route === "home") await home();
           });
@@ -2534,6 +2540,7 @@ function settings() {
       autoSkip: f.has("autoSkip"),
       autoNext: f.has("autoNext"),
       discordPresence: f.has("discordPresence"),
+      privateSession: f.has("privateSession"),
       autoUpdates: f.has("autoUpdates"),
       showAdult: f.has("showAdult"),
       hideZeroSeeds: f.has("hideZeroSeeds"),
@@ -2546,6 +2553,11 @@ function settings() {
       .join(", ");
     saveQueue = saveQueue
       .then(() => api.settings(next))
+      .then(() => {
+        document
+          .querySelectorAll<HTMLElement>(".private-indicator")
+          .forEach((el) => (el.hidden = !next.privateSession));
+      })
       .then(() => {
         message.textContent = "";
       })

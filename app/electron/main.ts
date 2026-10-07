@@ -1,3 +1,4 @@
+import { exportBackup, readBackup, restoreBackup } from "./backup";
 import { malAccount } from "./mal-account";
 import { malClient, type MalTokens } from "./myanimelist";
 import { signInMal } from "./mal-auth";
@@ -43,13 +44,14 @@ import * as providers from "./providers";
 import { Player } from "./player";
 import {
   readFollowing,
-  syncFavorites,
   setRemoteWatch,
   setRemoteFavorite,
   readRemote,
-  refreshRemote,
-  preview as previewAniList,
-  apply as applyAniList,
+  refreshAccount,
+  previewAccount,
+  syncAccount,
+  applyAccountReview,
+  type AccountReview,
 } from "./anilist";
 import {
   markEpisode,
@@ -57,8 +59,6 @@ import {
   migrateProgress,
   newEntry,
   statuses,
-  validateTransfer,
-  mergeWatch,
   activeRun,
 } from "./watch-data";
 import {
@@ -160,12 +160,7 @@ let importFile: string | undefined;
 let lastScreenshot: string | undefined;
 let tokenPath: string;
 let cancelSignIn: ((error: Error) => void) | undefined;
-let syncPreview:
-  | {
-      remote: Awaited<ReturnType<typeof readRemote>>["entries"];
-      changes: SyncChange[];
-    }
-  | undefined;
+let syncPreview: AccountReview | undefined;
 let syncTimer: ReturnType<typeof setTimeout> | undefined;
 let syncRunning = false;
 declare const NEN_MAL_APP_ID: string;
@@ -198,6 +193,7 @@ const malAccounts = malAccount(
 );
 
 async function refreshAniList() {
+  if (state.settings.privateSession) return;
   const deadline = Date.now() + 120000;
   while (syncRunning || malAccounts.busy) {
     if (Date.now() > deadline)
@@ -209,9 +205,7 @@ async function refreshAniList() {
   if (!state.anilist.connected) throw Error("Connect AniList first.");
   syncRunning = true;
   try {
-    const remote = await readRemote(getToken());
-    await refreshRemote(state.watch, remote.entries, state.anilist);
-    state.anilist.user = remote.user;
+    await refreshAccount(getToken(), state);
     syncPreview = undefined;
     save();
     if (window && !window.isDestroyed())
@@ -222,6 +216,7 @@ async function refreshAniList() {
   }
 }
 async function refreshAccounts() {
+  if (state.settings.privateSession) return;
   for (const service of ["anilist", "mal"] as const) {
     if (!state[service]?.connected) continue;
     try {
@@ -235,6 +230,7 @@ async function refreshAccounts() {
   }
 }
 function queueSync() {
+  if (state.settings.privateSession) return;
   if (syncTimer || (!state.anilist.connected && !state.mal?.connected)) return;
   syncTimer = setTimeout(() => {
     syncTimer = undefined;
@@ -242,6 +238,7 @@ function queueSync() {
   }, 12000);
 }
 async function syncUncontested() {
+  if (state.settings.privateSession) return;
   if (syncRunning || malAccounts.busy || malAccounts.reviewing) return;
   if (!state.anilist.connected || !state.anilist.lastSync || syncPreview) {
     await malAccounts.sync();
@@ -249,22 +246,7 @@ async function syncUncontested() {
   }
   syncRunning = true;
   try {
-    await syncFavorites(getToken(), state.favorites, state.favoriteChanges);
-    const remote = await readRemote(getToken());
-    const changes = previewAniList(
-      state.watch,
-      remote.entries,
-      state.anilist,
-    ).changes;
-    await applyAniList(
-      getToken(),
-      state.watch,
-      remote.entries,
-      state.anilist,
-      changes.filter((row) => !row.conflict),
-    );
-    if (changes.some((row) => row.conflict))
-      state.anilist.error = "Some AniList changes need review. Use Refresh.";
+    await syncAccount(getToken(), state);
     save();
     if (window && !window.isDestroyed())
       window.webContents.send("watch-state", state);
@@ -624,7 +606,7 @@ async function switchProfile(id: unknown) {
   save();
   nativeTheme.themeSource = state.settings.theme;
   discordPresence.update(
-    state.settings.discordPresence === true,
+    state.settings.discordPresence === true && !state.settings.privateSession,
     undefined,
     together.state,
   );
@@ -650,6 +632,7 @@ let localCurrent:
     }
   | undefined;
 function record() {
+  if (state.settings.privateSession) return;
   if (localCurrent && player) {
     try {
       localFiles.record(
@@ -713,7 +696,7 @@ const together = new Together({
   },
   changed: (value) => {
     discordPresence.update(
-      state.settings.discordPresence === true,
+      state.settings.discordPresence === true && !state.settings.privateSession,
       player?.status,
       value,
     );
@@ -770,7 +753,7 @@ function publish() {
           ? selected.group
           : selected.source;
     discordPresence.update(
-      state.settings.discordPresence === true,
+      state.settings.discordPresence === true && !state.settings.privateSession,
       player?.status,
       together.state,
     );
@@ -800,7 +783,7 @@ function stop(
 ) {
   let page: Promise<void> | undefined;
   discordPresence.update(
-    state.settings.discordPresence === true,
+    state.settings.discordPresence === true && !state.settings.privateSession,
     undefined,
     together.state,
   );
@@ -2015,6 +1998,21 @@ else {
             !(dev ? url.startsWith(allowed + "/") : url.split("?")[0] === entry)
           )
             throw Error("Untrusted request.");
+          if (
+            state.settings.privateSession &&
+            [
+              "anilistPreview",
+              "anilistApply",
+              "anilistRefresh",
+              "malRefresh",
+              "malPreview",
+              "malApply",
+              "listImport",
+              "listMergePreview",
+              "listMergeApply",
+            ].includes(name)
+          )
+            throw Error("Turn off Private session to sync accounts.");
           return fn(...args);
         });
       }
@@ -2075,11 +2073,11 @@ else {
             ? (state.favorites[String(mediaId)] ??
               newEntry(await providers.media(mediaId)))
             : undefined;
-          if (state.anilist.connected)
+          if (state.anilist.connected && !state.settings.privateSession)
             await setRemoteFavorite(getToken(), mediaId, favorite);
           if (entry) state.favorites[String(mediaId)] = entry;
           else delete state.favorites[String(mediaId)];
-          if (state.anilist.connected)
+          if (state.anilist.connected && !state.settings.privateSession)
             delete state.favoriteChanges[String(mediaId)];
           else state.favoriteChanges[String(mediaId)] = favorite;
           save();
@@ -2100,7 +2098,7 @@ else {
           );
           entry.status = "PLANNING";
           entry.statusUpdated = entry.updated = Date.now();
-          if (state.anilist.connected) {
+          if (state.anilist.connected && !state.settings.privateSession) {
             await setRemoteWatch(getToken(), mediaId, entry);
             state.anilist.baseline[String(mediaId)] = {
               status: entry.status,
@@ -2124,7 +2122,7 @@ else {
           throw Error("Account sync is running. Try again shortly.");
         syncRunning = true;
         try {
-          if (sync && state.anilist.connected)
+          if (sync && state.anilist.connected && !state.settings.privateSession)
             await setRemoteWatch(getToken(), mediaId);
           delete state.watch[String(mediaId)];
           delete state.anilist.baseline[String(mediaId)];
@@ -2247,7 +2245,7 @@ else {
       handle("watchExport", async () => {
         const path = (
           await dialog.showSaveDialog(window, {
-            defaultPath: `nen-watch-data-${activeProfile().name.replace(/[^\w-]+/g, "-")}.json`,
+            defaultPath: `nen-backup-${activeProfile().name.replace(/[^\w-]+/g, "-")}.json`,
             filters: [{ name: "JSON", extensions: ["json"] }],
           })
         ).filePath;
@@ -2256,10 +2254,8 @@ else {
           path,
           JSON.stringify(
             {
-              version: 1,
-              exportedAt: Date.now(),
+              ...exportBackup(state),
               profile: { name: activeProfile().name },
-              entries: Object.values(state.watch),
             },
             null,
             2,
@@ -2278,7 +2274,7 @@ else {
         const data = readFileSync(path);
         if (data.length > 50 * 1024 * 1024)
           throw Error("Watch data file is too large.");
-        const entries = validateTransfer(JSON.parse(data.toString("utf8")));
+        const entries = readBackup(JSON.parse(data.toString("utf8"))).watch;
         importFile = path;
         return {
           count: Object.keys(entries).length,
@@ -2295,13 +2291,15 @@ else {
       handle("watchImport", (mode) => {
         if (!importFile || !["merge", "replace"].includes(mode))
           throw Error("Select a watch data file first.");
-        const entries = validateTransfer(
+        const imported = readBackup(
           JSON.parse(readFileSync(importFile, "utf8")),
         );
+        const next = restoreBackup(state, imported, mode);
+        next.settings = settings(next.settings);
         const backup = profileBackup(`.before-import-${Date.now()}.json`);
-        copyFileSync(profileFile(userRoot, state.profiles!.active), backup);
-        if (mode === "replace") state.watch = entries;
-        else mergeWatch(state.watch, entries);
+        writeFileSync(backup, JSON.stringify(exportBackup(state), null, 2));
+        state = next;
+        nativeTheme.themeSource = state.settings.theme;
         importFile = undefined;
         save();
         queueSync();
@@ -2366,20 +2364,9 @@ else {
           throw Error("Account sync is running. Try again shortly.");
         syncRunning = true;
         try {
-          await syncFavorites(
-            getToken(),
-            state.favorites,
-            state.favoriteChanges,
-          );
-          const remote = await readRemote(getToken());
-          state.anilist.user = remote.user;
+          const { result, review } = await previewAccount(getToken(), state);
           state.anilist.error = undefined;
-          const result = previewAniList(
-            state.watch,
-            remote.entries,
-            state.anilist,
-          );
-          syncPreview = { remote: remote.entries, changes: result.changes };
+          syncPreview = review;
           save();
           return result;
         } catch (error) {
@@ -2391,30 +2378,11 @@ else {
         }
       });
       handle("anilistApply", async (choices: SyncChange[]) => {
-        if (!syncPreview || !Array.isArray(choices))
-          throw Error("Review AniList changes first.");
-        const expected = syncPreview.changes;
-        if (
-          choices.length !== expected.length ||
-          choices.some(
-            (row, i) =>
-              row.mediaId !== expected[i].mediaId ||
-              row.field !== expected[i].field ||
-              !["local", "remote", undefined].includes(row.choice),
-          )
-        )
-          throw Error("Sync review changed. Review again.");
         if (syncRunning || malAccounts.busy || malAccounts.reviewing)
           throw Error("Account sync is running. Try again shortly.");
         syncRunning = true;
         try {
-          await applyAniList(
-            getToken(),
-            state.watch,
-            syncPreview.remote,
-            state.anilist,
-            expected.map((row, i) => ({ ...row, choice: choices[i].choice })),
-          );
+          await applyAccountReview(getToken(), state, syncPreview, choices);
           syncPreview = undefined;
           save();
           return state;
@@ -2444,7 +2412,17 @@ else {
           if (raw.length > 50 * 1024 * 1024)
             throw Error("Watch data file is too large.");
           const file = JSON.parse(raw.toString("utf8"));
-          data = { watch: validateTransfer(file) };
+          const restored = restoreBackup(
+            structuredClone(defaults),
+            readBackup(file),
+            "replace",
+          );
+          data = {
+            watch: restored.watch,
+            favorites: restored.favorites,
+            settings: settings(restored.settings),
+            seriesAudio: restored.seriesAudio,
+          };
           fileName = file.profile?.name;
         }
         const typed = typeof name === "string" ? name.trim() : "";
@@ -2925,9 +2903,22 @@ else {
         );
       });
       handle("settings", (value) => {
+        if (
+          value.privateSession !== state.settings.privateSession &&
+          (syncRunning || malAccounts.busy)
+        )
+          throw Error(
+            "Wait for account sync to finish before changing Private session.",
+          );
         state.settings = { ...state.settings, ...settings(value) };
+        if (state.settings.privateSession) {
+          clearTimeout(syncTimer);
+          syncTimer = undefined;
+        }
+        if (!state.settings.prepareNext) cancelPreparation();
         discordPresence.update(
-          state.settings.discordPresence === true,
+          state.settings.discordPresence === true &&
+            !state.settings.privateSession,
           player?.status,
           together.state,
         );

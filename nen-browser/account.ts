@@ -2,10 +2,11 @@ import { malAccount } from "../app/electron/mal-account";
 import {
   readFollowing,
   readRemote,
-  refreshRemote,
-  preview,
-  apply,
-  syncFavorites,
+  refreshAccount,
+  previewAccount,
+  syncAccount,
+  applyAccountReview,
+  type AccountReview,
   setRemoteWatch,
   setRemoteFavorite,
 } from "../app/electron/anilist";
@@ -13,12 +14,7 @@ import type { State, SyncChange, WatchEntry } from "../app/src/shared";
 
 export function connectAccount(getState: () => State, save: () => void) {
   let token = sessionStorage.getItem("nen-anilist-token") || "";
-  let review:
-    | {
-        remote: Awaited<ReturnType<typeof readRemote>>["entries"];
-        changes: SyncChange[];
-      }
-    | undefined;
+  let review: AccountReview | undefined;
   let busy = false;
   const malWeb = async (path: string, body: object = {}) => {
     const response = await fetch("/nen-mal/" + path, {
@@ -73,6 +69,8 @@ export function connectAccount(getState: () => State, save: () => void) {
 
   getState().anilist.connected = !!token;
   async function refreshAniList() {
+    if (getState().settings.privateSession)
+      throw Error("Turn off Private session to sync accounts.");
     const deadline = Date.now() + 120000;
     while (busy || mal.busy) {
       if (Date.now() > deadline)
@@ -84,10 +82,8 @@ export function connectAccount(getState: () => State, save: () => void) {
     if (!token) throw Error("Connect AniList first.");
     busy = true;
     try {
-      const state = getState(),
-        remote = await readRemote(token);
-      await refreshRemote(state.watch, remote.entries, state.anilist);
-      state.anilist.user = remote.user;
+      const state = getState();
+      await refreshAccount(token, state);
       review = undefined;
       save();
       return structuredClone(state);
@@ -97,6 +93,7 @@ export function connectAccount(getState: () => State, save: () => void) {
   }
   const sync = async () => {
     const state = getState();
+    if (state.settings.privateSession) return;
     if (
       busy ||
       mal.busy ||
@@ -108,22 +105,7 @@ export function connectAccount(getState: () => State, save: () => void) {
       return;
     busy = true;
     try {
-      await syncFavorites(token, state.favorites, state.favoriteChanges);
-      const remote = await readRemote(token);
-      const changes = preview(
-        state.watch,
-        remote.entries,
-        state.anilist,
-      ).changes;
-      await apply(
-        token,
-        state.watch,
-        remote.entries,
-        state.anilist,
-        changes.filter((row) => !row.conflict),
-      );
-      if (changes.some((row) => row.conflict))
-        state.anilist.error = "Some AniList changes need review. Use Refresh.";
+      await syncAccount(token, state);
     } catch (e) {
       state.anilist.error = String(e);
     } finally {
@@ -191,6 +173,8 @@ export function connectAccount(getState: () => State, save: () => void) {
       cancelMerge: async () => mal.cancelMerge(),
     },
     remoteWatch: async (id: number, entry?: WatchEntry) => {
+      if (getState().settings.privateSession)
+        throw Error("Turn off Private session to sync accounts.");
       if (busy || mal.busy || mal.reviewing)
         throw Error("AniList sync is running.");
       if (token) {
@@ -210,6 +194,8 @@ export function connectAccount(getState: () => State, save: () => void) {
       review = undefined;
     },
     remoteFavorite: async (id: number, favorite: boolean) => {
+      if (getState().settings.privateSession)
+        throw Error("Turn off Private session to sync accounts.");
       if (busy || mal.busy || mal.reviewing)
         throw Error("AniList sync is running.");
       if (token) {
@@ -308,50 +294,31 @@ export function connectAccount(getState: () => State, save: () => void) {
       return structuredClone(getState());
     },
     anilistPreview: async () => {
+      if (getState().settings.privateSession)
+        throw Error("Turn off Private session to sync accounts.");
       if (busy || mal.busy || mal.reviewing)
         throw Error("AniList sync is running. Try again shortly.");
       if (!token) throw Error("Connect AniList first.");
       busy = true;
       try {
         const state = getState();
-        await syncFavorites(token, state.favorites, state.favoriteChanges);
-        const remote = await readRemote(token);
-        state.anilist.user = remote.user;
-        const result = preview(state.watch, remote.entries, state.anilist);
-        review = { remote: remote.entries, changes: result.changes };
+        const next = await previewAccount(token, state);
+        review = next.review;
         save();
-        return result;
+        return next.result;
       } finally {
         busy = false;
       }
     },
     anilistApply: async (choices: SyncChange[]) => {
+      if (getState().settings.privateSession)
+        throw Error("Turn off Private session to sync accounts.");
       if (busy || mal.busy || mal.reviewing)
         throw Error("AniList sync is running.");
-      if (
-        !review ||
-        choices.length !== review.changes.length ||
-        choices.some(
-          (r, i) =>
-            r.mediaId !== review!.changes[i].mediaId ||
-            r.field !== review!.changes[i].field ||
-            !["local", "remote", undefined].includes(r.choice),
-        )
-      )
-        throw Error("Review AniList changes again.");
       busy = true;
       try {
         const state = getState();
-        await apply(
-          token,
-          state.watch,
-          review.remote,
-          state.anilist,
-          review.changes.map((row, i) => ({
-            ...row,
-            choice: choices[i].choice,
-          })),
-        );
+        await applyAccountReview(token, state, review, choices);
         review = undefined;
         save();
         return structuredClone(state);

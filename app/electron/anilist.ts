@@ -453,3 +453,66 @@ export async function readFollowing(
   followingCache = { token, expires: Date.now() + 60000, data };
   return data;
 }
+
+export type AccountReview = {
+  remote: Record<string, RemoteEntry>;
+  changes: SyncChange[];
+};
+
+export async function refreshAccount(token: string, state: State) {
+  const remote = await readRemote(token);
+  await refreshRemote(state.watch, remote.entries, state.anilist);
+  state.anilist.user = remote.user;
+}
+
+export async function previewAccount(token: string, state: State) {
+  await syncFavorites(token, state.favorites, state.favoriteChanges);
+  const remote = await readRemote(token);
+  state.anilist.user = remote.user;
+  const result = preview(state.watch, remote.entries, state.anilist);
+  return {
+    result,
+    review: { remote: remote.entries, changes: result.changes },
+  };
+}
+
+export async function syncAccount(token: string, state: State) {
+  const { review } = await previewAccount(token, state);
+  await apply(
+    token,
+    state.watch,
+    review.remote,
+    state.anilist,
+    review.changes.filter((row) => !row.conflict),
+  );
+  if (review.changes.some((row) => row.conflict))
+    state.anilist.error = "Some AniList changes need review. Use Refresh.";
+}
+
+export async function applyAccountReview(
+  token: string,
+  state: State,
+  review: AccountReview | undefined,
+  choices: SyncChange[],
+) {
+  if (
+    !review ||
+    !Array.isArray(choices) ||
+    choices.length !== review.changes.length ||
+    choices.some(
+      (row, i) =>
+        !row ||
+        row.mediaId !== review.changes[i].mediaId ||
+        row.field !== review.changes[i].field ||
+        !["local", "remote", undefined].includes(row.choice),
+    )
+  )
+    throw Error("Review AniList changes again.");
+  await apply(
+    token,
+    state.watch,
+    review.remote,
+    state.anilist,
+    review.changes.map((row, i) => ({ ...row, choice: choices[i].choice })),
+  );
+}

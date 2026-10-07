@@ -1,3 +1,8 @@
+import {
+  exportBackup,
+  readBackup,
+  restoreBackup,
+} from "../app/electron/backup";
 import { seekFrames } from "./seek-preview";
 import { validateLibrary } from "../app/src/shared";
 import { toggleFullscreen } from "./fullscreen";
@@ -110,7 +115,7 @@ if (window.parent !== window) {
     controller: AbortController | undefined,
     lastSave = 0,
     undoPosition = 0,
-    imported: Record<string, WatchEntry> | undefined;
+    imported: ReturnType<typeof readBackup> | undefined;
   const snapshot = () => structuredClone(state);
   function save(notify = false) {
     localStorage.setItem(key, JSON.stringify(state));
@@ -154,6 +159,7 @@ if (window.parent !== window) {
     }
   }
   function persistProgress() {
+    if (state.settings.privateSession) return;
     if (
       !current ||
       !p.episode ||
@@ -506,6 +512,14 @@ if (window.parent !== window) {
     },
     state: async () => snapshot(),
     settings: async (value) => {
+      if (
+        value.privateSession !== state.settings.privateSession &&
+        account.busy
+      )
+        throw Error(
+          "Wait for account sync to finish before changing Private session.",
+        );
+      validateLibrary(value);
       state.settings = { ...defaults.settings, ...value, sourceMode: "auto" };
       save();
     },
@@ -582,12 +596,8 @@ if (window.parent !== window) {
       return snapshot();
     },
     watchExport: async () => {
-      download("Nen-watch-data.json", {
-        version: 1,
-        exportedAt: Date.now(),
-        entries: Object.values(state.watch),
-      });
-      return "Nen-watch-data.json";
+      download("Nen-backup.json", exportBackup(state));
+      return "Nen-backup.json";
     },
     watchImportPreview: () =>
       new Promise((resolve) => {
@@ -600,10 +610,10 @@ if (window.parent !== window) {
             const file = input.files?.[0];
             if (!file) return resolve(null);
             if (file.size > 20_000_000) throw Error("File is too large.");
-            imported = validateTransfer(JSON.parse(await file.text()));
+            imported = readBackup(JSON.parse(await file.text()));
             resolve({
-              count: Object.keys(imported).length,
-              episodes: Object.values(imported).reduce(
+              count: Object.keys(imported.watch).length,
+              episodes: Object.values(imported.watch).reduce(
                 (n, e) =>
                   n +
                   e.runs.reduce(
@@ -612,9 +622,10 @@ if (window.parent !== window) {
                   ),
                 0,
               ),
-              newEntries: Object.keys(imported).filter((id) => !state.watch[id])
-                .length,
-              changedEntries: Object.keys(imported).filter(
+              newEntries: Object.keys(imported.watch).filter(
+                (id) => !state.watch[id],
+              ).length,
+              changedEntries: Object.keys(imported.watch).filter(
                 (id) => state.watch[id],
               ).length,
               path: file.name,
@@ -628,14 +639,15 @@ if (window.parent !== window) {
       }),
     watchImport: async (mode) => {
       if (!imported) throw Error("Choose a watch data file first.");
-      if (mode === "replace") {
-        download("Nen-watch-backup.json", {
-          version: 1,
-          entries: Object.values(state.watch),
-        });
-        state.watch = imported;
-        state.progress = {};
-      } else mergeWatch(state.watch, imported);
+      if (!["merge", "replace"].includes(mode))
+        throw Error("Invalid restore mode.");
+      const next = restoreBackup(state, imported, mode);
+      localStorage.setItem(
+        "nen-before-restore",
+        JSON.stringify(exportBackup(state)),
+      );
+      download("Nen-before-restore.json", exportBackup(state));
+      state = next;
       imported = undefined;
       save();
       return snapshot();

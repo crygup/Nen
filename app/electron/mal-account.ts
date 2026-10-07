@@ -34,6 +34,8 @@ export function malAccount(
       ]),
     );
   async function locked<T>(action: () => Promise<T>): Promise<T> {
+    if (getState().settings.privateSession)
+      throw Error("Turn off Private session to sync accounts.");
     const deadline = Date.now() + 120000;
     while (busy || otherBusy()) {
       if (Date.now() > deadline)
@@ -42,6 +44,8 @@ export function malAccount(
         );
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    if (getState().settings.privateSession)
+      throw Error("Turn off Private session to sync accounts.");
     busy = true;
     try {
       return await action();
@@ -119,6 +123,7 @@ export function malAccount(
     sync: async () => {
       const state = getState();
       if (
+        state.settings.privateSession ||
         !state.mal?.connected ||
         !state.mal.lastSync ||
         busy ||
