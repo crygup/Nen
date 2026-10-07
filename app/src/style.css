@@ -315,13 +315,13 @@ main {
   overflow: hidden;
   border-radius: 5px;
 }
-.cover img {
+.cover > img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   transition: transform 0.18s;
 }
-.poster:hover img {
+.poster:hover .cover > img {
   transform: scale(1.025);
 }
 .score {
@@ -1809,10 +1809,10 @@ dialog {
 }
 
 /* Keep the same image layer when the hover animation ends. */
-.list-card .cover img {
+.list-card .cover > img {
   transform: translateZ(0) scale(1);
 }
-.list-card:hover .cover img {
+.list-card:hover .cover > img {
   transform: translateZ(0) scale(1.025);
 }
 
@@ -1830,9 +1830,14 @@ dialog {
   margin-top: 12px;
 }
 .series-list-actions #watchlist-toggle {
-  flex: 1;
-  padding: 10px 8px;
-  font-size: 12px;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 8px;
+}
+#watchlist-toggle svg {
+  width: 20px;
+  height: 20px;
 }
 #favorite-toggle {
   flex: none;
@@ -2691,4 +2696,215 @@ dialog:has(#settings, #help-content) h2 {
 }
 #player-downloads strong {
   display: block;
+}
+
+.episode.episode-with-preview {
+  grid-template-columns: 112px 36px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 8px;
+}
+.episode-preview {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--panel);
+}
+.episode-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.episode-preview img.blurred {
+  filter: blur(12px);
+  transform: scale(1.2);
+}
+@media (max-width: 600px) {
+  .episode.episode-with-preview {
+    grid-template-columns: 80px 24px minmax(0, 1fr);
+  }
+  .episode-with-preview .episode-preview {
+    width: 80px;
+  }
+  .episode-with-preview .episode-badges {
+    grid-column: 3;
+  }
+}
+
+.save-menu {
+  display: grid;
+  gap: 0.65rem;
+}
+.shelf-drop-zone {
+  min-height: 90px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+.shelf-order-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 0;
+}
+.shelf-order-row > span:nth-child(2) {
+  flex: 1;
+}
+.drag-handle {
+  cursor: grab;
+}
+#shelf-editor {
+  max-height: 55vh;
+  overflow: auto;
+}
+.following-card {
+  position: relative;
+}
+.following-avatars {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  z-index: 2;
+}
+.following-avatars img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--panel);
+  display: block;
+}
+
+.shelf-rows {
+  min-height: 42px;
+}
+.shelf-rows:empty::after {
+  content: "Drop shelves here";
+  display: block;
+  padding: 12px;
+  color: var(--muted);
+}
+.shelf-order-row {
+  border-radius: 5px;
+  padding: 8px;
+  background: var(--bg);
+  margin-bottom: 6px;
+  cursor: grab;
+}
+.shelf-order-row.dragging {
+  opacity: 0.25;
+}
+.shelf-drop-zone[data-hidden="true"] .shelf-order-row {
+  padding: 10px 8px;
+}
+.save-menu {
+  gap: 16px;
+}
+.save-menu label {
+  display: grid;
+  gap: 8px;
+}
+
+.friend-avatar {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+}
+.friend-avatar[hidden] {
+  display: none;
+}
+.following-avatars.overlap {
+  gap: 0;
+}
+.following-avatars.overlap .friend-avatar + .friend-avatar {
+  margin-left: -13px;
+}
+.friend-avatar:hover,
+.friend-avatar:focus {
+  z-index: 3;
+}
+.friend-tooltip {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 0;
+  width: max-content;
+  max-width: 150px;
+  white-space: normal;
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 6px 9px;
+  font-size: 12px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: 0 2px 8px #0007;
+  transition: opacity 0.12s;
+}
+.friend-avatar:hover .friend-tooltip,
+.friend-avatar:focus .friend-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+.related-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+}
+.related-list img {
+  width: 48px;
+  height: 70px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+}
+.shelf-drop-zone > h3 {
+  margin-bottom: 16px;
+}
+.shelf-dice {
+  opacity: 0;
+  transition:
+    opacity 120ms ease,
+    color 120ms ease;
+  flex-shrink: 0;
+}
+.home-section:hover .shelf-dice,
+.home-section:focus-within .shelf-dice {
+  opacity: 1;
+}
+.section-heading:has(.shelf-dice) > .actions {
+  margin-left: auto;
+}
+@media (hover: none) {
+  .shelf-dice {
+    opacity: 1;
+  }
+}
+
+.section-heading:has(.shelf-dice) {
+  column-gap: 6px;
+}
+.shelf-dice,
+.shelf-dice:hover {
+  margin-left: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+}
+
+.shelf-dice:hover,
+.shelf-dice:focus-visible {
+  color: var(--accent);
+  transform: none;
 }

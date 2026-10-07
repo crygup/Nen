@@ -21,6 +21,7 @@ export function matchSubtitle<T extends { lang?: string; title?: string }>(
 }
 export type SegmentType = "op" | "ed" | "mixed-op" | "mixed-ed" | "recap";
 export interface Media {
+  trailer?: { site: string; id: string };
   isAdult?: boolean;
   id: number;
   idMal: number | null;
@@ -39,13 +40,14 @@ export interface Media {
   tags?: { name: string; rank: number }[];
   nextAiringEpisode: { episode: number; airingAt?: number } | null;
   airingSchedule?: { nodes: { episode: number; airingAt: number }[] };
-  streamingEpisodes?: { title: string }[];
+  streamingEpisodes?: { title: string; thumbnail?: string }[];
   relations?: {
     edges: {
       relationType: string;
       node: {
         id: number;
         title: { english?: string | null; romaji: string };
+        coverImage?: { large: string };
         episodes?: number | null;
         format: string;
         type: string;
@@ -98,6 +100,7 @@ export interface Marker {
   confirmed: boolean;
 }
 export interface EpisodeInfo {
+  thumbnail?: string;
   number: number;
   title: string;
   airingAt: number | null;
@@ -109,7 +112,35 @@ export interface EpisodePage {
   latest: number;
   notice?: string;
 }
+export interface SavedTitle {
+  id: number;
+  name: string;
+  cover: string;
+  isAdult: boolean;
+}
+export interface CustomList {
+  id: string;
+  name: string;
+  items: SavedTitle[];
+}
+export interface ShelfLayout {
+  order: string[];
+  hidden: string[];
+}
 export interface Settings {
+  privateSession?: boolean;
+  customLists?: CustomList[];
+  shelfLayouts?: Partial<Record<"home" | "watchlist", ShelfLayout>>;
+  hiddenContinue?: Record<string, number>;
+  hideOpenMyAnimeList?: boolean;
+  compactView?: boolean;
+  showEpisodeName?: boolean;
+  blurUnwatched?: boolean;
+  prepareNext?: boolean;
+  autoSkipRecaps?: boolean;
+  subtitleColour?: string;
+  subtitleOutlineColour?: string;
+  subtitleShadow?: boolean;
   subtitleDelay?: number;
   subtitleSize?: number;
   subtitlePosition?: number;
@@ -333,7 +364,13 @@ export interface LocalFolder {
   parent: string | null;
   entries: { name: string; path: string; directory: boolean }[];
 }
+export interface FollowingTitle {
+  media: Media;
+  users: { id: number; name: string; avatar: { medium: string } }[];
+}
 export interface API {
+  openTrailer?(id: number): Promise<void>;
+  following(): Promise<FollowingTitle[]>;
   downloads?: { save(): Promise<boolean>; copyMagnet(): Promise<void> };
   local?: {
     state(): Promise<LocalState>;
@@ -419,6 +456,7 @@ export interface API {
     callback: (data: Uint8Array, key: boolean) => void,
     error: (message: string) => void,
   ): () => void;
+  airing(ids: number[]): Promise<Media[]>;
   catalogOptions(): Promise<{ genres: string[]; tags: string[] }>;
   catalog(
     mode: "trending" | "season" | "search" | "romance",
@@ -470,6 +508,7 @@ export interface API {
   external(
     target:
       | "anilist"
+      | "mal"
       | "filler"
       | "license"
       | "aniskip"
@@ -757,4 +796,67 @@ export function recentSeasons(
       seen.add(p.mediaId);
       return true;
     });
+}
+
+export function validateLibrary(settings: Settings): void {
+  if (settings.customLists !== undefined) {
+    if (
+      !Array.isArray(settings.customLists) ||
+      settings.customLists.length > 100
+    )
+      throw Error("Too many lists.");
+    const ids = new Set<string>();
+    for (const list of settings.customLists) {
+      if (
+        !list ||
+        typeof list.id !== "string" ||
+        !/^[a-zA-Z0-9-]{1,64}$/.test(list.id) ||
+        ids.has(list.id) ||
+        typeof list.name !== "string" ||
+        !list.name.trim() ||
+        list.name.length > 60 ||
+        !Array.isArray(list.items) ||
+        list.items.length > 5000
+      )
+        throw Error("Invalid custom list.");
+      ids.add(list.id);
+      const titles = new Set<number>();
+      for (const item of list.items) {
+        if (
+          !item ||
+          !Number.isSafeInteger(item.id) ||
+          item.id < 1 ||
+          titles.has(item.id) ||
+          typeof item.name !== "string" ||
+          item.name.length > 500 ||
+          typeof item.cover !== "string" ||
+          item.cover.length > 2000 ||
+          (item.cover !== "" && !/^https:\/\//.test(item.cover)) ||
+          typeof item.isAdult !== "boolean"
+        )
+          throw Error("Invalid saved anime.");
+        titles.add(item.id);
+      }
+    }
+  }
+  if (settings.shelfLayouts !== undefined) {
+    if (
+      !settings.shelfLayouts ||
+      typeof settings.shelfLayouts !== "object" ||
+      Array.isArray(settings.shelfLayouts)
+    )
+      throw Error("Invalid shelf layout.");
+    for (const [key, layout] of Object.entries(settings.shelfLayouts)) {
+      if (!["home", "watchlist"].includes(key) || !layout)
+        throw Error("Invalid shelf layout.");
+      for (const items of [layout.order, layout.hidden])
+        if (
+          !Array.isArray(items) ||
+          items.length > 150 ||
+          new Set(items).size !== items.length ||
+          items.some((id) => typeof id !== "string" || id.length > 80)
+        )
+          throw Error("Invalid shelf layout.");
+    }
+  }
 }

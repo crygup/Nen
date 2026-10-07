@@ -1,4 +1,5 @@
 import type {
+  State,
   Media,
   Progress,
   WatchEntry,
@@ -311,4 +312,32 @@ export function canSyncWatch(entry: WatchEntry): boolean {
       Object.values(run.episodes).some((episode) => episode.watched),
     )
   );
+}
+
+export function migrateWatchLater(state: State): boolean {
+  const legacy = state.settings.customLists?.find(
+    (list) => list.id === "watch-later",
+  );
+  if (!legacy) return false;
+  for (const item of legacy.items) {
+    state.watch[item.id] ??= newEntry({
+      id: item.id,
+      title: { english: item.name, romaji: item.name, native: null },
+      coverImage: { large: item.cover },
+      episodes: null,
+      isAdult: item.isAdult,
+    });
+  }
+  state.settings.customLists = state.settings.customLists!.filter(
+    (list) => list.id !== "watch-later",
+  );
+  const layout = state.settings.shelfLayouts?.watchlist;
+  if (layout)
+    for (const key of ["order", "hidden"] as const)
+      layout[key] = [
+        ...new Set(
+          layout[key].map((id) => (id === "watch-later" ? "PLANNING" : id)),
+        ),
+      ];
+  return true;
 }

@@ -41,6 +41,7 @@ import { pathToFileURL } from "node:url";
 import * as providers from "./providers";
 import { Player } from "./player";
 import {
+  readFollowing,
   syncFavorites,
   setRemoteWatch,
   setRemoteFavorite,
@@ -51,6 +52,7 @@ import {
 } from "./anilist";
 import {
   markEpisode,
+  migrateWatchLater,
   migrateProgress,
   newEntry,
   statuses,
@@ -86,6 +88,7 @@ import {
   matchingFile,
 } from "./rules";
 import {
+  validateLibrary,
   isWatched,
   audioTrackLanguage,
   canAutoSkip,
@@ -559,6 +562,7 @@ function loadProfile(id: string, data = readProfileData(id)) {
     if (!existsSync(backup)) copyFileSync(profileFile(userRoot, id), backup);
     save();
   }
+  if (migrateWatchLater(state)) save();
   state.anilist.connected = existsSync(tokenPath);
   if (state.anilist.connected || state.mal.connected)
     syncTimer = setTimeout(() => {
@@ -1553,6 +1557,7 @@ async function autoPlay(
   }
 }
 function settings(value: Settings): Settings {
+  validateLibrary(value);
   if (
     !value ||
     !["system", "light", "dark"].includes(value.theme) ||
@@ -1581,14 +1586,60 @@ function settings(value: Settings): Settings {
     "autoUpdates",
     "discordPresence",
     "hideOpenAniList",
+    "hideOpenMyAnimeList",
+    "compactView",
+    "showEpisodeName",
+    "blurUnwatched",
+    "privateSession",
+    "prepareNext",
+    "autoSkipRecaps",
+    "subtitleShadow",
   ] as const)
     if (value[key] !== undefined && typeof value[key] !== "boolean")
       throw Error("Invalid content preference.");
+  for (const [key, min, max] of [
+    ["subtitleSize", 50, 250],
+    ["subtitlePosition", 0, 100],
+    ["subtitleDelay", -3600, 3600],
+  ] as const) {
+    const n = value[key];
+    if (n !== undefined && (!Number.isFinite(n) || n < min || n > max))
+      throw Error("Invalid subtitle setting.");
+  }
+  for (const key of ["subtitleColour", "subtitleOutlineColour"] as const)
+    if (value[key] !== undefined && !/^#[0-9a-f]{6}$/i.test(value[key]!))
+      throw Error("Invalid subtitle colour.");
+  if (
+    value.hiddenContinue !== undefined &&
+    (!value.hiddenContinue ||
+      typeof value.hiddenContinue !== "object" ||
+      Array.isArray(value.hiddenContinue) ||
+      Object.entries(value.hiddenContinue).some(
+        ([id, n]) => !/^\d+$/.test(id) || !Number.isFinite(n) || n < 0,
+      ))
+  )
+    throw Error("Invalid hidden history.");
   const audio = text(value.audio, 60),
     subtitles = text(value.subtitles, 60);
   if (!/^[a-zA-Z, -]*$/.test(audio + subtitles))
     throw Error("Use language codes such as jpn or eng.");
   return {
+    customLists: value.customLists,
+    shelfLayouts: value.shelfLayouts,
+    hiddenContinue: value.hiddenContinue,
+    hideOpenMyAnimeList: value.hideOpenMyAnimeList ?? true,
+    compactView: value.compactView ?? false,
+    showEpisodeName: value.showEpisodeName ?? true,
+    blurUnwatched: value.blurUnwatched ?? false,
+    privateSession: value.privateSession ?? false,
+    prepareNext: value.prepareNext ?? false,
+    autoSkipRecaps: value.autoSkipRecaps ?? false,
+    subtitleSize: value.subtitleSize,
+    subtitlePosition: value.subtitlePosition,
+    subtitleDelay: value.subtitleDelay,
+    subtitleColour: value.subtitleColour,
+    subtitleOutlineColour: value.subtitleOutlineColour,
+    subtitleShadow: value.subtitleShadow ?? true,
     theme: value.theme,
     showAdult: value.showAdult ?? false,
     hideZeroSeeds: value.hideZeroSeeds ?? true,
@@ -1826,6 +1877,9 @@ else {
         together.disconnect();
         stop();
       });
+      handle("following", () =>
+        state.anilist.connected ? readFollowing(getToken()) : [],
+      );
       handle("favoriteSet", async (id, favorite) => {
         const mediaId = positive(id);
         if (typeof favorite !== "boolean")
@@ -2268,6 +2322,7 @@ else {
           window,
         );
       });
+      handle("airing", (ids) => providers.airing(ids));
       handle("catalogOptions", () => providers.catalogOptions());
       handle("catalog", (mode, query, page, perPage = 24) => {
         if (!["trending", "season", "search", "romance"].includes(mode))
@@ -2701,6 +2756,7 @@ else {
       handle("external", (target, id) => {
         const urls: Record<string, string> = {
           anilist: `https://anilist.co/anime/${positive(id ?? 1)}`,
+          mal: `https://myanimelist.net/anime/${positive(id ?? 1)}`,
           filler: "https://anifillerpedia.wiki/",
           license: "https://creativecommons.org/licenses/by-nc-sa/4.0/",
           aniskip: "https://aniskip.com/",

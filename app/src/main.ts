@@ -26,6 +26,7 @@ import type {
   WatchStatus,
   SyncChange,
   ChangelogEntry,
+  SavedTitle,
 } from "./shared";
 const api = window.nen;
 document.addEventListener(
@@ -75,6 +76,7 @@ let descendingEpisodes = false;
 let episodesCollapsed = false;
 let episodeLoad = 0;
 let episodeData: EpisodePage | undefined;
+const episodeCache = new Map<number, { data: EpisodePage; expires: number }>();
 const playerMode = new URLSearchParams(location.search).has("player");
 let playback: Playback | undefined;
 let route = "home";
@@ -91,7 +93,54 @@ type BrowseVisit = {
 let visits: BrowseVisit[] = [];
 let forwardVisits: BrowseVisit[] = [];
 let goingBack = false;
+type BrowsePosition = {
+  scroll: number;
+  shelves: Record<string, number>;
+  lists: Record<string, { page: number; all: boolean }>;
+  episodes?: {
+    hideFiller: boolean;
+    showAllEpisodes: boolean;
+    descendingEpisodes: boolean;
+    episodesCollapsed: boolean;
+  };
+};
+const positions: Record<string, BrowsePosition> = {};
+try {
+  Object.assign(
+    positions,
+    JSON.parse(sessionStorage.getItem("browse-positions") || "{}"),
+  );
+} catch {}
+const positionKey = () =>
+  route === "series"
+    ? "series:" + current?.id
+    : route === "discover"
+      ? [route, mode, query, page].join(":")
+      : route;
+function position() {
+  return (positions[positionKey()] ??= { scroll: 0, shelves: {}, lists: {} });
+}
+function rememberPosition() {
+  position().scroll = scrollY;
+  if (route === "series")
+    position().episodes = {
+      hideFiller,
+      showAllEpisodes,
+      descendingEpisodes,
+      episodesCollapsed,
+    };
+  try {
+    sessionStorage.setItem("browse-positions", JSON.stringify(positions));
+  } catch {}
+}
+function restoreScroll() {
+  requestAnimationFrame(() => window.scrollTo(0, position().scroll));
+}
+window.addEventListener("pagehide", () => {
+  if (!playerMode) rememberPosition();
+});
 function setRoute(next: string, mediaId?: number) {
+  if (!playerMode && document.querySelector("#main")) rememberPosition();
   if (api.browserHistory && !playerMode && !goingBack) {
     history.replaceState(
       {
@@ -161,6 +210,7 @@ async function restoreVisit(previous: BrowseVisit) {
       await localLibrary(previous.local?.id, previous.local?.path);
     else if (previous.route === "discover") await discover(page);
     else await home();
+    restoreScroll();
   } finally {
     goingBack = false;
   }
@@ -204,6 +254,11 @@ function card(m: Media) {
   return `<button class="poster" data-adult="${!!m.isAdult}" data-media="${m.id}" aria-label="Open ${esc(title(m))}"><div class="cover"><img src="${esc(m.coverImage.large)}" alt="" loading="lazy" decoding="async">${m.averageScore ? `<span class="score">${m.averageScore}%</span>` : ""}</div><h3>${esc(title(m))}</h3><p>${esc(format(m.format))} <span>·</span> ${m.seasonYear ?? "TBA"}</p></button>`;
 }
 function bindMedia(container: ParentNode = document) {
+  const trailer = container.querySelector<HTMLElement>("#view-trailer");
+  if (trailer && current)
+    trailer.onclick = () => void run(() => api.openTrailer!(current!.id));
+  bindShelfDice(container);
+  void decorateFriends(container);
   container
     .querySelectorAll<HTMLElement>("[data-media]")
     .forEach(
@@ -235,7 +290,7 @@ function activeNav(name: string) {
     );
 }
 const uiIcon = (name: string) =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>', folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">${({ external: '<path d="M15 3h6v6M21 3 10 14M11 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6"/>', message: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/>', heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/>', subtitles: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', streaming: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m10 8 6 4-6 4Z"/>', account: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>', together: '<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M17 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2"/>', search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>', close: '<path d="m6 6 12 12M18 6 6 18"/>', left: '<path d="m14 5-7 7 7 7"/>', right: '<path d="m10 5 7 7-7 7"/>', refresh: '<path d="M20 7v5h-5M4 17v-5h5M19 10a7 7 0 0 0-12-5L4 8m1 6a7 7 0 0 0 12 5l3-3"/>', home: '<path d="m3 11 9-8 9 8M5 9v12h5v-7h4v7h5V9"/>', lists: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>', help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16v1"/>', history: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>', browse: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>', settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="15" cy="17" r="3"/>', folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/>' } as Record<string, string>)[name]}</svg>`;
 let filterOptions: Promise<{ genres: string[]; tags: string[] }> | undefined;
 const getOptions = () =>
   (filterOptions ??= api.catalogOptions().catch((e) => {
@@ -486,13 +541,16 @@ function watchEditButton(id: number, name: string) {
 }
 function continueCards() {
   const local = recentSeasons(state.progress, state.settings.showAdult).filter(
-    ([, p]) => state.watch[String(p.mediaId)]?.format !== "MUSIC",
+    ([, p]) =>
+      state.watch[String(p.mediaId)]?.format !== "MUSIC" &&
+      p.updated > (state.settings.hiddenContinue?.[p.mediaId] ?? 0),
   );
   const ids = new Set(local.map(([, p]) => p.mediaId));
   const imported = Object.values(state.watch)
     .filter(
       (e) =>
         e.format !== "MUSIC" &&
+        !state.settings.hiddenContinue?.[e.mediaId] &&
         !ids.has(e.mediaId) &&
         (e.status === "CURRENT" || e.status === "REPEATING") &&
         (state.settings.showAdult || !e.isAdult),
@@ -513,6 +571,8 @@ function continueCards() {
   ];
 }
 function bindContinue(root: ParentNode) {
+  bindShelfDice(root);
+  void decorateFriends(root);
   root.querySelectorAll<HTMLButtonElement>("[data-open-series]").forEach(
     (button) =>
       (button.onclick = (event) => {
@@ -562,23 +622,23 @@ async function home() {
   const token = ++request;
   state = await api.state();
   if (token !== request) return;
-  const recent = continueCards().slice(0, 9);
-  const shelves = [
-    ["Trending", ""],
-    ["Action", "genre:Action"],
-    ["Romance", "genre:Romance"],
-    ["Adventure", "genre:Adventure"],
-  ];
+  const recent = continueCards();
+  const shelves = homeGenres.filter(([name]) => !shelfHidden("home", name));
   document.querySelector("#main")!.innerHTML =
-    `<div class="page-heading"><h1>Home</h1></div><section class="home-section"><div class="section-heading"><h2>Continue watching</h2><button id="more-history" class="quiet">View more ${uiIcon("right")}</button></div>${recent.length ? `<div class="home-grid">${recent.join("")}</div>` : '<p class="muted">Your recent watches will appear here.</p>'}</section>${shelves.map(([name], i) => `<section class="home-section" id="shelf-${i}"><div class="section-heading"><h2>${name}</h2><div class="actions"><button class="quiet shelf-more">View more ${uiIcon("right")}</button><button class="square-button shelf-back" aria-label="Previous ${name} titles" disabled>${uiIcon("left")}</button><button class="square-button shelf-next" aria-label="Next ${name} titles">${uiIcon("right")}</button></div></div><div class="home-grid shelf-items" aria-live="polite"><p class="loading">Loading…</p></div></section>`).join("")}`;
+    `<div class="page-heading"><h1>Home</h1>${shelfEditButton}</div><section class="home-section" data-shelf="Continue watching"><div class="section-heading"><h2>Continue watching</h2><div class="actions"><button id="more-history" class="quiet">View more ${uiIcon("right")}</button><button class="square-button" data-list-step="-1" aria-label="Previous Continue watching titles">${uiIcon("left")}</button><button class="square-button" data-list-step="1" aria-label="Next Continue watching titles">${uiIcon("right")}</button></div></div>${recent.length ? `<div class="home-grid">${recent.join("")}</div>` : '<p class="muted">Your recent watches will appear here.</p>'}</section>${shelves.map(([name], i) => `<section class="home-section" id="shelf-${i}" data-shelf="${name}"><div class="section-heading"><h2>${name}</h2><div class="actions"><button class="quiet shelf-more">View more ${uiIcon("right")}</button><button class="square-button shelf-back" aria-label="Previous ${name} titles" disabled>${uiIcon("left")}</button><button class="square-button shelf-next" aria-label="Next ${name} titles">${uiIcon("right")}</button></div></div><div class="home-grid shelf-items" aria-live="polite"><p class="loading">Loading…</p></div></section>`).join("")}`;
   movePageHeading();
   document.querySelector<HTMLElement>("#more-history")!.onclick = () =>
-    void watchlist();
+    void watchlist("CURRENT");
+  bindListPage(document.querySelector<HTMLElement>("#main > .home-section")!);
   bindContinue(document.querySelector("#main")!);
+  bindShelfEditor("home");
+  applyShelfLayout("home");
+  if (!shelfHidden("home", "New episodes")) void newEpisodes(token);
+  if (!shelfHidden("home", "Following")) void followingShelf(token);
   await Promise.all(
     shelves.map(async ([name, filter], i) => {
       const el = document.querySelector<HTMLElement>(`#shelf-${i}`)!;
-      let shelfPage = 1;
+      let shelfPage = position().shelves[name] ?? 1;
       let loading = false;
       let refreshPending = false;
       const load = async () => {
@@ -631,10 +691,12 @@ async function home() {
       };
       el.querySelector<HTMLElement>(".shelf-back")!.onclick = () => {
         shelfPage--;
+        position().shelves[name] = shelfPage;
         void load();
       };
       el.querySelector<HTMLElement>(".shelf-next")!.onclick = () => {
         shelfPage++;
+        position().shelves[name] = shelfPage;
         void load();
       };
       el.querySelector(".shelf-items")!.addEventListener(
@@ -646,6 +708,8 @@ async function home() {
       await load();
     }),
   );
+  applyShelfLayout("home");
+  restoreScroll();
 }
 
 async function discover(targetPage = 1) {
@@ -722,7 +786,30 @@ async function openMedia(id: number) {
     state = freshState;
     current = m;
     labelData = undefined;
-    episodeData = undefined;
+    const cachedEpisodes = episodeCache.get(id) ?? readEpisodeCache(id);
+    episodeData = cachedEpisodes ? cachedEpisodes.data : undefined;
+    if (!episodeData && m.streamingEpisodes?.length) {
+      const items: import("./shared").EpisodeInfo[] = [];
+      for (const item of m.streamingEpisodes) {
+        const match = item.title.match(/(?:Episode\s*)?(\d+)\s*[-:–]\s*(.+)/i);
+        if (match)
+          items.push({
+            number: Number(match[1]),
+            title: match[2],
+            thumbnail: item.thumbnail,
+            ...episodeAvailability(m, Number(match[1])),
+          });
+      }
+      episodeData = {
+        items,
+        total: m.episodes ?? latestEpisode(m),
+        latest: latestEpisode(m),
+      };
+    }
+    if (episodeData && !cachedEpisodes) {
+      episodeCache.set(id, { data: episodeData, expires: 0 });
+      writeEpisodeCache(id);
+    }
     hideFiller = false;
     const latest = Object.values(state.progress)
       .filter((p) => p.mediaId === id && (p.position > 0 || p.watched))
@@ -730,8 +817,13 @@ async function openMedia(id: number) {
     showAllEpisodes = !!latest && latest.episode > 50;
     descendingEpisodes = false;
     episodesCollapsed = false;
+    const savedPosition = position().episodes;
+    if (savedPosition)
+      ({ hideFiller, showAllEpisodes, descendingEpisodes, episodesCollapsed } =
+        savedPosition);
     renderSeries();
-    if (latest)
+    if (savedPosition) restoreScroll();
+    if (latest && !savedPosition)
       requestAnimationFrame(() => {
         if (token !== request) return;
         const row = document.querySelector<HTMLElement>(
@@ -750,7 +842,7 @@ async function openMedia(id: number) {
         }
       })
       .catch(() => {});
-    await loadEpisodes(token);
+    void loadEpisodes(token).catch(error);
   } catch (e) {
     if (token === request) {
       document.querySelector("#main")!.innerHTML =
@@ -764,6 +856,7 @@ async function openMedia(id: number) {
 async function loadEpisodes(token = request) {
   if (!current) return;
   const load = ++episodeLoad;
+  const mediaId = current.id;
   const count =
     current.episodes ??
     Math.max(latestEpisode(current), current.nextAiringEpisode?.episode ?? 0);
@@ -775,11 +868,51 @@ async function loadEpisodes(token = request) {
   for (const page of pages) {
     if (token !== request || load !== episodeLoad) return;
     try {
-      const result = await api.episodes(current.id, page);
+      const cached = episodeCache.get(mediaId);
+      const required = numbers.filter((n) => Math.ceil(n / 50) === page);
+      const known = new Map(
+        episodeData?.items.map((item) => [item.number, item]),
+      );
+      const complete = required.every((n) => {
+        const item = known.get(n);
+        return (
+          item?.thumbnail &&
+          item.title &&
+          !/^(episode\s*\d+|tba|tbd|untitled)$/i.test(item.title)
+        );
+      });
+      if (
+        complete ||
+        (cached &&
+          cached.expires > Date.now() &&
+          cached.data.latest >= latestEpisode(current!) &&
+          required.every((n) => known.has(n)))
+      )
+        continue;
+      const result = await api.episodes(mediaId, page);
       if (token !== request || load !== episodeLoad) return;
       const items = new Map(episodeData?.items.map((e) => [e.number, e]));
-      result.items.forEach((e) => items.set(e.number, e));
+      result.items.forEach((e) => {
+        const previous = items.get(e.number);
+        items.set(e.number, {
+          ...e,
+          title:
+            previous?.title &&
+            /^(episode\s*\d+|tba|tbd|untitled)$/i.test(e.title)
+              ? previous.title
+              : e.title,
+          thumbnail: e.thumbnail || previous?.thumbnail,
+        });
+      });
       episodeData = { ...result, items: [...items.values()] };
+      episodeCache.delete(mediaId);
+      episodeCache.set(mediaId, {
+        data: episodeData,
+        expires: Date.now() + 86400000,
+      });
+      if (episodeCache.size > 30)
+        episodeCache.delete(episodeCache.keys().next().value!);
+      writeEpisodeCache(mediaId);
       renderEpisodes();
     } catch {}
   }
@@ -788,7 +921,7 @@ async function loadEpisodes(token = request) {
 function renderSeries() {
   const m = current!;
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button></div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes != null ? `${m.episodes} episodes` : latestEpisode(m) > 0 ? `${latestEpisode(m)} episodes aired` : "Episode count not announced"}</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p id="series-synopsis" class="synopsis synopsis-collapsed">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><button id="synopsis-toggle" class="quiet" aria-expanded="false" aria-controls="series-synopsis" hidden>Show more</button><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${[
+  main.innerHTML = `<button id="back" class="back">${uiIcon("left")} Back</button><article class="series"><div class="series-poster"><img class="series-cover" src="${esc(m.coverImage.large)}" alt="${esc(title(m))}"><div class="series-list-actions"><button id="watchlist-toggle" class="square-button"></button><button id="favorite-toggle" class="square-button" aria-label="Add to favorites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg></button>${m.trailer && api.openTrailer ? `<button id="view-trailer" class="square-button" aria-label="View trailer" title="View trailer">${uiIcon("streaming")}</button>` : ""}</div></div><div><p class="eyebrow">${esc(format(m.format))} <span> / </span> ${m.seasonYear ?? "TBA"}</p><h1>${esc(title(m))}</h1><div class="facts"><span>${m.episodes != null ? `${m.episodes} episodes` : latestEpisode(m) > 0 ? `${latestEpisode(m)} episodes aired` : "Episode count not announced"}</span><span>${esc(m.status.replaceAll("_", " ").toLowerCase())}</span>${m.averageScore ? `<span>${m.averageScore}% score</span>` : ""}</div><p id="series-synopsis" class="synopsis synopsis-collapsed">${esc(m.description?.replace(/<[^>]*>/g, "") ?? "No synopsis available.")}</p><button id="synopsis-toggle" class="quiet" aria-expanded="false" aria-controls="series-synopsis" hidden>Show more</button><p class="genres">${m.genres.map(esc).join(" / ")}</p></div></article><section id="episodes"></section>${[
     true,
     false,
   ]
@@ -806,7 +939,7 @@ function renderSeries() {
             Number(b.relationType === "SEQUEL"),
         );
       return edges.length
-        ? `<section class="related"><h2>${related ? "Related Titles" : "Other titles"}</h2><div class="related-list">${edges.map((e) => `<button data-media="${e.node.id}"><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.english || e.node.title.romaji)}</span></button>`).join("")}</div></section>`
+        ? `<section class="related"><h2>${related ? "Related Titles" : "Other titles"}</h2><div class="related-list">${edges.map((e) => `<button data-media="${e.node.id}">${e.node.coverImage?.large ? `<img src="${esc(e.node.coverImage.large)}" alt="" loading="lazy">` : ""}<div><small>${esc(e.relationType.replaceAll("_", " "))} · ${esc(format(e.node.format))}</small><span>${esc(e.node.title.english || e.node.title.romaji)}</span></div></button>`).join("")}</div></section>`
         : "";
     })
     .join("")}`;
@@ -818,25 +951,17 @@ function renderSeries() {
     main.querySelector<HTMLButtonElement>("#watchlist-toggle")!;
   const favoriteButton =
     main.querySelector<HTMLButtonElement>("#favorite-toggle")!;
-  for (const button of [listButton, favoriteButton])
-    button.onclick = () =>
-      void run(async () => {
-        listButton.disabled = favoriteButton.disabled = true;
-        try {
-          state =
-            button === favoriteButton
-              ? await api.favoriteSet(m.id, !state.favorites[String(m.id)])
-              : state.watch[String(m.id)]?.status === "PLANNING"
-                ? await api.watchDelete(m.id, true)
-                : await api.watchAdd(m.id);
-          if (current?.id === m.id) {
-            updateSeriesActions();
-            renderEpisodes();
-          }
-        } finally {
-          listButton.disabled = favoriteButton.disabled = false;
-        }
-      });
+  listButton.onclick = () => saveTo(m);
+  favoriteButton.onclick = () =>
+    void run(async () => {
+      favoriteButton.disabled = true;
+      try {
+        state = await api.favoriteSet(m.id, !state.favorites[String(m.id)]);
+        if (current?.id === m.id) updateSeriesActions();
+      } finally {
+        favoriteButton.disabled = false;
+      }
+    });
   synopsisSize?.disconnect();
   const synopsis = main.querySelector<HTMLElement>(".synopsis")!;
   const expand = main.querySelector<HTMLButtonElement>("#synopsis-toggle")!;
@@ -873,12 +998,13 @@ function renderEpisodes() {
       return {
         n,
         title: meta?.title ?? `Episode ${n}`,
+        thumbnail: meta?.thumbnail,
         ...episodeAvailability(m, n),
         ...labelForEpisode(labelData, n, offset, m.source === "ORIGINAL"),
       };
     },
   ).filter((e) => !hideFiller || e.status !== "filler");
-  el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button><button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button>${labelData?.items.some((e) => e.status === "filler") ? `<label class="check"><input id="hide-filler" type="checkbox" ${hideFiller ? "checked" : ""}> Hide filler</label>` : ""}</div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
+  el.innerHTML = `<div class="section-heading"><h2>${m.format === "MOVIE" ? "Film" : "Episodes"} </h2><div class="actions"><button id="episode-order" aria-label="Episode order">${descendingEpisodes ? "Descending" : "Ascending"}</button>${labelData?.items.some((e) => e.status === "filler") ? `<button id="hide-filler" aria-pressed="${hideFiller}">${hideFiller ? "Show filler" : "Hide filler"}</button>` : ""}<button id="toggle-episodes" class="square-button" aria-controls="episode-content" aria-expanded="${!episodesCollapsed}" aria-label="${episodesCollapsed ? "Expand episodes" : "Collapse episodes"}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14"/><path class="expand-stroke" d="M12 5v14"/></svg></button></div></div><div id="episode-content" class="episode-content${episodesCollapsed ? " collapsed" : ""}" ${episodesCollapsed ? "inert" : ""}><div>${labelData?.needsMapping && offset === undefined ? '<button id="mapping" class="quiet">Set episode numbering for filler labels</button>' : ""}<div class="episode-list">${items
     .map((e) => {
       const watched =
         state.watch[String(m.id)]?.runs.at(-1)?.episodes[String(e.n)] ??
@@ -900,11 +1026,25 @@ function renderEpisodes() {
           : e.status === "mixed"
             ? "Mixed"
             : "";
-      return `<button class="episode" data-episode="${e.n}" ${future ? "disabled" : ""}><span class="episode-number">${String(e.n).padStart(2, "0")}</span><span>${esc(e.title)}${watched ? `<small>${time(watched.position)} / ${time(watched.duration)}</small>` : ""}</span><span class="episode-badges">${finished ? '<span class="badge watched-label">Watched</span>' : ""}${badge ? `<span class="badge ${future ? "upcoming" : ""}" title="${e.status === "filler" ? "Not canon. This episode is not adapted from the original story." : e.status === "mixed" ? "Contains both canon story and filler material." : ""}">${esc(badge)}</span>` : ""}</span></button>`;
+      return `<button class="episode${!state.settings.compactView ? " episode-with-preview" : ""}" data-episode="${e.n}" aria-label="${esc(state.settings.showEpisodeName === false ? `Episode ${e.n}` : `Episode ${e.n}: ${e.title}`)}" ${future ? "disabled" : ""}>${!state.settings.compactView ? `<span class="episode-preview">${e.thumbnail ? `<img src="${esc(e.thumbnail)}" alt="" loading="lazy" class="${state.settings.blurUnwatched && !finished ? "blurred" : ""}">` : `<span aria-label="No episode image">${uiIcon("streaming")}</span>`}</span>` : ""}<span class="episode-number">${String(e.n).padStart(2, "0")}</span><span>${state.settings.showEpisodeName === false ? "" : esc(e.title)}${watched ? `<small>${time(watched.position)} / ${time(watched.duration)}</small>` : ""}</span><span class="episode-badges">${finished ? '<span class="badge watched-label">Watched</span>' : ""}${badge ? `<span class="badge ${future ? "upcoming" : ""}" title="${e.status === "filler" ? "Not canon. This episode is not adapted from the original story." : e.status === "mixed" ? "Contains both canon story and filler material." : ""}">${esc(badge)}</span>` : ""}</span></button>`;
     })
     .join(
       "",
     )}</div><div class="pagination">${!showAllEpisodes && count > 50 ? '<button id="load-episodes">Load more</button>' : ""}</div></div></div>`;
+  el.querySelectorAll<HTMLImageElement>(".episode-preview img").forEach(
+    (image) => {
+      const fallback = () => {
+        const parent = image.parentElement;
+        if (parent)
+          parent.innerHTML =
+            '<span aria-label="No episode image">' +
+            uiIcon("streaming") +
+            "</span>";
+      };
+      image.onerror = fallback;
+      if (image.complete && !image.naturalWidth) fallback();
+    },
+  );
   const toggle = el.querySelector<HTMLButtonElement>("#toggle-episodes")!;
   toggle.onclick = () => {
     episodesCollapsed = !episodesCollapsed;
@@ -920,10 +1060,10 @@ function renderEpisodes() {
   el.querySelectorAll<HTMLButtonElement>("[data-episode]").forEach(
     (b) => (b.onclick = () => void startEpisode(m, Number(b.dataset.episode))),
   );
-  const filter = el.querySelector<HTMLInputElement>("#hide-filler");
+  const filter = el.querySelector<HTMLButtonElement>("#hide-filler");
   if (filter)
-    filter.onchange = () => {
-      hideFiller = filter.checked;
+    filter.onclick = () => {
+      hideFiller = !hideFiller;
       renderEpisodes();
     };
   const mappingButton = el.querySelector<HTMLElement>("#mapping");
@@ -1202,8 +1342,9 @@ const watchStatuses: [WatchStatus, string][] = [
   ["DROPPED", "Dropped"],
   ["PLANNING", "Planning"],
 ];
-async function watchlist() {
+async function watchlist(expandShelf = "") {
   setRoute("watchlist");
+  const token = ++request;
   activeNav("watchlist");
   state = await api.state();
   const entries = Object.values(state.watch)
@@ -1212,10 +1353,10 @@ async function watchlist() {
     )
     .sort((a, b) => b.updated - a.updated);
   const main = document.querySelector("#main")!;
-  main.innerHTML = `<div class="page-heading"><h1>Lists</h1></div>${(
+  main.innerHTML = `<div class="page-heading"><h1>Lists</h1><button id="new-list">New list</button>${shelfEditButton}</div>${(
     [
       ["CURRENT", "Continue watching"],
-      ["PLANNING", "Planning"],
+      ["PLANNING", "Watch Later"],
       ["PAUSED", "Paused"],
       ["DROPPED", "Dropped"],
       ["FAVORITES", "Favorites"],
@@ -1224,7 +1365,7 @@ async function watchlist() {
   )
     .map(([status, label]) => {
       const name = status === "CURRENT" ? "Continue watching" : label;
-      return `<section class="home-section"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${
+      return `<section class="home-section" data-shelf="${status}"><div class="section-heading"><h2>${name}</h2><div class="actions"><button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous ${name}">&#8249;</button><button data-list-step="1" aria-label="Next ${name}">&#8250;</button></div></div><div class="home-grid list-grid">${
         (status === "CURRENT"
           ? continueCards()
           : (status === "FAVORITES"
@@ -1260,44 +1401,36 @@ async function watchlist() {
     })
     .join("")}`;
   movePageHeading();
+  for (const list of localLists()) {
+    const section = document.createElement("section");
+    section.className = "home-section";
+    section.dataset.shelf = list.id;
+    section.innerHTML = `<div class="section-heading"><h2>${esc(list.name)}</h2><div class="actions">${list.id !== "watch-later" ? `<button data-rename-list="${list.id}">Rename</button><button data-delete-list="${list.id}">Delete list</button>` : ""}<button data-list-all>View all</button><button data-list-step="-1" aria-label="Previous titles">${uiIcon("left")}</button><button data-list-step="1" aria-label="Next titles">${uiIcon("right")}</button></div></div><div class="home-grid list-grid">${
+      list.items
+        .filter((m) => state.settings.showAdult || !m.isAdult)
+        .map(savedCard)
+        .join("") || `<p class="muted">No anime here.</p>`
+    }</div>`;
+    main.append(section);
+  }
+  document.querySelector<HTMLElement>("#new-list")!.onclick = () => nameList();
+  main
+    .querySelectorAll<HTMLElement>("[data-rename-list]")
+    .forEach((b) => (b.onclick = () => nameList(b.dataset.renameList)));
+  main
+    .querySelectorAll<HTMLElement>("[data-delete-list]")
+    .forEach((b) => (b.onclick = () => deleteList(b.dataset.deleteList!)));
+  if (!shelfHidden("watchlist", "Following") || expandShelf === "Following")
+    void followingShelf(token, expandShelf === "Following");
+  bindShelfEditor("watchlist");
+  applyShelfLayout("watchlist");
   bindMedia(main);
   bindContinue(main);
-  main.querySelectorAll<HTMLElement>(".home-section").forEach((section) => {
-    const cards = [...section.querySelectorAll<HTMLElement>(".list-card")];
-    let page = 0,
-      all = false;
-    const update = () => {
-      cards.forEach(
-        (card, i) => (card.hidden = !all && Math.floor(i / 9) !== page),
-      );
-      section
-        .querySelectorAll<HTMLButtonElement>("[data-list-step]")
-        .forEach((button) => {
-          button.disabled =
-            all ||
-            (Number(button.dataset.listStep) < 0
-              ? page === 0
-              : (page + 1) * 9 >= cards.length);
-        });
-      const button =
-        section.querySelector<HTMLButtonElement>("[data-list-all]")!;
-      button.hidden = cards.length <= 9;
-      button.textContent = all ? "Show less" : "View all";
-    };
-    section.querySelectorAll<HTMLButtonElement>("[data-list-step]").forEach(
-      (button) =>
-        (button.onclick = () => {
-          page += Number(button.dataset.listStep);
-          update();
-        }),
+  main
+    .querySelectorAll<HTMLElement>(".home-section")
+    .forEach((section) =>
+      bindListPage(section, section.dataset.shelf === expandShelf),
     );
-    section.querySelector<HTMLButtonElement>("[data-list-all]")!.onclick =
-      () => {
-        all = !all;
-        update();
-      };
-    update();
-  });
 }
 
 let contextRequest = 0;
@@ -1356,6 +1489,12 @@ document.addEventListener("contextmenu", (event) => {
             state = value;
           }),
       ]);
+      actions.push([
+        "Save",
+        async () => {
+          saveTo(media);
+        },
+      ]);
       if (
         entry?.status !== "COMPLETED" &&
         !(media.episodes && (entry?.count ?? 0) >= media.episodes)
@@ -1372,17 +1511,30 @@ document.addEventListener("contextmenu", (event) => {
                 state = value;
               }),
         ]);
-      if (entry?.status !== "PLANNING")
+
+      if (target.closest(".recent-card"))
         actions.push([
-          entry ? "Move to watch list" : "Add to watch list",
-          () =>
-            api.watchAdd(id).then((value) => {
-              state = value;
-            }),
+          "Remove from Continue watching",
+          async () => {
+            const next = {
+              ...state.settings,
+              hiddenContinue: {
+                ...state.settings.hiddenContinue,
+                [id]: Date.now(),
+              },
+            };
+            await api.settings(next);
+            state.settings = next;
+          },
         ]);
       actions.push(["Edit", () => editWatch(id)]);
       if (!state.settings.hideOpenAniList)
         actions.push(["Open on AniList", () => api.external("anilist", id)]);
+      if (media.idMal && state.settings.hideOpenMyAnimeList === false)
+        actions.push([
+          "Open on MyAnimeList",
+          () => api.external("mal", media.idMal!),
+        ]);
     }
     if (!actions.length) return;
     showContextMenu(
@@ -1393,6 +1545,7 @@ document.addEventListener("contextmenu", (event) => {
         label,
         async () => {
           await action();
+          if (label === "Save") return;
           if (route === "series") {
             updateSeriesActions();
             renderEpisodes();
@@ -1411,11 +1564,11 @@ function updateSeriesActions() {
     document.querySelector<HTMLButtonElement>("#favorite-toggle");
   if (list) {
     const selected = state.watch[String(current.id)]?.status === "PLANNING";
-    const label = selected ? "Remove from watchlist" : "Add to watchlist";
+    const label = "Save";
     list.setAttribute("aria-pressed", String(selected));
     list.setAttribute("aria-label", label);
     list.title = label;
-    list.innerHTML = `<svg class="watchlist-icon" viewBox="0 0 24 24" fill="${selected ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span class="watchlist-label">${label}</span>`;
+    list.innerHTML = `<svg class="watchlist-icon" viewBox="0 0 24 24" fill="${selected ? "currentColor" : "none"}" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>`;
   }
   if (favorite) {
     const selected = !!state.favorites[String(current.id)];
@@ -2371,6 +2524,7 @@ function settings() {
       return;
     }
     const next = {
+      ...state.settings,
       theme: f.get("theme") as typeof s.theme,
       source: f.get("source") as typeof s.source,
       sourceMode: f.get("sourceMode") as "auto" | "manual",
@@ -2458,15 +2612,13 @@ function settings() {
     save();
     d.onclose = null;
     void saveQueue.then(() => {
+      if (route === "series") renderEpisodes();
       if (initialAdult === state.settings.showAdult) return;
       if (!state.settings.showAdult)
         document
           .querySelectorAll('[data-adult="true"]')
           .forEach((el) => el.remove());
-      if (route === "home")
-        document
-          .querySelectorAll<HTMLElement>(".shelf-items")
-          .forEach((el) => el.dispatchEvent(new Event("catalog-refresh")));
+      if (route === "home") void home();
       else if (route === "discover") void discover(page);
       else if (route === "history") void watchlist();
     });
@@ -2764,3 +2916,677 @@ void start().catch((e) => {
   document.querySelector(".startup")?.remove();
   root.textContent = `Nen could not start: ${(e as Error).message}`;
 });
+
+function bindListPage(section: HTMLElement, expanded = false) {
+  const cards = [...section.querySelectorAll<HTMLElement>(".list-card")];
+  const key = section.id || section.querySelector("h2")?.textContent || "list";
+  const saved = position().lists[key];
+  let page = Math.min(
+      saved?.page ?? 0,
+      Math.max(0, Math.ceil(cards.length / 9) - 1),
+    ),
+    all = expanded || (saved?.all ?? false);
+  const update = () => {
+    position().lists[key] = { page, all };
+    cards.forEach(
+      (card, i) => (card.hidden = !all && Math.floor(i / 9) !== page),
+    );
+    section
+      .querySelectorAll<HTMLButtonElement>("[data-list-step]")
+      .forEach((button) => {
+        button.disabled =
+          all ||
+          (Number(button.dataset.listStep) < 0
+            ? page === 0
+            : (page + 1) * 9 >= cards.length);
+      });
+    const button = section.querySelector<HTMLButtonElement>("[data-list-all]")!;
+    if (button) {
+      button.hidden = cards.length <= 9;
+      button.textContent = all ? "Show less" : "View all";
+    }
+  };
+  section.querySelectorAll<HTMLButtonElement>("[data-list-step]").forEach(
+    (button) =>
+      (button.onclick = () => {
+        page += Number(button.dataset.listStep);
+        update();
+      }),
+  );
+  section
+    .querySelector<HTMLButtonElement>("[data-list-all]")
+    ?.addEventListener("click", () => {
+      all = !all;
+      update();
+    });
+  update();
+}
+
+async function newEpisodes(token: number) {
+  const ids = Object.values(state.watch)
+    .filter((e) => ["CURRENT", "PLANNING", "REPEATING"].includes(e.status))
+    .map((e) => e.mediaId);
+  const available: Media[] = [];
+  try {
+    for (let i = 0; i < ids.length; i += 50) {
+      const rows = await api.airing(ids.slice(i, i + 50));
+      if (token !== request || route !== "home") return;
+      available.push(
+        ...rows.filter((m) => {
+          const aired = m.airingSchedule?.nodes[0];
+          const count = state.watch[m.id]?.count ?? 0;
+          return (
+            aired &&
+            aired.airingAt <= Date.now() / 1000 &&
+            aired.episode > count &&
+            !state.progress[`${m.id}:${aired.episode}`]?.watched &&
+            !state.watch[m.id]?.runs.at(-1)?.episodes[String(aired.episode)]
+              ?.watched &&
+            (state.settings.showAdult || !m.isAdult)
+          );
+        }),
+      );
+    }
+    if (!available.length || token !== request) return;
+    available.sort(
+      (a, b) =>
+        b.airingSchedule!.nodes[0].airingAt -
+        a.airingSchedule!.nodes[0].airingAt,
+    );
+    const shelf = document.createElement("section");
+    shelf.className = "home-section";
+    shelf.id = "new-episodes";
+    shelf.dataset.shelf = "New episodes";
+    shelf.innerHTML = `<div class="section-heading"><h2>New episodes</h2><div class="actions"><button class="square-button" data-list-step="-1" aria-label="Previous new episodes">${uiIcon("left")}</button><button class="square-button" data-list-step="1" aria-label="Next new episodes">${uiIcon("right")}</button></div></div><div class="home-grid">${available.map((m) => '<div class="list-card">' + card(m) + "</div>").join("")}</div>`;
+    document.querySelector("#main")!.append(shelf);
+    applyShelfLayout("home");
+    bindMedia(shelf);
+    bindListPage(shelf);
+  } catch {
+    /* The shelf stays hidden when airing data is unavailable. */
+  }
+}
+
+const homeGenres = [
+  "Trending",
+  "Action",
+  "Romance",
+  "Adventure",
+  "Comedy",
+  "Drama",
+  "Fantasy",
+  "Sci-Fi",
+  "Mystery",
+  "Sports",
+  "Slice of Life",
+  "Supernatural",
+  "Thriller",
+  "Horror",
+  "Music",
+  "Psychological",
+  "Mecha",
+].map((name) => [name, name === "Trending" ? "" : `genre:${name}`]);
+const shelfEditButton = `<button id="edit-shelves" class="square-button" aria-label="Edit shelves" title="Edit shelves"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg></button>`;
+function localLists() {
+  const lists = state.settings.customLists ?? [];
+  return lists.filter((list) => list.id !== "watch-later");
+}
+function shelfOptions(page: "home" | "watchlist"): [string, string][] {
+  return page === "home"
+    ? [
+        "Continue watching",
+        "New episodes",
+        "Trending",
+        "Following",
+        ...homeGenres.slice(1).map(([name]) => name),
+      ].map((name) => [name, name === "Following" ? "Friends watching" : name])
+    : [
+        ["CURRENT", "Continue watching"],
+        ["PLANNING", "Watch Later"],
+        ["Following", "Friends watching"],
+        ["PAUSED", "Paused"],
+        ["DROPPED", "Dropped"],
+        ["FAVORITES", "Favorites"],
+        ["COMPLETED", "Completed"],
+        ...localLists()
+          .filter((l) => l.id !== "watch-later")
+          .map((l) => [l.id, l.name] as [string, string]),
+      ];
+}
+function shelfHidden(page: "home" | "watchlist", id: string) {
+  const layout = state.settings.shelfLayouts?.[page];
+  return layout
+    ? layout.hidden.includes(id)
+    : page === "home" && homeGenres.slice(4).some(([name]) => name === id);
+}
+function applyShelfLayout(page: "home" | "watchlist") {
+  const main = document.querySelector("#main")!;
+  const defaults = shelfOptions(page).map(([id]) => id);
+  const order = [
+    ...new Set([
+      ...(state.settings.shelfLayouts?.[page]?.order ?? []),
+      ...defaults,
+    ]),
+  ];
+  const sections = [...main.querySelectorAll<HTMLElement>("[data-shelf]")];
+  sections.sort(
+    (a, b) => order.indexOf(a.dataset.shelf!) - order.indexOf(b.dataset.shelf!),
+  );
+  for (const section of sections) {
+    if (shelfHidden(page, section.dataset.shelf!)) section.hidden = true;
+    main.append(section);
+  }
+}
+async function saveLibrary(next: State["settings"]) {
+  await api.settings(next);
+  state.settings = next;
+}
+function savedCard(m: SavedTitle) {
+  return `<article class="list-card"><button class="poster" data-media="${m.id}"><div class="cover"><img src="${esc(m.cover)}" alt="" loading="lazy"></div><h3>${esc(m.name)}</h3></button></article>`;
+}
+function nameList(id?: string) {
+  const existing = localLists().find((l) => l.id === id);
+  const d = dialog(
+    `<h2 id="dialog-title">${id ? "Rename list" : "New list"}</h2><form id="list-name-form"><label>List name<input id="list-name" maxlength="60" required value="${esc(existing?.name ?? "")}"></label><button type="submit">${id ? "Save" : "Create"}</button></form>`,
+  );
+  const input = d.querySelector<HTMLInputElement>("#list-name")!;
+  input.focus();
+  d.querySelector<HTMLFormElement>("form")!.onsubmit = (e) => {
+    e.preventDefault();
+    void run(async () => {
+      const name = input.value.trim();
+      if (!name) {
+        input.focus();
+        return;
+      }
+      const lists = structuredClone(localLists());
+      if (
+        lists.some(
+          (l) => l.id !== id && l.name.toLowerCase() === name.toLowerCase(),
+        )
+      )
+        throw Error("A list with this name already exists.");
+      if (existing) lists.find((l) => l.id === id)!.name = name;
+      else lists.push({ id: crypto.randomUUID(), name, items: [] });
+      await saveLibrary({ ...state.settings, customLists: lists });
+      d.close();
+      await watchlist();
+    });
+  };
+}
+function deleteList(id: string) {
+  const list = localLists().find((l) => l.id === id);
+  if (!list) return;
+  const d = dialog(
+    `<h2 id="dialog-title">Delete ${esc(list.name)}?</h2><p>This removes the custom list. Your watch history stays unchanged.</p><button id="confirm-delete-list">Delete list</button>`,
+  );
+  d.querySelector<HTMLElement>("#confirm-delete-list")!.onclick = () =>
+    void run(async () => {
+      await saveLibrary({
+        ...state.settings,
+        customLists: localLists().filter((l) => l.id !== id),
+      });
+      d.close();
+      await watchlist();
+    });
+}
+function saveTo(media: Media) {
+  const lists = localLists();
+  const d = dialog(
+    `<h2 id="dialog-title">Save</h2><div class="save-menu"><button id="save-watch-later">Watch Later${state.watch[media.id]?.status === "PLANNING" ? " ✓" : ""}</button><label>Default lists<select id="save-default"><option value="">Choose a list</option>${watchStatuses.map(([id, name]) => `<option value="${id}">${name}${state.watch[media.id]?.status === id ? " ✓" : ""}</option>`).join("")}</select></label><label>Custom Lists<select id="save-custom" ${lists.length ? "" : "disabled"}><option value="">${lists.length ? "Choose a list" : "No custom lists"}</option>${lists.map((list) => `<option value="${list.id}">${esc(list.name)}${list.items.some((m) => m.id === media.id) ? " ✓ (remove)" : ""}</option>`).join("")}</select></label></div>`,
+  );
+  const status = async (value: WatchStatus) => {
+    state = await api.watchEdit(media.id, { status: value });
+    d.close();
+    updateSeriesActions();
+    showToast("Watch list updated.");
+    if (route === "watchlist") await watchlist();
+  };
+  d.querySelector<HTMLButtonElement>("#save-watch-later")!.onclick = () =>
+    void run(() => status("PLANNING"));
+  d.querySelector<HTMLSelectElement>("#save-default")!.onchange = (e) => {
+    const value = (e.target as HTMLSelectElement).value as WatchStatus;
+    if (value) void run(() => status(value));
+  };
+  d.querySelector<HTMLSelectElement>("#save-custom")!.onchange = (e) =>
+    void run(async () => {
+      const next = structuredClone(localLists());
+      const list = next.find(
+        (l) => l.id === (e.target as HTMLSelectElement).value,
+      );
+      if (!list) return;
+      const exists = list.items.some((m) => m.id === media.id);
+      list.items = list.items.filter((m) => m.id !== media.id);
+      if (!exists)
+        list.items.push({
+          id: media.id,
+          name: title(media),
+          cover: media.coverImage.large,
+          isAdult: !!media.isAdult,
+        });
+      await saveLibrary({ ...state.settings, customLists: next });
+      d.close();
+      showToast(`${exists ? "Removed from" : "Saved to"} ${list.name}.`);
+      if (route === "watchlist") await watchlist();
+    });
+}
+function bindShelfEditor(page: "home" | "watchlist") {
+  document.querySelector<HTMLElement>("#edit-shelves")!.onclick = () => {
+    const options = shelfOptions(page);
+    const ids = options.map(([id]) => id);
+    let order = [
+      ...new Set([
+        ...(state.settings.shelfLayouts?.[page]?.order ?? []).filter((id) =>
+          ids.includes(id),
+        ),
+        ...ids,
+      ]),
+    ];
+    const hidden = new Set(ids.filter((id) => shelfHidden(page, id)));
+    let dragged: HTMLElement | undefined;
+    const d = dialog(
+      `<h2 id="dialog-title">Edit shelves</h2><p>Drag shelves to change their order or move them to Hidden.</p><div id="shelf-editor"></div>`,
+    );
+    const editor = d.querySelector<HTMLElement>("#shelf-editor")!;
+    const positions = () =>
+      new Map(
+        [...editor.querySelectorAll<HTMLElement>("[data-id]")].map((row) => [
+          row.dataset.id!,
+          row.getBoundingClientRect(),
+        ]),
+      );
+    const animate = (before: Map<string, DOMRect>) => {
+      if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      editor.querySelectorAll<HTMLElement>("[data-id]").forEach((row) => {
+        if (row === dragged) return;
+        const old = before.get(row.dataset.id!),
+          next = row.getBoundingClientRect();
+        if (old && (old.top !== next.top || old.left !== next.left))
+          row.animate(
+            [
+              {
+                transform: `translate(${old.left - next.left}px,${old.top - next.top}px)`,
+              },
+              { transform: "none" },
+            ],
+            { duration: 180, easing: "ease-out" },
+          );
+      });
+    };
+    const readOrder = () => {
+      order = [...editor.querySelectorAll<HTMLElement>("[data-id]")].map(
+        (row) => row.dataset.id!,
+      );
+      hidden.clear();
+      editor
+        .querySelectorAll<HTMLElement>('[data-hidden="true"] [data-id]')
+        .forEach((row) => hidden.add(row.dataset.id!));
+    };
+    const render = () => {
+      const before = positions();
+      editor.innerHTML = [false, true]
+        .map(
+          (isHidden) =>
+            `<section class="shelf-drop-zone" data-hidden="${isHidden}"><h3>${isHidden ? "Hidden" : "Visible"}</h3><div class="shelf-rows">${order
+              .filter((id) => hidden.has(id) === isHidden)
+              .map(
+                (id, i, group) =>
+                  `<div class="shelf-order-row" draggable="true" tabindex="0" data-id="${id}" aria-label="${esc(options.find((o) => o[0] === id)![1])}. Press Space to ${isHidden ? "show" : "hide"}."><span class="drag-handle" aria-hidden="true">⠿</span><span>${esc(options.find((o) => o[0] === id)![1])}</span>${isHidden ? "" : `<div class="actions"><button data-move="-1" aria-label="Move up" ${i === 0 ? "disabled" : ""}>↑</button><button data-move="1" aria-label="Move down" ${i === group.length - 1 ? "disabled" : ""}>↓</button></div>`}</div>`,
+              )
+              .join("")}</div></section>`,
+        )
+        .join("");
+      animate(before);
+      editor.querySelectorAll<HTMLElement>("[data-id]").forEach((row) => {
+        const id = row.dataset.id!;
+        row.ondragstart = (e) => {
+          dragged = row;
+          e.dataTransfer!.setData("text/plain", id);
+          e.dataTransfer!.effectAllowed = "move";
+          requestAnimationFrame(() => row.classList.add("dragging"));
+        };
+        row.ondragend = () => {
+          readOrder();
+          dragged = undefined;
+          render();
+        };
+        row.onkeydown = (e) => {
+          if (e.target !== row || e.code !== "Space") return;
+          e.preventDefault();
+          hidden.has(id) ? hidden.delete(id) : hidden.add(id);
+          render();
+          editor.querySelector<HTMLElement>(`[data-id="${id}"]`)?.focus();
+        };
+        row.querySelectorAll<HTMLButtonElement>("[data-move]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              const group = order.filter((x) => !hidden.has(x));
+              const other = group[group.indexOf(id) + Number(b.dataset.move)];
+              if (!other) return;
+              const a = order.indexOf(id),
+                c = order.indexOf(other);
+              [order[a], order[c]] = [order[c], order[a]];
+              render();
+            }),
+        );
+      });
+      editor
+        .querySelectorAll<HTMLElement>(".shelf-drop-zone")
+        .forEach((zone) => {
+          zone.ondragover = (e) => {
+            if (!dragged) return;
+            e.preventDefault();
+            const rows = zone.querySelector<HTMLElement>(".shelf-rows")!;
+            const target = [
+              ...rows.querySelectorAll<HTMLElement>("[data-id]"),
+            ].find(
+              (row) =>
+                row !== dragged &&
+                e.clientY <
+                  row.getBoundingClientRect().top + row.offsetHeight / 2,
+            );
+            if (
+              dragged.parentElement === rows &&
+              dragged.nextElementSibling === (target ?? null)
+            )
+              return;
+            editor
+              .querySelectorAll<HTMLElement>("[data-id]")
+              .forEach((row) =>
+                row.getAnimations().forEach((animation) => animation.finish()),
+              );
+            const before = positions();
+            rows.insertBefore(dragged, target ?? null);
+            animate(before);
+            const bounds = editor.getBoundingClientRect();
+            if (e.clientY < bounds.top + 35) editor.scrollTop -= 15;
+            if (e.clientY > bounds.bottom - 35) editor.scrollTop += 15;
+          };
+          zone.ondrop = (e) => {
+            if (dragged) {
+              e.preventDefault();
+              readOrder();
+            }
+          };
+        });
+    };
+    render();
+    d.onclose = () =>
+      void run(async () => {
+        readOrder();
+        try {
+          await saveLibrary({
+            ...state.settings,
+            shelfLayouts: {
+              ...state.settings.shelfLayouts,
+              [page]: { order, hidden: [...hidden] },
+            },
+          });
+        } catch (e) {
+          if (d.isConnected) d.showModal();
+          throw e;
+        }
+        await (page === "home" ? home() : watchlist());
+      });
+  };
+}
+async function followingShelf(token: number, expanded = false) {
+  const onHome = route === "home";
+  if (!state.anilist.connected) return;
+  const shelf = document.createElement("section");
+  shelf.className = "home-section";
+  shelf.dataset.shelf = "Following";
+  shelf.innerHTML = `<div class="section-heading"><h2>Friends watching</h2><div class="actions">${onHome ? `<button class="quiet" data-following-more>View more ${uiIcon("right")}</button>` : `<button data-list-all>View all</button>`}<button data-list-step="-1" aria-label="Previous friends' titles">${uiIcon("left")}</button><button data-list-step="1" aria-label="Next friends' titles">${uiIcon("right")}</button></div></div><div class="home-grid"><p class="loading">Loading friends' anime…</p></div>`;
+  document.querySelector("#main")!.append(shelf);
+  applyShelfLayout(route === "watchlist" ? "watchlist" : "home");
+  shelf
+    .querySelector<HTMLButtonElement>("[data-following-more]")
+    ?.addEventListener("click", () => void watchlist("Following"));
+  const grid = shelf.querySelector<HTMLElement>(".home-grid")!;
+  const load = async () => {
+    try {
+      const data = (await friendsData()).filter(
+        (row) => state.settings.showAdult || !row.media.isAdult,
+      );
+      if (token !== request || !shelf.isConnected) return;
+      grid.innerHTML =
+        data
+          .map(
+            ({ media }) =>
+              `<article class="list-card following-card">${card(media)}</article>`,
+          )
+          .join("") ||
+        `<p class="muted">No anime found. This shelf shows public watching and rewatching lists from people you follow on AniList.</p>`;
+      bindMedia(shelf);
+      bindListPage(shelf, expanded);
+      if (expanded) {
+        shelf.hidden = false;
+        shelf.scrollIntoView({ block: "start" });
+      }
+    } catch (e) {
+      if (token !== request || !shelf.isConnected) return;
+      grid.innerHTML = `<p class="muted">Friends' anime could not be loaded.</p><button class="retry-following">Retry</button>`;
+      grid.querySelector<HTMLButtonElement>("button")!.onclick = () => {
+        grid.innerHTML = '<p class="loading">Loading…</p>';
+        void load();
+      };
+      showToast(e instanceof Error ? e.message : String(e));
+    }
+  };
+  await load();
+}
+
+function readEpisodeCache(id: number) {
+  try {
+    const saved = JSON.parse(
+      localStorage.getItem(`nen-episodes-v1-${id}`) || "null",
+    );
+    if (
+      !saved ||
+      !Array.isArray(saved.data?.items) ||
+      !saved.data.items.every(
+        (item: import("./shared").EpisodeInfo) =>
+          Number.isInteger(item.number) &&
+          typeof item.title === "string" &&
+          (!item.thumbnail || /^https:\/\//.test(item.thumbnail)),
+      )
+    )
+      return undefined;
+    episodeCache.set(id, saved);
+    return saved as { data: EpisodePage; expires: number };
+  } catch {
+    return undefined;
+  }
+}
+function writeEpisodeCache(id: number) {
+  try {
+    const index: number[] = JSON.parse(
+      localStorage.getItem("nen-episode-cache-index") || "[]",
+    );
+    const next = [...index.filter((n) => n !== id), id];
+    while (next.length > 50)
+      localStorage.removeItem(`nen-episodes-v1-${next.shift()}`);
+    localStorage.setItem(
+      `nen-episodes-v1-${id}`,
+      JSON.stringify(episodeCache.get(id)),
+    );
+    localStorage.setItem("nen-episode-cache-index", JSON.stringify(next));
+  } catch {
+    /* Cached details remain available in memory if disk storage is full. */
+  }
+}
+type Friends = import("./shared").FollowingTitle[];
+const friendRequests = new Map<string, Promise<Friends>>();
+const friendCache = new Map<string, { expires: number; data: Friends }>();
+function friendKey() {
+  return `${state.profiles?.active ?? "web"}:${state.anilist.user ?? ""}`;
+}
+async function friendsData(): Promise<Friends> {
+  if (!state.anilist.connected) return [];
+  const key = friendKey();
+  let cached = friendCache.get(key);
+  if (!cached) {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem(`nen-friends-v1-${key}`) || "null",
+      );
+      if (saved?.expires > Date.now() && Array.isArray(saved.data)) {
+        cached = saved;
+        friendCache.set(key, saved);
+      }
+    } catch {}
+  }
+  if (cached && cached.expires > Date.now()) return cached.data;
+  if (friendRequests.has(key)) return friendRequests.get(key)!;
+  const pending = api
+    .following()
+    .then((data) => {
+      const value = { data, expires: Date.now() + 5 * 60000 };
+      friendCache.set(key, value);
+      try {
+        localStorage.setItem(`nen-friends-v1-${key}`, JSON.stringify(value));
+      } catch {}
+      return data;
+    })
+    .finally(() => friendRequests.delete(key));
+  friendRequests.set(key, pending);
+  return pending;
+}
+const friendCovers = new Set<HTMLElement>();
+function fitFriends(cover: HTMLElement) {
+  const group = cover.querySelector<HTMLElement>(".following-avatars");
+  if (!group) return;
+  const available =
+    cover.clientWidth -
+    (cover.querySelector<HTMLElement>(".score")?.offsetWidth ?? 28) -
+    22;
+  const avatars = [...group.querySelectorAll<HTMLElement>(".friend-avatar")];
+  const overlap = avatars.length > 4;
+  group.classList.toggle("overlap", overlap);
+  avatars.forEach((avatar, i) => {
+    avatar.hidden = 28 + i * (overlap ? 15 : 32) > available;
+  });
+}
+const friendResize = new ResizeObserver((entries) =>
+  entries.forEach((entry) => fitFriends(entry.target as HTMLElement)),
+);
+async function decorateFriends(container: ParentNode) {
+  const key = friendKey();
+  for (const cover of friendCovers)
+    if (!cover.isConnected) {
+      friendResize.unobserve(cover);
+      friendCovers.delete(cover);
+    }
+  if (!state.anilist.connected) {
+    container
+      .querySelectorAll(".following-avatars")
+      .forEach((el) => el.remove());
+    return;
+  }
+  let data: Friends;
+  try {
+    data = await friendsData();
+  } catch {
+    return;
+  }
+  if (key !== friendKey() || !state.anilist.connected) return;
+  const users = new Map(data.map((row) => [row.media.id, row.users]));
+  container.querySelectorAll<HTMLElement>(".cover").forEach((cover) => {
+    if (!cover.isConnected) return;
+    const card = cover.closest<HTMLElement>(
+      "[data-media],[data-continue],[data-resume]",
+    );
+    const id = Number(
+      card?.dataset.media ||
+        card?.dataset.continue ||
+        card?.dataset.resume?.split(":")[0],
+    );
+    cover.querySelector(".following-avatars")?.remove();
+    const watching = users.get(id);
+    if (!watching?.length) return;
+    const group = document.createElement("div");
+    group.className = "following-avatars";
+    group.innerHTML = watching
+      .map(
+        (user) =>
+          `<span class="friend-avatar" tabindex="0" aria-label="${esc(user.name)} is watching"><img src="${esc(user.avatar.medium)}" alt=""><span role="tooltip" class="friend-tooltip">${esc(user.name)}</span></span>`,
+      )
+      .join("");
+    group.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+    };
+    cover.append(group);
+    friendCovers.add(cover);
+    friendResize.observe(cover);
+    fitFriends(cover);
+  });
+}
+
+function bindShelfDice(container: ParentNode) {
+  const sections = new Set<HTMLElement>(
+    container.querySelectorAll<HTMLElement>(".home-section"),
+  );
+  if (container instanceof Element) {
+    const section = container.closest<HTMLElement>(".home-section");
+    if (section) sections.add(section);
+  }
+  for (const section of sections) {
+    const heading = section.querySelector(".section-heading h2");
+    if (!heading || section.querySelector(".shelf-dice")) continue;
+    const button = document.createElement("button");
+    button.className = "square-button shelf-dice";
+    button.setAttribute(
+      "aria-label",
+      "Play a random title from " + heading.textContent,
+    );
+    button.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="8" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="8" cy="16" r="1"/><circle cx="16" cy="16" r="1"/></svg>';
+    heading.after(button);
+    button.onclick = () =>
+      void run(async () => {
+        const items = [
+          ...section.querySelectorAll<HTMLElement>(
+            "[data-resume],[data-continue],[data-media]",
+          ),
+        ];
+        const candidates = items.filter(
+          (item, i) =>
+            items.findIndex(
+              (other) =>
+                (other.dataset.media ||
+                  other.dataset.continue ||
+                  other.dataset.resume?.split(":")[0]) ===
+                (item.dataset.media ||
+                  item.dataset.continue ||
+                  item.dataset.resume?.split(":")[0]),
+            ) === i,
+        );
+        if (!candidates.length) {
+          showToast("No titles available in this shelf.");
+          return;
+        }
+        const item = candidates[Math.floor(Math.random() * candidates.length)];
+        if (item.dataset.resume || item.dataset.continue) {
+          item.click();
+          return;
+        }
+        const id = Number(item.dataset.media),
+          media = await api.media(id);
+        const entry = state.watch[String(id)];
+        const recent = Object.values(state.progress)
+          .filter((p) => p.mediaId === id && !p.watched)
+          .sort((a, b) => b.updated - a.updated)[0];
+        const episode =
+          entry?.status === "COMPLETED"
+            ? 1
+            : (recent?.episode ??
+              Math.min(media.episodes || Infinity, (entry?.count || 0) + 1));
+        if (episodeAvailability(media, episode).released === false) {
+          showToast("This episode has not aired yet.");
+          return;
+        }
+        await startEpisode(media, episode);
+      });
+  }
+}

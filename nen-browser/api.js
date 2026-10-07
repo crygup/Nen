@@ -89,6 +89,7 @@ export async function handleApi(req, res, desktop = false) {
     if (
       ![
         "/catalog",
+        "/airing",
         "/options",
         "/desktop-data",
         "/media",
@@ -125,7 +126,14 @@ export async function handleApi(req, res, desktop = false) {
       return;
     }
     let result;
-    if (url.pathname === "/catalog")
+    if (url.pathname === "/airing")
+      result = await providers.airing(
+        (url.searchParams.get("ids") || "")
+          .split(",")
+          .filter(Boolean)
+          .map(Number),
+      );
+    else if (url.pathname === "/catalog")
       result = await providers.catalog(
         mode,
         (url.searchParams.get("search") || "").slice(0, 200),

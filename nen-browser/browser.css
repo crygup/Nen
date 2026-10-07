@@ -1,15 +1,15 @@
 /* All app layout and controls come from src/style.css. These are browser-only differences. */
 /* Keep the image on the same layer when the hover zoom ends. */
-html .poster img,
-html .recent-card img,
-html .list-card .cover img {
+html .poster .cover > img,
+html .recent-card .cover > img,
+html .list-card .cover > img {
   display: block;
   transition: transform 180ms ease;
   transform: translateZ(0) scale(1);
 }
-html .poster:hover img,
-html .recent-card:hover img,
-html .list-card:hover .cover img {
+html .poster:hover .cover > img,
+html .recent-card:hover .cover > img,
+html .list-card:hover .cover > img {
   transform: translateZ(0) scale(1.025);
 }
 #browser-video {

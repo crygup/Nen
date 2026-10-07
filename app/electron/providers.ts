@@ -397,11 +397,25 @@ export async function catalog(
     lastPage: data.Page.pageInfo.lastPage,
   };
 }
+export async function airing(ids: number[]): Promise<Media[]> {
+  if (
+    !Array.isArray(ids) ||
+    ids.length > 50 ||
+    ids.some((id) => !Number.isSafeInteger(id) || id < 1)
+  )
+    throw Error("Invalid anime IDs.");
+  if (!ids.length) return [];
+  const data = await gql(
+    `query($ids:[Int]) { Page(perPage:50) { media(id_in:$ids,type:ANIME,format_not:MUSIC) { ${fields} airingSchedule(perPage:1,notYetAired:false,sort:TIME_DESC) { nodes { episode airingAt } } } } }`,
+    { ids },
+  );
+  return data.Page.media.map(normalizeMedia);
+}
 export async function media(id: number): Promise<Media> {
   return normalizeMedia(
     (
       await gql(
-        `query($id:Int){Media(id:$id,type:ANIME){${fields} streamingEpisodes { title } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { english romaji } episodes format type } } }}}`,
+        `query($id:Int){Media(id:$id,type:ANIME){${fields} trailer { id site } streamingEpisodes { title thumbnail } airingSchedule(perPage:50) { nodes { episode airingAt } } relations { edges { relationType node { id title { english romaji } coverImage { large } episodes format type } } }}}`,
         { id },
       )
     ).Media,
@@ -785,10 +799,16 @@ function normalizeMedia(input: any): Media {
         .filter((e: any) => number(e.episode) && number(e.airingAt, 9999999999))
         .map((e: any) => ({ episode: e.episode, airingAt: e.airingAt })),
     },
+    trailer:
+      input.trailer &&
+      ["youtube", "dailymotion"].includes(input.trailer.site) &&
+      /^[a-zA-Z0-9_-]{1,100}$/.test(input.trailer.id)
+        ? { site: input.trailer.site, id: input.trailer.id }
+        : undefined,
     streamingEpisodes: (Array.isArray(input.streamingEpisodes)
       ? input.streamingEpisodes
       : []
-    ).map((e: any) => ({ title: str(e.title) })),
+    ).map((e: any) => ({ title: str(e.title), thumbnail: image(e.thumbnail) })),
     relations: {
       edges: (Array.isArray(input.relations?.edges)
         ? input.relations.edges
@@ -803,6 +823,7 @@ function normalizeMedia(input: any): Media {
           relationType: str(e.relationType, 30),
           node: {
             id: e.node.id,
+            coverImage: { large: image(e.node.coverImage?.large) },
             episodes: number(e.node.episodes, 10000) || null,
             title: {
               english: str(e.node.title?.english) || null,
@@ -819,99 +840,126 @@ function normalizeMedia(input: any): Media {
 export async function episodes(id: number, page: number): Promise<EpisodePage> {
   const anime = await media(id);
   const titles = new Map<number, string>();
+  const thumbnails = new Map<number, string>();
   for (const item of anime.streamingEpisodes ?? []) {
     const match = item.title.match(/(?:Episode\s*)?(\d+)\s*[-:–]\s*(.+)/i);
-    if (match) titles.set(Number(match[1]), match[2]);
+    if (match) {
+      titles.set(Number(match[1]), match[2]);
+      if (item.thumbnail) thumbnails.set(Number(match[1]), item.thumbnail);
+    }
   }
   for (const [number, title] of titles)
     if (/^(untitled|tba|tbd|episode\s*\d+)$/i.test(title.trim()))
       titles.delete(number);
   let notice: string | undefined;
-  if (anime.idMal) {
-    try {
-      const result = JSON.parse(
-        await request(
-          `https://api.jikan.moe/v4/anime/${anime.idMal}/episodes?page=${Math.floor((page - 1) / 2) + 1}`,
-          {},
-          3600000,
-        ),
-      );
-      for (const row of result.data ?? [])
-        if (
-          Number.isInteger(row.mal_id) &&
-          typeof row.title === "string" &&
-          !/^(untitled|tba|tbd|episode\s*\d+)$/i.test(row.title.trim())
-        )
-          titles.set(row.mal_id, row.title.slice(0, 500));
-    } catch {
-      notice = "Some episode titles are not available yet.";
-    }
-  }
   const first = (page - 1) * 50 + 1;
   const end = Math.min(first + 49, anime.episodes ?? first + 49);
-  if (
-    anime.idMal &&
-    Array.from({ length: end - first + 1 }, (_, i) => first + i).some(
-      (n) => !titles.has(n),
-    )
-  ) {
-    try {
-      const mappings = JSON.parse(
-        await request(
-          "https://kitsu.io/api/edge/mappings?filter[externalSite]=myanimelist/anime&include=item&filter[externalId]=" +
-            anime.idMal,
-          {},
-          86400000,
-        ),
-      );
-      const matches =
-        mappings.data?.filter(
-          (m: any) =>
-            m.attributes?.externalSite === "myanimelist/anime" &&
-            String(m.attributes.externalId) === String(anime.idMal) &&
-            m.relationships?.item?.data?.type === "anime",
-        ) ?? [];
-      const kitsu =
-        matches.length === 1
-          ? matches[0].relationships.item.data.id
-          : undefined;
-      if (kitsu && /^\d+$/.test(kitsu)) {
-        for (
-          let offset = Math.floor((first - 1) / 20) * 20;
-          offset < end;
-          offset += 20
-        ) {
-          const data = JSON.parse(
+  await Promise.all([
+    (async () => {
+      if (
+        anime.idMal &&
+        Array.from(
+          {
+            length: Math.min(
+              50,
+              Math.max(0, (anime.episodes ?? page * 50) - (page - 1) * 50),
+            ),
+          },
+          (_, i) => (page - 1) * 50 + i + 1,
+        ).some((n) => !titles.has(n))
+      ) {
+        try {
+          const result = JSON.parse(
             await request(
-              "https://kitsu.io/api/edge/anime/" +
-                kitsu +
-                "/episodes?page[limit]=20&page[offset]=" +
-                offset +
-                "&sort=number",
+              `https://api.jikan.moe/v4/anime/${anime.idMal}/episodes?page=${Math.floor((page - 1) / 2) + 1}`,
               {},
               3600000,
             ),
           );
-          for (const row of data.data ?? []) {
-            const e = row.attributes;
-            const title =
-              e?.titles?.en_us || e?.titles?.en || e?.canonicalTitle;
+          for (const row of result.data ?? [])
             if (
-              Number.isInteger(e?.number) &&
-              typeof title === "string" &&
-              title.trim() &&
-              !/^(untitled|tba|tbd|episode\s*\d+)$/i.test(title.trim()) &&
-              !titles.has(e.number)
+              Number.isInteger(row.mal_id) &&
+              typeof row.title === "string" &&
+              !/^(untitled|tba|tbd|episode\s*\d+)$/i.test(row.title.trim())
             )
-              titles.set(e.number, title.slice(0, 500));
-          }
-          if (!data.links?.next) break;
+              titles.set(row.mal_id, row.title.slice(0, 500));
+        } catch {
+          notice = "Some episode titles are not available yet.";
         }
       }
-    } catch {
-      notice = "Some episode titles are not available yet.";
-    }
-  }
+    })(),
+    (async () => {
+      if (
+        anime.idMal &&
+        Array.from({ length: end - first + 1 }, (_, i) => first + i).some(
+          (n) => !titles.has(n) || !thumbnails.has(n),
+        )
+      ) {
+        try {
+          const mappings = JSON.parse(
+            await request(
+              "https://kitsu.io/api/edge/mappings?filter[externalSite]=myanimelist/anime&include=item&filter[externalId]=" +
+                anime.idMal,
+              {},
+              86400000,
+            ),
+          );
+          const matches =
+            mappings.data?.filter(
+              (m: any) =>
+                m.attributes?.externalSite === "myanimelist/anime" &&
+                String(m.attributes.externalId) === String(anime.idMal) &&
+                m.relationships?.item?.data?.type === "anime",
+            ) ?? [];
+          const kitsu =
+            matches.length === 1
+              ? matches[0].relationships.item.data.id
+              : undefined;
+          if (kitsu && /^\d+$/.test(kitsu)) {
+            for (
+              let offset = Math.floor((first - 1) / 20) * 20;
+              offset < end;
+              offset += 20
+            ) {
+              const data = JSON.parse(
+                await request(
+                  "https://kitsu.io/api/edge/anime/" +
+                    kitsu +
+                    "/episodes?page[limit]=20&page[offset]=" +
+                    offset +
+                    "&sort=number",
+                  {},
+                  3600000,
+                ),
+              );
+              for (const row of data.data ?? []) {
+                const e = row.attributes;
+                if (
+                  Number.isInteger(e?.number) &&
+                  typeof e.thumbnail?.original === "string" &&
+                  /^https:\/\//.test(e.thumbnail.original)
+                )
+                  thumbnails.set(e.number, e.thumbnail.original);
+                const title =
+                  e?.titles?.en_us || e?.titles?.en || e?.canonicalTitle;
+                if (
+                  Number.isInteger(e?.number) &&
+                  typeof title === "string" &&
+                  title.trim() &&
+                  !/^(untitled|tba|tbd|episode\s*\d+)$/i.test(title.trim()) &&
+                  !titles.has(e.number)
+                )
+                  titles.set(e.number, title.slice(0, 500));
+              }
+              if (!data.links?.next) break;
+            }
+          }
+        } catch {
+          notice = "Some episode titles are not available yet.";
+        }
+      }
+    })(),
+  ]);
   const latest = latestEpisode(anime);
   const total =
     anime.episodes ?? Math.max(latest, anime.nextAiringEpisode?.episode ?? 0);
@@ -922,6 +970,7 @@ export async function episodes(id: number, page: number): Promise<EpisodePage> {
       return {
         number,
         title: titles.get(number) ?? `Episode ${number}`,
+        thumbnail: thumbnails.get(number),
         ...episodeAvailability(anime, number),
       };
     },

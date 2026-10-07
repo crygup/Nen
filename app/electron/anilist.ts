@@ -1,5 +1,6 @@
 import type {
   AniListState,
+  State,
   SyncBase,
   SyncChange,
   SyncPreview,
@@ -389,4 +390,66 @@ export async function refreshRemote(
         repeat: entry.repeat,
       };
   }
+}
+
+let followingCache:
+  | {
+      token: string;
+      expires: number;
+      data: import("../src/shared").FollowingTitle[];
+    }
+  | undefined;
+export async function readFollowing(
+  token: string,
+): Promise<import("../src/shared").FollowingTitle[]> {
+  if (!token) return [];
+  if (followingCache?.token === token && followingCache.expires > Date.now())
+    return followingCache.data;
+  const { Viewer } = await request<{ Viewer: { id: number } }>(
+    token,
+    "query { Viewer { id } }",
+  );
+  const followed: number[] = [];
+  for (let page = 1; ; page++) {
+    const { Page } = await request<{
+      Page: { pageInfo: { hasNextPage: boolean }; following: { id: number }[] };
+    }>(
+      token,
+      "query($id:Int!,$page:Int){Page(page:$page,perPage:50){pageInfo{hasNextPage} following(userId:$id){id}}}",
+      { id: Viewer.id, page },
+    );
+    followed.push(...Page.following.map((user) => user.id));
+    if (!Page.pageInfo.hasNextPage) break;
+  }
+  const titles = new Map<number, import("../src/shared").FollowingTitle>();
+  for (let offset = 0; offset < followed.length; offset += 50) {
+    for (let page = 1; ; page++) {
+      const { Page } = await request<{
+        Page: {
+          pageInfo: { hasNextPage: boolean };
+          mediaList: {
+            media: import("../src/shared").Media;
+            user: import("../src/shared").FollowingTitle["users"][number];
+          }[];
+        };
+      }>(
+        token,
+        `query($users:[Int],$page:Int){Page(page:$page,perPage:50){pageInfo{hasNextPage} mediaList(type:ANIME,userId_in:$users,status_in:[CURRENT,REPEATING],sort:UPDATED_TIME_DESC){media{id idMal title{english romaji} coverImage{large} format status episodes seasonYear averageScore genres isAdult} user{id name avatar{medium}}}}}`,
+        { users: followed.slice(offset, offset + 50), page },
+      );
+      for (const { media, user } of Page.mediaList) {
+        if (!media || !user) continue;
+        media.isAdult ||= media.genres?.some((g) =>
+          /^(ecchi|hentai)$/i.test(g),
+        );
+        const item = titles.get(media.id) ?? { media, users: [] };
+        if (!item.users.some((u) => u.id === user.id)) item.users.push(user);
+        titles.set(media.id, item);
+      }
+      if (!Page.pageInfo.hasNextPage) break;
+    }
+  }
+  const data = [...titles.values()];
+  followingCache = { token, expires: Date.now() + 60000, data };
+  return data;
 }

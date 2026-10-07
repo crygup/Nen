@@ -1,5 +1,6 @@
 import { malAccount } from "../app/electron/mal-account";
 import {
+  readFollowing,
   readRemote,
   refreshRemote,
   preview,
@@ -139,6 +140,11 @@ export function connectAccount(getState: () => State, save: () => void) {
     12000,
   );
   return {
+    get busy() {
+      return busy || mal.busy;
+    },
+    following: () =>
+      getState().anilist.connected ? readFollowing(token) : Promise.resolve([]),
     anilistRefresh: refreshAniList,
     mal: {
       refresh: mal.refresh,

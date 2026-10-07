@@ -12,6 +12,7 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 const api: API = {
+  following: () => ipcRenderer.invoke("following"),
   mal: {
     refresh: () => ipcRenderer.invoke("malRefresh"),
     importFrom: async (source, progress) => {
@@ -96,6 +97,7 @@ const api: API = {
       ipcRenderer.removeListener("video-error", fail);
     };
   },
+  airing: (...a) => ipcRenderer.invoke("airing", ...a),
   catalogOptions: () => ipcRenderer.invoke("catalogOptions"),
   catalog: (...a) => ipcRenderer.invoke("catalog", ...a),
   episodes: (...a) => ipcRenderer.invoke("episodes", ...a),

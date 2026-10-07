@@ -1,3 +1,4 @@
+import { validateLibrary } from "../app/src/shared";
 import { toggleFullscreen } from "./fullscreen";
 declare const NEN_BROWSER_VERSION: string;
 import { browserRoom } from "./room";
@@ -9,6 +10,7 @@ import {
 import { connectAccount } from "./account";
 import Hls from "hls.js";
 import {
+  migrateWatchLater,
   newEntry,
   activeRun,
   markEpisode,
@@ -83,6 +85,8 @@ if (window.parent !== window) {
     ...state.settings,
     sourceMode: "auto",
   };
+  if (migrateWatchLater(state))
+    localStorage.setItem(key, JSON.stringify(state));
   state.version = NEN_BROWSER_VERSION;
   state.anilist.connected = false;
   const playbackListeners = new Set<(p: Playback) => void>(),
@@ -487,6 +491,7 @@ if (window.parent !== window) {
         perPage: perPage || 24,
         adult: !!state.settings.showAdult,
       }),
+    airing: (ids) => request("airing", { ids: ids.join(",") }),
     catalogOptions: () => request("options"),
     media: (id) => request("media", { id }),
     episodes: (id, page) => request("episodes", { id, page }),
@@ -827,6 +832,7 @@ if (window.parent !== window) {
     external: async (target, id) => {
       const urls = {
         anilist: `https://anilist.co/anime/${id}`,
+        mal: `https://myanimelist.net/anime/${id}`,
         discord: "https://discord.gg/rYgwUYSNRg",
         issues: "https://github.com/may-be-gay/Nen/issues",
         email: "mailto:nen@crygup.com",
