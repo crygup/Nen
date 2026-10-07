@@ -12,7 +12,12 @@ function subscribe<T>(channel: string, callback: (value: T) => void) {
   return () => ipcRenderer.removeListener(channel, listener);
 }
 const api: API = {
+  revealScreenshot: () => ipcRenderer.invoke("revealScreenshot"),
+  saveScreenshot: () => ipcRenderer.invoke("saveScreenshot"),
+  openTrailer: (id) => ipcRenderer.invoke("openTrailer", id),
+  miniPlayer: (action) => ipcRenderer.invoke("miniPlayer", action),
   following: () => ipcRenderer.invoke("following"),
+  seekPreview: (position) => ipcRenderer.invoke("seekPreview", position),
   mal: {
     refresh: () => ipcRenderer.invoke("malRefresh"),
     importFrom: async (source, progress) => {

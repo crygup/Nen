@@ -24,8 +24,12 @@ const downloadedGradient = (ranges: [number, number][], position: number) => {
   return `linear-gradient(to right, transparent 0 ${position * 100}%, rgb(255 255 255 / 48%) ${position * 100}% ${end * 100}%, transparent ${end * 100}% 100%)`;
 };
 const icon = (name: string) =>
-  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">${({ back: '<path d="m14 5-7 7 7 7"/>', play: '<path d="m8 4 12 8-12 8z" fill="currentColor" stroke="none"/>', pause: '<path d="M8 4v16M16 4v16" stroke-width="4"/>', next: '<path d="m5 5 11 7-11 7z"/><path d="M19 5v14"/>', volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>', full: '<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>', audio: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>', tracks: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', source: '<path d="M4 5h16v5H4zM4 14h16v5H4zM7 7v1M7 16v1"/>', speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' } as Record<string, string>)[name]}</svg>`;
+  `<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">${({ back: '<path d="m14 5-7 7 7 7"/>', play: '<path d="m8 4 12 8-12 8z" fill="currentColor" stroke="none"/>', pause: '<path d="M8 4v16M16 4v16" stroke-width="4"/>', next: '<path d="m5 5 11 7-11 7z"/><path d="M19 5v14"/>', volume: '<path d="M3 9h4l5-4v14l-5-4H3zM16 8a6 6 0 0 1 0 8M19 5a10 10 0 0 1 0 14"/>', mini: '<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="12" y="12" width="7" height="6"/>', pin: '<path d="M9 3h6l-1 6 4 4v2H6v-2l4-4zM12 15v6"/>', full: '<path d="M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6"/>', audio: '<path d="M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4"/>', tracks: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M6 11h5M14 11h4M6 15h3M12 15h6"/>', source: '<path d="M4 5h16v5H4zM4 14h16v5H4zM7 7v1M7 16v1"/>', speed: '<path d="M4 18a9 9 0 1 1 16 0M12 13l5-6"/><circle cx="12" cy="13" r="2"/>', more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>' } as Record<string, string>)[name]}</svg>`;
 export function mountPlayer(actions: {
+  menu: (
+    event: MouseEvent,
+    actions: [string, () => Promise<unknown>][],
+  ) => void;
   sources: (p: Playback) => void;
   next: (p: Playback) => void;
   edit: () => void;
@@ -33,7 +37,7 @@ export function mountPlayer(actions: {
 }) {
   const root = document.querySelector("#app")!;
   document.documentElement.classList.add("player-mode");
-  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Loading</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><section class="player-statistics"><strong>Statistics</strong><dl><dt>Peers</dt><dd id="stats-peers"></dd><dt>Speed</dt><dd id="stats-speed"></dd><dt>Source</dt><dd id="stats-source"></dd><dt>Downloaded</dt><dd id="stats-downloaded"></dd></dl></section><section class="player-skips"><strong id="more-heading">Skips</strong><button id="local-subtitle" hidden>Load subtitle file</button><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button><div id="player-downloads" hidden><hr><strong>Downloads</strong><button id="download-video">Download</button><button id="copy-magnet">Copy magnet link</button></div></section></div></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
+  root.innerHTML = `<section class="player-stage" aria-label="Video player"><canvas id="video-surface"></canvas><header class="watch-header"><button id="stop" class="icon-button" aria-label="Back to browsing" title="Back">${icon("back")}</button><div><strong id="watch-title"></strong><span id="watch-episode"></span></div><span id="private-player" class="private-indicator" hidden aria-label="Private session" title="Private session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span><button id="mini-pin" class="icon-button" aria-label="Pin on top" aria-pressed="false" hidden>${icon("pin")}</button><button id="mini-player" class="icon-button" aria-label="Mini player" title="Mini player" hidden>${icon("mini")}</button><button id="fullscreen-top" class="icon-button" aria-label="Toggle fullscreen">${icon("full")}</button></header><div id="buffering" class="buffering" role="status">Loading</div><div id="skip-popup" class="skip-popup" hidden><button id="skip-current">Skip intro</button><button id="dismiss-skip" aria-label="Dismiss skip suggestion"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="next-popup" class="skip-popup next-popup" hidden><button id="play-next">Play next episode</button></div><footer class="watch-footer"><div class="seek-row"><span id="position">00:00</span><div class="seek-track"><div id="seek-preview" class="seek-preview" hidden><img alt="Seek preview" hidden><span></span></div><input id="seek" type="range" min="0" max="1" step="0.1" value="0" aria-label="Playback position"></div><span id="duration">00:00</span></div><div class="watch-buttons"><button id="pause" class="icon-button" aria-label="Pause">${icon("pause")}</button><button id="next-episode" class="icon-button" aria-label="Next episode" title="Next episode">${icon("next")}</button><button id="mute" class="icon-button" aria-label="Mute" title="Mute">${icon("volume")}</button><input id="volume" type="range" min="0" max="100" value="100" aria-label="Volume"><div class="watch-spacer"></div><button id="change-source" class="icon-button" aria-label="Change source" title="Change source">${icon("source")}</button><button id="speed" class="icon-button" aria-label="Playback speed" title="Playback speed">${icon("speed")}</button><button id="audio-tracks" class="icon-button" aria-label="Audio tracks" title="Audio tracks">${icon("audio")}</button><button id="tracks" class="icon-button" aria-label="Subtitles" title="Subtitles">${icon("tracks")}</button><button id="player-more" class="icon-button" aria-label="More playback controls" title="More">${icon("more")}</button><button id="fullscreen" class="icon-button" aria-label="Fullscreen" title="Fullscreen">${icon("full")}</button></div><div id="speed-panel" class="watch-panel" hidden><strong>Playback speed</strong><output id="speed-value">1×</output><input id="speed-slider" type="range" min="0.25" max="4" step="0.05" value="1" aria-label="Playback speed"><div class="speed-presets">${[0.5, 1, 1.25, 1.5, 2, 3, 4].map((n) => `<button data-speed="${n}">${n}×</button>`).join("")}</div></div><div id="audio-panel" class="watch-panel track-options" hidden></div><div id="track-panel" class="watch-panel track-options" hidden></div><div id="more-panel" class="watch-panel" hidden><section class="player-statistics"><strong>Statistics</strong><dl><dt>Peers</dt><dd id="stats-peers"></dd><dt>Speed</dt><dd id="stats-speed"></dd><dt>Source</dt><dd id="stats-source"></dd><dt>Downloaded</dt><dd id="stats-downloaded"></dd></dl></section><section class="player-skips"><strong id="more-heading">Skips</strong><button id="local-subtitle" hidden>Load subtitle file</button><button id="undo">Undo skip</button><button id="edit-marker">Edit skip times</button><div id="player-downloads" hidden><hr><strong>Downloads</strong><button id="download-video">Download</button><button id="copy-magnet">Copy magnet link</button></div></section></div></footer></section><dialog id="dialog" aria-labelledby="dialog-title"></dialog>`;
   const el = <T extends HTMLElement = HTMLElement>(id: string) =>
     document.getElementById(id) as T;
   const volumeToast = document.createElement("div");
@@ -266,10 +270,75 @@ export function mountPlayer(actions: {
     dragging = false;
     wake();
   });
+  const updateMini = (value: { active: boolean; pinned: boolean }) => {
+    document.documentElement.classList.toggle("mini-player", value.active);
+    el("mini-pin").hidden = !value.active;
+    el("mini-pin").setAttribute("aria-pressed", String(value.pinned));
+    el("mini-pin").setAttribute(
+      "aria-label",
+      value.pinned ? "Unpin from top" : "Pin on top",
+    );
+    el("mini-player").setAttribute(
+      "aria-label",
+      value.active ? "Exit mini player" : "Mini player",
+    );
+    el("mini-player").title = value.active ? "Exit mini player" : "Mini player";
+  };
+  if (api.miniPlayer) {
+    el("mini-player").hidden = false;
+    el("mini-player").onclick = () =>
+      run(api.miniPlayer!("toggle").then(updateMini));
+    el("mini-pin").onclick = () => run(api.miniPlayer!("pin").then(updateMini));
+    run(api.miniPlayer("state").then(updateMini));
+  }
+  const fullscreen = () =>
+    run(
+      api.control("fullscreen").then(async () => {
+        if (api.miniPlayer) updateMini(await api.miniPlayer("state"));
+      }),
+    );
+  void api
+    .state()
+    .then((state) => {
+      el("private-player").hidden = !state.settings.privateSession;
+    })
+    .catch(actions.error);
+  document.querySelector<HTMLElement>(".player-stage")!.oncontextmenu = (
+    event,
+  ) => {
+    const items: [string, () => Promise<unknown>][] = [];
+    if (api.saveScreenshot)
+      items.push([
+        "Save Screenshot",
+        async () => {
+          const path = await api.saveScreenshot!();
+          if (path)
+            playerNotice(
+              "Saved to " + path,
+              api.revealScreenshot
+                ? {
+                    label: "Open folder",
+                    run: () => run(api.revealScreenshot!()),
+                  }
+                : undefined,
+            );
+        },
+      ]);
+    if (api.downloads && !el("player-downloads").hidden)
+      items.push([
+        "Download video",
+        async () => {
+          el("download-video").click();
+        },
+      ]);
+    if (items.length) {
+      event.preventDefault();
+      actions.menu(event, items);
+    }
+  };
   el("stop").onclick = () => run(api.control("stop"));
   el("pause").onclick = () => run(api.control("pause"));
-  el("fullscreen").onclick = el("fullscreen-top").onclick = () =>
-    run(api.control("fullscreen"));
+  el("fullscreen").onclick = el("fullscreen-top").onclick = () => fullscreen();
   el("download-video").onclick = () => {
     if (!api.downloads) return;
     const button = el<HTMLButtonElement>("download-video");
@@ -337,6 +406,88 @@ export function mountPlayer(actions: {
   el("undo").onclick = () => run(api.undo());
   el("edit-marker").onclick = actions.edit;
   const seek = el<HTMLInputElement>("seek");
+  const preview = el<HTMLElement>("seek-preview");
+  let previewTimer: ReturnType<typeof setTimeout>;
+  let previewBucket = -1;
+  let pendingPreview = false;
+  let previewSource = "";
+  const frames = new Map<number, string>();
+  const hidePreview = () => {
+    clearTimeout(previewTimer);
+    previewBucket = -1;
+    preview.hidden = true;
+  };
+  const loadPreview = async () => {
+    if (pendingPreview || preview.hidden || previewBucket < 0) return;
+    const bucket = previewBucket,
+      source = previewSource;
+    const image = preview.querySelector("img")!;
+    if (frames.has(bucket)) {
+      image.src = frames.get(bucket)!;
+      image.hidden = false;
+      return;
+    }
+    pendingPreview = true;
+    preview.classList.add("loading-frame");
+    try {
+      const src = await api.seekPreview(bucket * 5);
+      if (src && source === previewSource) {
+        frames.set(bucket, src);
+        if (frames.size > 120) frames.delete(frames.keys().next().value!);
+        if (bucket === previewBucket && !preview.hidden) {
+          image.src = src;
+          image.hidden = false;
+        }
+      }
+      if (!src && bucket === previewBucket)
+        preview.dataset.notice = "Frame unavailable";
+    } catch {
+      if (bucket === previewBucket)
+        preview.dataset.notice = "Frame unavailable";
+    } finally {
+      pendingPreview = false;
+      preview.classList.remove("loading-frame");
+      if (
+        (bucket !== previewBucket || source !== previewSource) &&
+        !preview.hidden
+      )
+        void loadPreview();
+    }
+  };
+  seek.onpointermove = (event) => {
+    const source = `${latest?.mediaId}:${latest?.episode}:${latest?.local?.folder}:${latest?.local?.name}:${latest?.release?.hash}`;
+    if (source !== previewSource) {
+      previewSource = source;
+      frames.clear();
+      previewBucket = -1;
+    }
+    const bounds = seek.getBoundingClientRect();
+    const fraction = Math.max(
+      0,
+      Math.min(1, (event.clientX - bounds.left) / bounds.width),
+    );
+    const seconds = Math.min(
+      Math.max(0, (latest?.duration ?? 0) - 0.1),
+      fraction * (latest?.duration ?? 0),
+    );
+    if (!latest?.duration) return;
+    preview.hidden = false;
+    preview.style.left = `${Math.max(Math.min(104, bounds.width / 2), Math.min(bounds.width - 104, fraction * bounds.width))}px`;
+    preview.querySelector("span")!.textContent = time(seconds);
+    const bucket = Math.floor(seconds / 5);
+    if (bucket === previewBucket) return;
+    previewBucket = bucket;
+    delete preview.dataset.notice;
+    const image = preview.querySelector("img")!;
+    image.hidden = !frames.has(bucket);
+    if (frames.has(bucket)) image.src = frames.get(bucket)!;
+    clearTimeout(previewTimer);
+    previewTimer = setTimeout(() => void loadPreview(), 80);
+  };
+  seek.addEventListener("pointerleave", hidePreview);
+  seek.addEventListener("blur", hidePreview);
+  window.addEventListener("pagehide", hidePreview, { once: true });
+
   seek.onpointerdown = () => {
     dragging = true;
   };
@@ -405,8 +556,11 @@ export function mountPlayer(actions: {
       e.preventDefault();
       setVolume(volumeTarget + (e.key === "ArrowUp" ? 5 : -5), "toast");
     }
-    if (e.key.toLowerCase() === "f") run(api.control("fullscreen"));
-    if (e.key === "Escape") run(api.control("stop"));
+    if (e.key.toLowerCase() === "f") fullscreen();
+    if (e.key === "Escape" && !e.repeat) {
+      e.preventDefault();
+      run(api.control("stop"));
+    }
   });
   const stage = document.querySelector<HTMLElement>(".player-stage")!;
   const interactive = (event: Event) =>
@@ -446,7 +600,7 @@ export function mountPlayer(actions: {
   });
   stage.addEventListener("dblclick", (event) => {
     if (touchPlayer() || interactive(event)) return;
-    run(api.control("fullscreen"));
+    fullscreen();
   });
   wake();
   return (p: Playback) => {

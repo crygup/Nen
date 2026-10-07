@@ -369,8 +369,11 @@ export interface FollowingTitle {
   users: { id: number; name: string; avatar: { medium: string } }[];
 }
 export interface API {
+  saveScreenshot?(): Promise<string | null>;
+  revealScreenshot?(): Promise<void>;
   openTrailer?(id: number): Promise<void>;
   following(): Promise<FollowingTitle[]>;
+  seekPreview(position: number): Promise<string | null>;
   downloads?: { save(): Promise<boolean>; copyMagnet(): Promise<void> };
   local?: {
     state(): Promise<LocalState>;
@@ -466,6 +469,9 @@ export interface API {
   ): Promise<Catalog>;
   media(id: number): Promise<Media>;
   episodes(id: number, page: number): Promise<EpisodePage>;
+  miniPlayer?(
+    action: "toggle" | "pin" | "state",
+  ): Promise<{ active: boolean; pinned: boolean }>;
   playback(): Promise<Playback>;
   labels(id: number): Promise<Labels>;
   releases(
@@ -531,8 +537,13 @@ export function canAutoSkip(
   marker: Marker,
   position: number,
   enabled: boolean,
+  recaps = false,
 ): boolean {
-  return enabled && position >= marker.start && position < marker.end;
+  return (
+    (marker.type === "recap" ? recaps : enabled) &&
+    position >= marker.start &&
+    position < marker.end
+  );
 }
 export function labelForEpisode(
   labels: Labels | undefined,

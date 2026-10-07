@@ -187,3 +187,98 @@ export function captureVideo(hwnd: number, window: BrowserWindow): () => void {
     }
   };
 }
+
+export function seekFrames() {
+  let source = "";
+  let cancel: (() => void) | undefined;
+  const cache = new Map<number, string>();
+  return {
+    reset(url = "") {
+      cancel?.();
+      source = url;
+      cache.clear();
+    },
+    async get(position: number): Promise<string | null> {
+      if (!source || !Number.isFinite(position) || position < 0) return null;
+      const seconds = Math.floor(position / 5) * 5;
+      if (cache.has(seconds)) return cache.get(seconds)!;
+      cancel?.();
+      const url = source;
+      return new Promise((resolve) => {
+        const executable = join(
+          app.isPackaged
+            ? process.resourcesPath
+            : join(app.getAppPath(), "vendor"),
+          "ffmpeg",
+          "ffmpeg.exe",
+        );
+        const child = spawn(
+          executable,
+          [
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-threads",
+            "2",
+            "-skip_frame",
+            "nokey",
+            "-noaccurate_seek",
+            "-ss",
+            String(seconds),
+            "-i",
+            url,
+            "-map",
+            "0:v:0",
+            "-frames:v",
+            "1",
+            "-an",
+            "-sn",
+            "-vf",
+            "scale=192:-2",
+            "-f",
+            "image2pipe",
+            "-vcodec",
+            "mjpeg",
+            "-pix_fmt",
+            "yuvj420p",
+            "pipe:1",
+          ],
+          { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] },
+        );
+        const chunks: Buffer[] = [];
+        let length = 0,
+          finished = false;
+        const done = (image: string | null = null) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          child.kill();
+          if (cancel === stop) cancel = undefined;
+          if (image && source === url) {
+            cache.set(seconds, image);
+            if (cache.size > 120) cache.delete(cache.keys().next().value!);
+          }
+          resolve(source === url ? image : null);
+        };
+        const stop = () => done();
+        const timer = setTimeout(stop, 15000);
+        cancel = stop;
+        child.stdout.on("data", (chunk: Buffer) => {
+          length += chunk.length;
+          if (length > 1024 * 1024) stop();
+          else chunks.push(chunk);
+        });
+        child.on("error", stop);
+        child.on("close", (code) =>
+          done(
+            code === 0 && length
+              ? "data:image/jpeg;base64," +
+                  Buffer.concat(chunks).toString("base64")
+              : null,
+          ),
+        );
+      });
+    },
+  };
+}

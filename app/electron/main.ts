@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 declare const NEN_BUILD_COMMIT: string;
 declare const NEN_BUILD_VERSION: string;
 import { VideoHost } from "./video-host";
-import { captureVideo } from "./capture";
+import { captureVideo, seekFrames } from "./capture";
 import {
   app,
   BrowserWindow,
@@ -34,6 +34,7 @@ import {
   writeFileSync,
   renameSync,
   existsSync,
+  statSync,
   rmSync,
   copyFileSync,
 } from "node:fs";
@@ -110,6 +111,7 @@ import type {
   SyncPreview,
   ProfileSummary,
 } from "../src/shared";
+const previewFrames = seekFrames();
 let window: BrowserWindow;
 let controls: BrowserWindow | undefined;
 let videoView: BaseWindow | VideoHost | undefined;
@@ -118,6 +120,26 @@ let worker: UtilityProcess | undefined;
 let player: Player | undefined;
 let sessionPlaybackRate = 1;
 let fullscreenBeforePlayer: boolean | undefined;
+let miniWindow:
+  | {
+      bounds: Electron.Rectangle;
+      minimum: number[];
+      maximized: boolean;
+      fullscreen: boolean;
+      pinned: boolean;
+    }
+  | undefined;
+function restorePlayerWindow() {
+  if (!miniWindow || window.isDestroyed()) return;
+  const saved = miniWindow;
+  miniWindow = undefined;
+  window.setAlwaysOnTop(saved.pinned);
+  window.setFullScreen(false);
+  window.setMinimumSize(saved.minimum[0], saved.minimum[1]);
+  window.setBounds(saved.bounds);
+  if (saved.maximized) window.maximize();
+  window.setFullScreen(saved.fullscreen);
+}
 let files: TorrentFile[] = [];
 let selected: Release | undefined;
 let current: Progress | undefined;
@@ -135,6 +157,7 @@ let state: State;
 let statePath: string;
 let userRoot: string;
 let importFile: string | undefined;
+let lastScreenshot: string | undefined;
 let tokenPath: string;
 let cancelSignIn: ((error: Error) => void) | undefined;
 let syncPreview:
@@ -782,6 +805,7 @@ function stop(
     together.state,
   );
   record();
+  cancelPreparation();
   const returnMedia = current?.mediaId ?? pendingPlayback?.mediaId;
   if (localCurrent && !returnQuery)
     returnQuery = {
@@ -797,6 +821,7 @@ function stop(
     stopVideoCapture?.();
     stopVideoCapture = undefined;
     switching = undefined;
+    restorePlayerWindow();
     const returning = !!controls && controls === window;
     controls = undefined;
     if (
@@ -817,6 +842,7 @@ function stop(
   player?.stop();
   player = undefined;
   current = undefined;
+  previewFrames.reset();
   localCurrent = undefined;
   remote = [];
   skipped.clear();
@@ -838,13 +864,124 @@ function stop(
   publish();
   return page;
 }
+let prepared:
+  | { worker: UtilityProcess; release: Release; files: TorrentFile[] }
+  | undefined;
+let preparationSearch: AbortController | undefined;
+let preparationKey = "";
+function cancelPreparation() {
+  preparationSearch?.abort();
+  preparationSearch = undefined;
+  preparationKey = "";
+  try {
+    worker?.postMessage({ action: "unprepare" });
+  } catch {}
+  const old = prepared?.worker;
+  prepared = undefined;
+  if (old) {
+    try {
+      old.postMessage({ action: "stop" });
+    } catch {}
+    setTimeout(() => {
+      try {
+        old.kill();
+      } catch {}
+    }, 1500).unref();
+  }
+}
+async function prepareNext() {
+  const active = player;
+  const episode = active?.status.nextEpisode;
+  if (
+    !state.settings.prepareNext ||
+    !active ||
+    !episode ||
+    !current ||
+    together.state.connected
+  )
+    return;
+  const ranges = active.status.download?.ranges;
+  if (!ranges?.some(([start, end]) => start === 0 && end === 1)) return;
+  const id = active.status.nextMediaId ?? current.mediaId;
+  const key = [current.hash, current.file.index, id, episode].join(":");
+  if (key === preparationKey) return;
+  cancelPreparation();
+  preparationKey = key;
+  const search = (preparationSearch = new AbortController());
+  let background: UtilityProcess | undefined;
+  try {
+    const anime = await providers.media(id);
+    if (search.signal.aborted || player !== active) return;
+    const same =
+      selected &&
+      matchesMedia(selected.title, anime) &&
+      matchingFile(files, selected, anime, episode);
+    if (same && worker) {
+      worker.postMessage({ action: "prepare", index: same.index });
+      return;
+    }
+    const result = await providers.releases(
+      anime,
+      episode,
+      undefined,
+      state.settings.source,
+      search.signal,
+      playbackSettings(id).audio,
+    );
+    if (search.signal.aborted || player !== active) return;
+    const release = automaticRelease(
+      result.items,
+      episode,
+      playbackSettings(id),
+    );
+    if (!release) return;
+    known.set(release.hash, release);
+    background = utilityProcess.fork(join(__dirname, "torrent.mjs"), [], {
+      serviceName: "Nen next episode",
+      stdio: "ignore",
+    });
+    prepared = { worker: background, release, files: [] };
+    const root = join(app.getPath("userData"), "torrents", release.hash);
+    mkdirSync(root, { recursive: true });
+    const resultFiles = await workerRequest(
+      "files",
+      { action: "inspect", hash: release.hash, path: root },
+      60000,
+      background,
+    );
+    if (
+      search.signal.aborted ||
+      player !== active ||
+      prepared?.worker !== background
+    )
+      return;
+    const file = matchingFile(resultFiles.files, release, anime, episode);
+    if (!file) {
+      cancelPreparation();
+      preparationKey = key;
+      return;
+    }
+    prepared.files = resultFiles.files;
+    await workerRequest(
+      "prepared",
+      { action: "prepare", index: file.index },
+      10000,
+      background,
+    );
+  } catch {
+    if (preparationSearch === search) {
+      cancelPreparation();
+      preparationKey = key;
+    }
+  }
+}
 const downloadWorkers = new Set<UtilityProcess>();
 function workerRequest(
   event: string,
   payload: object,
   timeout = 60000,
+  target = worker,
 ): Promise<any> {
-  const target = worker;
   if (!target) return Promise.reject(Error("Torrent engine is not ready."));
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -853,7 +990,11 @@ function workerRequest(
       target.removeListener("exit", exit);
     };
     const message = (data: any) => {
-      if (event === "files" && data.event === "verifying") {
+      if (
+        target === worker &&
+        event === "files" &&
+        data.event === "verifying"
+      ) {
         clearTimeout(timer);
         timer = setTimeout(
           () => {
@@ -908,12 +1049,19 @@ async function inspect(value: string, timeout = 60000) {
       stop(false, true);
       return files;
     }
+    const ready =
+      prepared?.release.hash === release.hash && prepared.files.length
+        ? prepared
+        : undefined;
+    if (ready) prepared = undefined;
     stop(false);
     selected = release;
-    worker = utilityProcess.fork(join(__dirname, "torrent.mjs"), [], {
-      serviceName: "Nen torrent engine",
-      stdio: "ignore",
-    });
+    worker =
+      ready?.worker ??
+      utilityProcess.fork(join(__dirname, "torrent.mjs"), [], {
+        serviceName: "Nen torrent engine",
+        stdio: "ignore",
+      });
     const activeWorker = worker;
     worker.on("message", (data: any) => {
       if (data.event === "stats" && worker === activeWorker && player) {
@@ -922,6 +1070,7 @@ async function inspect(value: string, timeout = 60000) {
           peers: data.peers,
           download: data.download,
         });
+        void prepareNext();
         publish();
       }
       if (data.event === "error" && worker === activeWorker && player) {
@@ -937,17 +1086,19 @@ async function inspect(value: string, timeout = 60000) {
     });
     const root = join(app.getPath("userData"), "torrents", release.hash);
     mkdirSync(root, { recursive: true });
-    files = (
-      await workerRequest(
-        "files",
-        {
-          action: "inspect",
-          hash: release.hash,
-          path: root,
-        },
-        timeout,
-      )
-    ).files;
+    files =
+      ready?.files ??
+      (
+        await workerRequest(
+          "files",
+          {
+            action: "inspect",
+            hash: release.hash,
+            path: root,
+          },
+          timeout,
+        )
+      ).files;
     return files;
   } catch (e) {
     stop(false);
@@ -1198,13 +1349,18 @@ async function play(
       if (Date.now() - lastSave > 5000) record();
       if (
         !together.state.connected &&
-        state.settings.autoSkip &&
+        (state.settings.autoSkip || state.settings.autoSkipRecaps) &&
         !active.status.paused
       )
         for (const m of active.status.markers) {
           const key = JSON.stringify(m);
           if (
-            canAutoSkip(m, active.status.position, state.settings.autoSkip) &&
+            canAutoSkip(
+              m,
+              active.status.position,
+              state.settings.autoSkip,
+              state.settings.autoSkipRecaps,
+            ) &&
             !skipped.has(key)
           ) {
             skipped.add(key);
@@ -1250,6 +1406,7 @@ async function startPlayer(
 ) {
   await openPlayerView();
   if (request !== playbackRequest) throw Error("Playback cancelled.");
+  previewFrames.reset(url);
   await active.start(
     url,
     position,
@@ -1422,7 +1579,15 @@ async function autoPlay(
         ? selected
         : undefined;
     for (let attempt = 0; ; attempt++) {
-      let release = attempt === 0 ? (saved?.release ?? continuing) : undefined;
+      let release =
+        attempt === 0
+          ? (saved?.release ??
+            continuing ??
+            (prepared?.files.length &&
+            preparationKey.endsWith(":" + mediaId + ":" + episode)
+              ? prepared.release
+              : undefined))
+          : undefined;
       if (!release) {
         if (!candidates) {
           anime = await providers.media(mediaId);
@@ -1793,7 +1958,14 @@ else {
       window.on("unmaximize", () => {
         maximized = false;
       });
-      window.on("close", () => {
+      window.on("close", (event) => {
+        if (miniWindow && !closing) {
+          event.preventDefault();
+          stop();
+          window.show();
+          window.focus();
+          return;
+        }
         closing = true;
         stop();
         const { width, height } = window.getNormalBounds();
@@ -1876,6 +2048,17 @@ else {
       handle("togetherLeave", () => {
         together.disconnect();
         stop();
+      });
+      handle("seekPreview", (position) => {
+        if (
+          typeof position !== "number" ||
+          !Number.isFinite(position) ||
+          position < 0
+        )
+          throw Error("Invalid preview time.");
+        return player && position <= player.status.duration
+          ? previewFrames.get(position)
+          : null;
       });
       handle("following", () =>
         state.anilist.connected ? readFollowing(getToken()) : [],
@@ -2421,12 +2604,46 @@ else {
         if (!file) throw Error("Saved file was not found.");
         return play(p.mediaId, p.episode, file.index, p.malEpisode, p);
       });
+      handle("miniPlayer", (action) => {
+        if (!["toggle", "pin", "state"].includes(action))
+          throw Error("Invalid mini player action.");
+        if (action !== "state" && controls !== window)
+          throw Error("Start playback first.");
+        if (action === "toggle") {
+          if (miniWindow) restorePlayerWindow();
+          else {
+            miniWindow = {
+              bounds: window.getNormalBounds(),
+              minimum: window.getMinimumSize(),
+              maximized: window.isMaximized(),
+              fullscreen: window.isFullScreen(),
+              pinned: window.isAlwaysOnTop(),
+            };
+            window.setFullScreen(false);
+            window.unmaximize();
+            window.setMinimumSize(480, 300);
+            const area = screen.getDisplayMatching(window.getBounds()).workArea;
+            window.setBounds({
+              x: area.x + area.width - 656,
+              y: area.y + area.height - 406,
+              width: 640,
+              height: 390,
+            });
+          }
+        }
+        if (action === "pin" && miniWindow)
+          window.setAlwaysOnTop(!window.isAlwaysOnTop());
+        return {
+          active: !!miniWindow,
+          pinned: !!miniWindow && window.isAlwaysOnTop(),
+        };
+      });
       handle("control", async (action, value) => {
         if (action === "stop") {
-          stop();
-          return;
+          return stop();
         }
         if (action === "fullscreen") {
+          restorePlayerWindow();
           const fullscreen = !window.isFullScreen();
           window.setFullScreen(fullscreen);
           window.webContents.send("window-fullscreen", fullscreen);
@@ -2626,6 +2843,32 @@ else {
             "&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce",
         );
       });
+      handle("openTrailer", async (id) => {
+        const trailer = (await providers.media(positive(id))).trailer;
+        if (!trailer) throw Error("No trailer available.");
+        const url =
+          trailer.site === "youtube"
+            ? "https://www.youtube.com/watch?v="
+            : "https://www.dailymotion.com/video/";
+        await shell.openExternal(url + encodeURIComponent(trailer.id));
+      });
+      handle("saveScreenshot", async () => {
+        const active = player;
+        if (!active?.status.ready) throw Error("Wait for the video to load.");
+        const path = await downloadDestination(
+          "Nen-screenshot-" + Date.now() + ".png",
+        );
+        if (!path) return null;
+        if (player !== active) throw Error("The video changed. Try again.");
+        await active.command(["screenshot-to-file", path, "subtitles"]);
+        lastScreenshot = path;
+        return path;
+      });
+      handle("revealScreenshot", () => {
+        if (!lastScreenshot || !existsSync(lastScreenshot))
+          throw Error("The screenshot is no longer available.");
+        shell.showItemInFolder(lastScreenshot);
+      });
       handle("downloadVideo", async () => {
         const active = worker,
           episode = current;
@@ -2634,12 +2877,10 @@ else {
           throw Error("A download is already running for this source.");
         downloadWorkers.add(active);
         try {
-          const result = await dialog.showSaveDialog(window, {
-            title: "Download episode",
-            defaultPath: episode.file.path.split(/[\\/]/).at(-1),
-            buttonLabel: "Download",
-          });
-          if (result.canceled || !result.filePath) return false;
+          const destination = await downloadDestination(
+            episode.file.path.split(/[\\/]/).at(-1) || "Nen-episode.mkv",
+          );
+          if (!destination) return false;
           if (worker !== active || current !== episode)
             throw Error("The source changed. Start the download again.");
           const saved = await workerRequest(
@@ -2647,7 +2888,7 @@ else {
             {
               action: "save",
               index: episode.file.index,
-              destination: result.filePath,
+              destination,
             },
             0,
           );
@@ -2836,4 +3077,25 @@ function installZoom(view: BrowserWindow) {
         : Math.max(-3, Math.min(3, view.webContents.getZoomLevel() + delta)),
     );
   });
+}
+
+async function downloadDestination(name: string): Promise<string | undefined> {
+  const filename =
+    name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "") ||
+    "Nen-download";
+  try {
+    const folder = app.getPath("downloads");
+    if (statSync(folder).isDirectory()) {
+      const ext = filename.lastIndexOf(".");
+      const base = ext > 0 ? filename.slice(0, ext) : filename;
+      const suffix = ext > 0 ? filename.slice(ext) : "";
+      let path = join(folder, filename),
+        i = 1;
+      while (existsSync(path))
+        path = join(folder, base + " (" + i++ + ")" + suffix);
+      return path;
+    }
+  } catch {}
+  return (await dialog.showSaveDialog(window, { defaultPath: filename }))
+    .filePath;
 }

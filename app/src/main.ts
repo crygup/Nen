@@ -2751,6 +2751,13 @@ async function start() {
   applyTheme();
   if (playerMode) {
     const update = mountPlayer({
+      menu: (event, actions) =>
+        showContextMenu(
+          event,
+          "player-context-menu",
+          "Player actions",
+          actions,
+        ),
       sources: (p) =>
         void run(async () => {
           if (p.mediaId && p.episode) {

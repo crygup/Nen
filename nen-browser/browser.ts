@@ -1,3 +1,4 @@
+import { seekFrames } from "./seek-preview";
 import { validateLibrary } from "../app/src/shared";
 import { toggleFullscreen } from "./fullscreen";
 declare const NEN_BROWSER_VERSION: string;
@@ -44,6 +45,8 @@ if (window.parent !== window) {
   };
   await import("../app/src/main");
 } else {
+  const previewFrames = seekFrames();
+  window.addEventListener("pagehide", () => previewFrames.reset());
   const key = "nen-browser-state-v2";
   const defaults: State = {
     version: NEN_BROWSER_VERSION,
@@ -266,6 +269,7 @@ if (window.parent !== window) {
     persistProgress();
     if (!room.state.connected)
       history.replaceState(null, "", `/?player=1&id=${id}&episode=${episode}`);
+    previewFrames.reset();
     hls?.destroy();
     hls = undefined;
     video.pause();
@@ -334,7 +338,7 @@ if (window.parent !== window) {
         Object.entries(source.skipData || {})
           .filter(([, v]: any) => v.end > v.start)
           .map(([name, v]: any) => ({
-            type: name === "intro" ? "op" : "ed",
+            type: name === "recap" ? "recap" : name === "intro" ? "op" : "ed",
             start: v.start,
             end: v.end,
             confirmed: true,
@@ -381,6 +385,7 @@ if (window.parent !== window) {
       const url =
         "https://stream.animeparadise.moe/m3u8?url=" +
         encodeURIComponent(source.streamLink);
+      previewFrames.reset(url);
       video.volume = Math.max(0, Math.min(1, (state.volume ?? 100) / 100));
       video.onloadedmetadata = () => {
         const entry = state.watch[String(id)];
@@ -478,6 +483,27 @@ if (window.parent !== window) {
     throw Error("Profiles are available in the desktop app.");
   };
   const api: API = {
+    seekPreview: (position) =>
+      p.active && position <= p.duration
+        ? previewFrames.get(position)
+        : Promise.resolve(null),
+    openTrailer: async (id) => {
+      const m = await api.media(id),
+        t = m.trailer;
+      if (
+        !t ||
+        !["youtube", "dailymotion"].includes(t.site) ||
+        !/^[a-zA-Z0-9_-]{1,100}$/.test(t.id)
+      )
+        throw Error("No trailer available.");
+      window.open(
+        (t.site === "youtube"
+          ? "https://www.youtube.com/watch?v="
+          : "https://www.dailymotion.com/video/") + encodeURIComponent(t.id),
+        "_blank",
+        "noopener,noreferrer",
+      );
+    },
     state: async () => snapshot(),
     settings: async (value) => {
       state.settings = { ...defaults.settings, ...value, sourceMode: "auto" };
@@ -673,9 +699,14 @@ if (window.parent !== window) {
           persistProgress();
           lastSave = Date.now();
         }
-        if (state.settings.autoSkip) {
+        if (state.settings.autoSkip || state.settings.autoSkipRecaps) {
           const marker = p.markers.find(
-            (m) => video.currentTime >= m.start && video.currentTime < m.end,
+            (m) =>
+              (m.type === "recap"
+                ? state.settings.autoSkipRecaps
+                : state.settings.autoSkip) &&
+              video.currentTime >= m.start &&
+              video.currentTime < m.end,
           );
           if (marker) {
             undoPosition = video.currentTime;
@@ -735,6 +766,7 @@ if (window.parent !== window) {
       if (action === "stop") {
         controller?.abort();
         persistProgress();
+        previewFrames.reset();
         hls?.destroy();
         location.assign(
           "/?returnMedia=" +
@@ -847,6 +879,7 @@ if (window.parent !== window) {
     togetherLeave: async () => {
       room.disconnect();
       persistProgress();
+      previewFrames.reset();
       hls?.destroy();
       video?.pause();
       playerFrame?.remove();
